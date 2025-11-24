@@ -13,14 +13,14 @@
 module(name = "communication")
 
 bazel_dep(name = "platforms", version = "0.0.11")
-
-bazel_dep(name = "score_toolchains_gcc", version = "0.4", dev_dependency = True)
+bazel_dep(name = "score_toolchains_gcc", dev_dependency = True, version = "0.4")
 
 gcc = use_extension(
     "@score_toolchains_gcc//extentions:gcc.bzl",
     "gcc",
     dev_dependency = True,
 )
+
 gcc.toolchain(
     sha256 = "457f5f20f57528033cb840d708b507050d711ae93e009388847e113b11bf3600",
     strip_prefix = "x86_64-unknown-linux-gnu",
@@ -34,6 +34,7 @@ gcc.extra_features(
         "treat_warnings_as_errors",
     ],
 )
+
 gcc.warning_flags(
     minimal_warnings = [
         "-Wall",
@@ -45,15 +46,17 @@ gcc.warning_flags(
     ],
     treat_warnings_as_errors = ["-Werror"],
 )
+
 use_repo(gcc, "gcc_toolchain", "gcc_toolchain_gcc")
 
-bazel_dep(name = "toolchains_llvm", version = "1.5.0", dev_dependency = True)
+bazel_dep(name = "toolchains_llvm", dev_dependency = True, version = "1.5.0")
 
 llvm = use_extension(
     "@toolchains_llvm//toolchain/extensions:llvm.bzl",
     "llvm",
     dev_dependency = True,
 )
+
 llvm.toolchain(
     compile_flags = {"": [
         "-march=nehalem",
@@ -71,10 +74,12 @@ llvm.toolchain(
     cxx_standard = {"": "c++17"},
     link_libs = {"": [
         "-lrt",
+        "-latomic",
     ]},
-    llvm_version = "16.0.0",
+    llvm_version = "19.1.6",
     stdlib = {"": "dynamic-stdc++"},
 )
+
 use_repo(llvm, "llvm_toolchain")
 
 # We use here a pre-compiled fully static and hermetic clang_format binary
@@ -93,12 +98,12 @@ bazel_dep(name = "googletest", version = "1.15.0")
 bazel_dep(name = "google_benchmark", version = "1.9.1")
 bazel_dep(name = "rules_rust", version = "0.61.0")
 bazel_dep(name = "buildifier_prebuilt", version = "6.3.3")
-bazel_dep(name = "score_crates", version = "0.0.4", repo_name = "crate_index")
+bazel_dep(name = "score_crates", repo_name = "crate_index", version = "0.0.4")
 
 # Temporary: Use latest GitHub main with regenerated BUILD file including paste and arrayvec
 git_override(
-    module_name = "score_crates",
     commit = "636a5add5ffd53177fd0fdf70b672043ac2664c4",
+    module_name = "score_crates",
     remote = "https://github.com/eclipse-score/score-crates.git",
 )
 
@@ -125,42 +130,49 @@ bazel_dep(name = "nlohmann_json", version = "3.11.3")
 bazel_dep(name = "bazel_skylib", version = "1.7.1")
 bazel_dep(name = "rules_doxygen", version = "2.5.0")
 bazel_dep(name = "score_baselibs", version = "0.2.0")
+
 git_override(
-    module_name = "score_baselibs",
     commit = "cfca402173a7a3261ca637a012087ebfbc8cdb11",
+    module_name = "score_baselibs",
     remote = "https://github.com/eclipse-score/baselibs.git",
 )
 
 # Doxygen extension for documentation generation
 doxygen_extension = use_extension("@rules_doxygen//:extensions.bzl", "doxygen_extension")
+
 use_repo(doxygen_extension, "doxygen")
 
 # Python 3.12 toolchain for Bazel (required for LOBSTER/TRLC dependencies)
 bazel_dep(name = "rules_python", version = "0.32.0")
 
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
+
 python.toolchain(
     python_version = "3.12",
 )
 
 # Python pip dependencies for traceability tools
 pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
+
 pip.parse(
     hub_name = "communication_pip",
     python_version = "3.12",
     requirements_lock = "//third_party/python:requirements.txt",
 )
+
 use_repo(pip, "communication_pip")
 
 # TRLC dependency for requirements traceability
 bazel_dep(name = "trlc", version = "0.0.0")
+
 git_override(
-    module_name = "trlc",
     commit = "650b51a47264a4f232b3341f473527710fc32669",  # trlc-2.0.2 release
+    module_name = "trlc",
     remote = "https://github.com/bmw-software-engineering/trlc.git",
 )
 
 lobster_ext = use_extension("//third_party/lobster:lobster.bzl", "lobster_ext")
+
 use_repo(lobster_ext, "lobster")
 
 # Use lobster's upstream requirements.txt directly for this module's Python hub
@@ -169,12 +181,14 @@ pip.parse(
     python_version = "3.12",
     requirements_lock = "@lobster//:requirements.txt",
 )
+
 use_repo(pip, "lobster_dependencies")
 
-bazel_dep(name = "score_toolchains_qnx", version = "0.0.2", dev_dependency = True)
+bazel_dep(name = "score_toolchains_qnx", dev_dependency = True, version = "0.0.2")
+
 git_override(
-    module_name = "score_toolchains_qnx",
     commit = "f9fe820390eede3d4e9b2a35651ff78bdd3cb676",
+    module_name = "score_toolchains_qnx",
     remote = "https://github.com/eclipse-score/toolchains_qnx.git",
 )
 
@@ -183,12 +197,15 @@ toolchains_qnx = use_extension(
     "toolchains_qnx",
     dev_dependency = True,
 )
+
 toolchains_qnx.sdp(
     sha256 = "f2e0cb21c6baddbcb65f6a70610ce498e7685de8ea2e0f1648f01b327f6bac63",
     strip_prefix = "installation",
     url = "https://www.qnx.com/download/download/79858/installation.tgz",
 )
+
 use_repo(toolchains_qnx, "toolchains_qnx_sdp")
+
 use_repo(toolchains_qnx, "toolchains_qnx_ifs")
 
 register_toolchains("@toolchains_qnx_ifs//:ifs_x86_64")
@@ -199,6 +216,7 @@ bazel_dep(name = "score_bazel_platforms", version = "0.0.2")
 bazel_dep(name = "rules_oci", version = "1.8.0")
 
 oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
+
 oci.pull(
     name = "ubuntu_24_04",
     digest = "sha256:2e863c44b718727c860746568e1d54afd13b2fa71b160f5cd9058fc436217b30",
@@ -206,6 +224,7 @@ oci.pull(
     platforms = ["linux/amd64"],
     tag = "24.04",
 )
+
 use_repo(oci, "ubuntu_24_04")
 
 bazel_dep(name = "rules_pkg", version = "1.0.1")
@@ -215,4 +234,5 @@ pip.parse(
     python_version = "3.12",
     requirements_lock = "//:requirements_lock.txt",
 )
+
 use_repo(pip, "score_communication_pip")

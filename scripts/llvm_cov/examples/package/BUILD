@@ -1,0 +1,17 @@
+# Copyright (C) 2025 Bayerische Motoren Werke Aktiengesellschaft (BMW AG). All rights reserved.
+
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+
+package(default_visibility = ["//:__subpackages__"])
+
+cc_test(
+    name = "integration_test",
+    srcs = ["integration_test.cpp"],
+    deps = ["//scripts/llvm_cov/examples/package:source"],
+)
+
+cc_library(
+    name = "source",
+    srcs = ["source.cpp"],
+    hdrs = ["source.h"],
+)
