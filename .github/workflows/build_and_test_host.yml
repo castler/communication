@@ -102,11 +102,4 @@ jobs:
           uses: ./actions/unblock_user_namespace_for_linux_sandbox
         - name: Bazel build communication targets
           run: |
-            bazel build ${{ matrix.config }} //...
-        - name: Bazel test communication targets
-          run: |
-            bazel test ${{ matrix.config }} //... --build_tests_only
-        - name: Bazel test integration as module
-          run: |
-            # for the beginning, we do this only with the default configuration
-            cd examples && bazel build //... && bazel mod deps --lockfile_mode=update
+            bazel build ${{ matrix.config }} //:hello

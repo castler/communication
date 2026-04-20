@@ -25,6 +25,11 @@ compile_pip_requirements(
     requirements_txt = "requirements_lock.txt",
 )
 
+cc_binary(
+    name = "hello",
+    srcs = ["main.cpp"],
+)
+
 copyright_checker(
     name = "copyright",
     srcs = [
