@@ -16,6 +16,8 @@
 
 name: Bazel Build & Test communication module
 on:
+  push:
+    branches: [main]
   pull_request:
     types: [opened, reopened, synchronize]
   merge_group:
