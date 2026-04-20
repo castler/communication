@@ -10,7 +10,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 # *******************************************************************************
-
+## FOOO
 load("@aspect_rules_lint//format:defs.bzl", "format_multirun", "format_test")
 load("@rules_python//python:pip.bzl", "compile_pip_requirements")
 load("@score_tooling//:defs.bzl", "copyright_checker")
