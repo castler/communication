@@ -91,7 +91,7 @@ jobs:
           uses: eclipse-score/more-disk-space@v1
           with:
             level: 4
-        uses: castler/setup-bazel@af47cfc189d155fb8ed926b2f19e0da6f1dc3ebf
+        - uses: castler/setup-bazel@af47cfc189d155fb8ed926b2f19e0da6f1dc3ebf
           with:
             bazelisk-cache: true
             disk-cache: true
