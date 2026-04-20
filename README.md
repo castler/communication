@@ -5,6 +5,8 @@
 - A high-performance, safety-critical communication middleware implementation based on the Adaptive AUTOSAR Communication Management specification.
 - This module provides zero-copy, shared-memory based inter-process communication (IPC) in embedded systems.
 
+Test
+
 ## Overview
 
 The Communication Module (also known as **LoLa** - Low Latency) is an open-source implementation that provides:
