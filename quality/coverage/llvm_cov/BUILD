@@ -23,8 +23,8 @@ py_binary(
     name = "reporter",
     srcs = ["reporter.py"],
     data = [
-        ":justify",
         ":effective_coverage",
+        ":justify",
     ],
     visibility = ["//visibility:public"],
 )
