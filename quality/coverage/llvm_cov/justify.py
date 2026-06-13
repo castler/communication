@@ -31,11 +31,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Set, Tuple
 
-try:
-    import yaml
-except ImportError:
-    # Fallback: minimal YAML parser for simple structures
-    yaml = None
+import yaml
 
 
 # Marker patterns
@@ -244,19 +240,7 @@ def load_yaml(yaml_path: Path) -> Dict[str, Any]:
     with open(yaml_path, "r", encoding="utf-8") as f:
         content = f.read()
 
-    if yaml is not None:
-        return yaml.safe_load(content)
-    else:
-        # Minimal fallback: try json (YAML is a superset of JSON)
-        try:
-            return json.loads(content)
-        except json.JSONDecodeError:
-            print(
-                "ERROR: PyYAML not available and file is not valid JSON. "
-                "Install PyYAML: pip install pyyaml",
-                file=sys.stderr,
-            )
-            sys.exit(1)
+    return yaml.safe_load(content)
 
 
 def validate_yaml(data: Dict[str, Any]) -> None:

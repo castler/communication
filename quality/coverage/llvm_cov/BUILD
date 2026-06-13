@@ -23,8 +23,8 @@ py_binary(
     name = "reporter",
     srcs = ["reporter.py"],
     data = [
-        "justify.py",
-        "effective_coverage.py",
+        ":justify",
+        ":effective_coverage",
     ],
     visibility = ["//visibility:public"],
 )
@@ -33,6 +33,9 @@ py_binary(
     name = "justify",
     srcs = ["justify.py"],
     visibility = ["//visibility:public"],
+    deps = [
+        "@score_communication_pip//pyyaml",
+    ],
 )
 
 py_binary(
