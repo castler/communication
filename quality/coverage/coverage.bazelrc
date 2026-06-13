@@ -18,11 +18,22 @@ coverage --instrumentation_filter="^//score/message_passing[/:],^//score/mw/com[
 coverage --experimental_generate_llvm_lcov
 coverage --experimental_use_llvm_covmap
 coverage --combined_report=lcov
-coverage --coverage_report_generator=@bazel_tools//tools/test/CoverageOutputGenerator/java/com/google/devtools/coverageoutputgenerator:Main
 coverage --extra_toolchains=@llvm_toolchain//:cc-toolchain-x86_64-linux
 coverage --extra_toolchains=@ferrocene_x86_64_unknown_linux_gnu_llvm//:rust_ferrocene_toolchain
-coverage --test_env=COVERAGE_GCOV_OPTIONS=-bcu
-# TODO set toolchain feature once possible
+
+# Use llvm-cov directly for HTML report generation instead of genhtml/lcov.
+# The custom merger (per-test) receives profraw files and produces a zip with profdata + HTML.
+# The custom reporter (final) merges all profdata and generates the combined HTML report.
+coverage --coverage_output_generator=//quality/coverage/llvm_cov:merger
+coverage --coverage_report_generator=//quality/coverage/llvm_cov:reporter
+coverage --experimental_fetch_all_coverage_outputs
+
+# Override GENERATE_LLVM_LCOV to keep raw profraw files instead of converting to LCOV.
+# The custom merger handles profraw→profdata→HTML directly.
+coverage --test_env=GENERATE_LLVM_LCOV=0
+# Suppress the default gcov path since we use llvm-cov directly.
+coverage --test_env=COVERAGE_GCOV_PATH=/usr/bin/true
+
 # These compile time options are required to cover abnormal termination cases. In GCC one can use `__gcc_dump()`, but this does not work with LLVM
 # LLVM provided these compile-time options in combination with a specific profile setting which is enabled in bazel via `LLVM_PROFILE_CONTINUOUS_MODE`
 coverage --test_env=LLVM_PROFILE_CONTINUOUS_MODE=1

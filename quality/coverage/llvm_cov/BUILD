@@ -11,10 +11,16 @@
 # SPDX-License-Identifier: Apache-2.0
 # *******************************************************************************
 
-load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+load("@rules_python//python:defs.bzl", "py_binary")
 
-sh_binary(
-    name = "generate_coverage_html",
-    srcs = ["generate_coverage_html.sh"],
-    visibility = ["//visibility:private"],
+py_binary(
+    name = "merger",
+    srcs = ["merger.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_binary(
+    name = "reporter",
+    srcs = ["reporter.py"],
+    visibility = ["//visibility:public"],
 )

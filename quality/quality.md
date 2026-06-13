@@ -110,13 +110,11 @@ The query configuration is defined in [`quality/static_analysis/config.yaml`](st
 
 ## Coverage
 
-Code coverage is generated using LLVM's source-based coverage instrumentation. The instrumentation filter is configured in [`quality/coverage.bazelrc`](coverage/coverage.bazelrc) to cover `//score/message_passing` and `//score/mw/com` while excluding test and benchmark code.
+Code coverage is generated using LLVM's source-based coverage instrumentation. The instrumentation filter is configured in [`quality/coverage/coverage.bazelrc`](coverage/coverage.bazelrc) to cover `//score/message_passing` and `//score/mw/com` while excluding test and benchmark code.
+
+HTML reports are generated directly by `llvm-cov show` — no intermediate LCOV conversion or `genhtml` is needed.
 
 ### Running Coverage
-
-> **Note:** The commands below assume `--combined_report=lcov` is set, which enables
-> a combined LCOV report across all test targets. This flag is already configured in
-> [`quality/coverage.bazelrc`](coverage/coverage.bazelrc) (imported from the repository root `.bazelrc`).
 
 ```bash
 bazel coverage //...
@@ -125,13 +123,13 @@ bazel coverage //...
 To run coverage for a specific target:
 
 ```bash
-bazel coverage --combined_report=lcov //score/message_passing:client_connection_test_linux
+bazel coverage //score/message_passing:client_connection_test_linux
 ```
 
-When [`quality/coverage.bazelrc`](coverage/coverage.bazelrc) is active, the combined LCOV report is written to
-`bazel-out/_coverage/_coverage_report.dat`.
+The coverage report generator produces a zip file at
+`bazel-out/_coverage/_coverage_report.dat` containing the HTML report, an LCOV export, and a text summary.
 
-To generate an HTML report from the LCOV data (works for both full and single-target runs):
+To extract the HTML report (works for both full and single-target runs):
 
 ```bash
 bazel run //quality/coverage:generate_coverage_html
@@ -141,6 +139,12 @@ The report is written to `cpp_coverage/index.html`. Open it with:
 
 ```bash
 xdg-open cpp_coverage/index.html
+```
+
+Alternatively, you can unzip the report directly:
+
+```bash
+unzip -o $(bazel info output_path)/_coverage/_coverage_report.dat -d /tmp/coverage && xdg-open /tmp/coverage/html_report/index.html
 ```
 
 ## Sanitizers
