@@ -154,6 +154,7 @@ def run_llvm_cov_show(
         "show",
         f"--format={output_format}",
         f"--path-equivalence=/proc/self/cwd/,{workspace_root}",
+        f"--compilation-dir={workspace_root}",
         "--show-branches=count",
         "--show-region-summary=0",
     ]
@@ -177,26 +178,106 @@ def run_llvm_cov_show(
 
 
 def build_filter_regexes(source_file_manifest: Path, workspace_root: str) -> List[str]:
-    """Build filter regexes to exclude mock files."""
+    """Build filter regexes to exclude non-project files from coverage.
+
+    Excludes:
+    - Mock files (equivalent of old lcov --remove '*mock*.h' '*mock*.cpp')
+    - External dependencies (googletest, score_baselibs, etc.)
+    - Test source files (*_test.cpp, *_test.h)
+    """
     regexes = []
 
-    # Exclude mock files (equivalent of old lcov --remove '*mock*.h' '*mock*.cpp').
+    # Exclude mock files.
     regexes.append(".*mock.*\\.(h|hpp|cpp)$")
+
+    # Exclude external dependencies (anything under external/).
+    regexes.append(".*/external/.*")
+
+    # Exclude test files.
+    regexes.append(".*_test\\.(cpp|h|hpp)$")
+    regexes.append(".*/test/.*")
 
     return regexes
 
 
 def get_workspace_root(execroot: Path, source_file_manifest: Path) -> str:
-    """Determine the workspace root from the execroot and manifest sources."""
-    root = os.environ.get("ROOT", "")
-    if root:
-        resolved = str(Path(root).resolve())
-        # In sandbox mode, find a non-sandbox path.
-        if "sandbox" not in resolved:
-            return resolved + "/"
+    """Determine the real workspace root for source file access.
 
-    # Fallback: use execroot.
-    return str(execroot) + "/"
+    The goal is to find a path where source files exist and will persist
+    after sandbox teardown, so the reporter can generate per-file HTML pages.
+
+    Strategy:
+    1. Find the main execroot by resolving a known file from the manifest.
+    2. At the main execroot, follow the 'score' symlink to find the real workspace.
+    3. If that fails, use the main execroot (sources accessible via symlinks there).
+    """
+    root = os.environ.get("ROOT", "")
+    if not root:
+        root = str(Path.cwd())
+
+    root_path = Path(root)
+
+    # Step 1: Find the main (non-sandbox) execroot by resolving a manifest entry.
+    main_execroot = _find_main_execroot(root_path, source_file_manifest)
+    if not main_execroot:
+        main_execroot = root_path
+
+    # Step 2: At the main execroot, check if source dirs are symlinks
+    # pointing to the real workspace.
+    for probe in ["score", "src", "lib"]:
+        probe_path = main_execroot / probe
+        if probe_path.is_symlink():
+            real_path = str(probe_path.resolve())
+            if real_path.endswith(probe):
+                workspace = real_path[: -len(probe)]
+                if not workspace.endswith("/"):
+                    workspace += "/"
+                return workspace
+
+    # Fallback: use main execroot.
+    result = str(main_execroot)
+    if not result.endswith("/"):
+        result += "/"
+    return result
+
+
+def _find_main_execroot(root_path: Path, source_file_manifest: Path) -> Path:
+    """Find the main (non-sandbox) execroot by resolving manifest entries.
+
+    Inside a Bazel sandbox, build output files (.so) are symlinks pointing to
+    the main execroot's bazel-out/. By resolving one, we can extract the
+    main execroot path.
+    """
+    try:
+        with open(source_file_manifest, encoding="utf-8") as f:
+            manifests = [line.strip() for line in f.readlines()]
+    except (OSError, IOError):
+        return None
+
+    for manifest_line in manifests:
+        if "objects_list.txt" in manifest_line:
+            continue
+        # Manifest lines are relative paths like "bazel-out/k8-fastbuild/bin/..."
+        if not manifest_line.startswith("bazel-out/"):
+            continue
+        candidate = root_path / manifest_line
+        if candidate.exists():
+            real_path = str(candidate.resolve())
+            # Extract execroot: look for "execroot/<workspace>/" in the path.
+            # real_path is like /mnt/data/bazel/<hash>/execroot/_main/bazel-out/...
+            idx = real_path.find("/execroot/")
+            if idx >= 0:
+                # Find end of workspace name after "execroot/"
+                rest = real_path[idx + len("/execroot/"):]
+                ws_end = rest.find("/")
+                if ws_end >= 0:
+                    execroot_str = real_path[: idx + len("/execroot/") + ws_end]
+                    execroot = Path(execroot_str)
+                    if execroot.exists() and "sandbox" not in str(execroot):
+                        return execroot
+        break  # Only need to check one file.
+
+    return None
 
 
 def get_object_files_from_manifest(source_file_manifest: Path) -> Set[str]:

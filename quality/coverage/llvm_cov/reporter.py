@@ -73,6 +73,8 @@ def main() -> None:
 
     # Get filter regexes and workspace root from meta.
     filter_regexes = set(meta.get("excluded_sources", []))
+    # Use the workspace_root from meta — it was resolved from sandbox symlinks
+    # to point to the actual workspace where source files exist on disk.
     workspace_root = meta.get("workspace_root", str(Path.cwd()) + "/")
 
     common_show_args = {
@@ -139,6 +141,7 @@ def run_llvm_cov_show(
         "show",
         f"--format={output_format}",
         f"--path-equivalence=/proc/self/cwd/,{workspace_root}",
+        f"--compilation-dir={workspace_root}",
         "--show-branches=count",
         "--show-region-summary=0",
     ]
@@ -172,6 +175,7 @@ def run_llvm_cov_export(
         "export",
         "--format=lcov",
         f"--path-equivalence=/proc/self/cwd/,{workspace_root}",
+        f"--compilation-dir={workspace_root}",
     ]
 
     for regex in filter_regexes:
