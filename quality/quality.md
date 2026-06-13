@@ -114,6 +114,8 @@ Code coverage is generated using LLVM's source-based coverage instrumentation. T
 
 HTML reports are generated directly by `llvm-cov show` — no intermediate LCOV conversion or `genhtml` is needed.
 
+For detailed documentation of the pipeline architecture, tools, and requirements, see [`quality/coverage/README.md`](coverage/README.md) and [`quality/coverage/llvm_cov/README.md`](coverage/llvm_cov/README.md).
+
 ### Running Coverage
 
 ```bash
@@ -149,9 +151,9 @@ unzip -o $(bazel info output_path)/_coverage/_coverage_report.dat -d /tmp/covera
 
 ### Coverage Justifications
 
-To achieve 100% effective line coverage, lines that cannot be covered by tests (defensive programming, tool false positives, etc.) can be *justified*. Justified lines appear in **yellow/orange** in the HTML report (vs green=covered, red=uncovered).
+To achieve 100% effective coverage, lines and branches that cannot be covered by tests (defensive programming, tool false positives, etc.) can be *justified*. Justified lines and branches appear in **yellow/orange** in the HTML report (vs green=covered, red=uncovered).
 
-Justifications are defined in [`quality/coverage/coverage_justifications.yaml`](coverage/coverage_justifications.yaml).
+Justifications are defined in [`quality/coverage/coverage_justifications.yaml`](coverage/coverage_justifications.yaml). A justification covers both the line itself and any branches on that line.
 
 #### Adding a Justification
 
@@ -183,10 +185,12 @@ more_defensive_code();
 #### Effective Coverage
 
 The coverage pipeline calculates:
-- **Raw coverage**: actual lines hit / total instrumented lines
-- **Effective coverage**: (lines hit + justified lines) / total instrumented lines
+- **Raw line coverage**: actual lines hit / total instrumented lines
+- **Effective line coverage**: (lines hit + justified lines) / total instrumented lines
+- **Raw branch coverage**: actual branches hit / total branches
+- **Effective branch coverage**: (branches hit + justified branches) / total branches
 
-The `generate_coverage_html` script prints the effective coverage summary. Set `COVERAGE_THRESHOLD` to enforce a minimum (default: 100%):
+The index page shows a banner with overall effective coverage and updates per-file percentages. The `generate_coverage_html` script prints the full summary. Set `COVERAGE_THRESHOLD` to enforce a minimum (default: 100%):
 
 ```bash
 COVERAGE_THRESHOLD=95 bazel run //quality/coverage:generate_coverage_html
