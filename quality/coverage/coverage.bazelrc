@@ -42,3 +42,9 @@ coverage --test_env=COVERAGE_GCOV_PATH=/usr/bin/true
 coverage --test_env=LLVM_PROFILE_CONTINUOUS_MODE=1
 coverage --cxxopt -mllvm
 coverage --cxxopt -runtime-counter-relocation
+
+# By default Bazel creates for each library a *.so for its tests. If there is a header that is used by multiple *.so files
+# and these *.so files have different instrumentation (production code has, test has not) a conflict arises which one to use when calculating coverage.
+# Then the first object is used, and it is pure luck if it contains the correct data or not. Even worse, small changes can change the order and then lead
+# to big coverage gaps. All these problems do not arise if no dynamic libs are used. Thus, we rather take bigger build times and binaries in advance for correct data.
+coverage --dynamic_mode=off
