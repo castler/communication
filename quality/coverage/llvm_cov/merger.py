@@ -180,10 +180,15 @@ def run_llvm_cov_show(
 def build_filter_regexes(source_file_manifest: Path, workspace_root: str) -> List[str]:
     """Build filter regexes to exclude non-project files from coverage.
 
+    NOTE: --experimental_use_llvm_covmap (required for llvm-cov profraw) causes
+    Bazel to instrument ALL targets regardless of --instrumentation_filter.
+    Therefore, filtering MUST happen here at the report level.
+
     Excludes:
     - Mock files (equivalent of old lcov --remove '*mock*.h' '*mock*.cpp')
     - External dependencies (googletest, score_baselibs, etc.)
     - Test source files (*_test.cpp, *_test.h)
+    - Performance benchmarks (not part of production coverage)
     """
     regexes = []
 
@@ -193,9 +198,12 @@ def build_filter_regexes(source_file_manifest: Path, workspace_root: str) -> Lis
     # Exclude external dependencies (anything under external/).
     regexes.append(".*/external/.*")
 
-    # Exclude test files.
+    # Exclude test files and test directories.
     regexes.append(".*_test\\.(cpp|h|hpp)$")
     regexes.append(".*/test/.*")
+
+    # Exclude performance benchmarks.
+    regexes.append(".*/performance_benchmarks/.*")
 
     return regexes
 

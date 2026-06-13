@@ -11,10 +11,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # *******************************************************************************
 
-# With this instrumentation filter for our two main components, we ensure that `bazel coverage //...` is yielding the correct results
+# NOTE: --experimental_use_llvm_covmap (required for llvm-cov) causes Bazel to instrument
+# ALL targets regardless of --instrumentation_filter. The actual source filtering happens
+# in the merger/reporter via --ignore-filename-regex. The instrumentation_filter is kept
+# for documentation purposes and in case this Bazel limitation is fixed in the future.
 coverage --nocache_test_results
 coverage --cxxopt=-O0
-coverage --instrumentation_filter="^//score/message_passing[/:],^//score/mw/com[/:],-//score/mw/com/performance_benchmarks[/:],-//score/mw/.*/test[/:]"
+coverage --instrumentation_filter="^//score/message_passing[/:],^//score/mw/com/(impl|gateway|dependability|design|example|mocking|doc)"
 coverage --experimental_generate_llvm_lcov
 coverage --experimental_use_llvm_covmap
 coverage --combined_report=lcov
