@@ -22,5 +22,21 @@ py_binary(
 py_binary(
     name = "reporter",
     srcs = ["reporter.py"],
+    data = [
+        "justify.py",
+        "effective_coverage.py",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+py_binary(
+    name = "justify",
+    srcs = ["justify.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_binary(
+    name = "effective_coverage",
+    srcs = ["effective_coverage.py"],
     visibility = ["//visibility:public"],
 )

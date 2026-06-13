@@ -88,6 +88,55 @@ fi
 echo "Coverage report written to: ${OUTPUT_DIR}"
 
 # ---------------------------------------------------------------------------
+# Run coverage justification processing.
+# ---------------------------------------------------------------------------
+JUSTIFICATION_YAML="${BUILD_WORKSPACE_DIRECTORY}/quality/coverage/coverage_justifications.yaml"
+JUSTIFY_SCRIPT="${BUILD_WORKSPACE_DIRECTORY}/quality/coverage/llvm_cov/justify.py"
+EFFECTIVE_SCRIPT="${BUILD_WORKSPACE_DIRECTORY}/quality/coverage/llvm_cov/effective_coverage.py"
+
+if [[ -f "${JUSTIFICATION_YAML}" ]] && [[ -f "${JUSTIFY_SCRIPT}" ]] && [[ -f "${EFFECTIVE_SCRIPT}" ]]; then
+  echo ""
+  echo "Running coverage justification processing..."
+
+  JUSTIFICATION_DIR="${TMPDIR_EXTRACT}/justification_report"
+  mkdir -p "${JUSTIFICATION_DIR}"
+
+  # Run justify.py to produce the resolved manifest.
+  if python3 "${JUSTIFY_SCRIPT}" \
+      --yaml "${JUSTIFICATION_YAML}" \
+      --source-root "${BUILD_WORKSPACE_DIRECTORY}" \
+      --output "${JUSTIFICATION_DIR}/manifest.json"; then
+
+    # Run effective_coverage.py to post-process the HTML and calculate effective coverage.
+    python3 "${EFFECTIVE_SCRIPT}" \
+        --html-dir "${OUTPUT_DIR}" \
+        --manifest "${JUSTIFICATION_DIR}/manifest.json" \
+        --output "${JUSTIFICATION_DIR}/report.json"
+  fi
+
+  # Display effective coverage summary.
+  if [[ -f "${JUSTIFICATION_DIR}/summary.txt" ]]; then
+    echo ""
+    cat "${JUSTIFICATION_DIR}/summary.txt"
+
+    # Extract effective coverage percentage for threshold check.
+    EFFECTIVE_PCT=$(grep -oP 'Effective line coverage:\s+\K[0-9.]+' \
+      "${JUSTIFICATION_DIR}/summary.txt" 2>/dev/null || echo "0")
+
+    # Threshold check (default: 100%)
+    THRESHOLD="${COVERAGE_THRESHOLD:-100}"
+    PASS=$(python3 -c "import sys; sys.exit(0 if float('${EFFECTIVE_PCT}') >= float('${THRESHOLD}') else 1)" 2>/dev/null && echo "yes" || echo "no")
+    if [[ "${PASS}" == "no" ]]; then
+      echo "WARNING: Effective coverage ${EFFECTIVE_PCT}% is below threshold ${THRESHOLD}%" >&2
+    fi
+  fi
+else
+  if [[ ! -f "${JUSTIFICATION_YAML}" ]]; then
+    echo "INFO: No coverage_justifications.yaml found, skipping justification processing."
+  fi
+fi
+
+# ---------------------------------------------------------------------------
 # Optional: create a zip archive with the HTML report, raw LCOV data and
 # JUnit XML test results.
 # ---------------------------------------------------------------------------

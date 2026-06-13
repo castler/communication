@@ -116,8 +116,22 @@ def main() -> None:
         f.write(summary.stdout)
     print(summary.stdout, file=sys.stderr)
 
+    # Run coverage justification processing if YAML exists.
+    justification_report_dir = Path.cwd() / "justification_report"
+    justification_yaml = find_justification_yaml(workspace_root)
+    if justification_yaml:
+        justification_report_dir.mkdir(exist_ok=True)
+        run_justification_processing(
+            justification_yaml=justification_yaml,
+            source_root=workspace_root,
+            html_report_dir=html_report_dir,
+            output_dir=justification_report_dir,
+        )
+
     # Package everything into the output zip.
     directories = [html_report_dir, lcov_report_dir, text_report_dir]
+    if justification_report_dir.exists():
+        directories.append(justification_report_dir)
     create_zip(
         root=Path.cwd(),
         directories=directories,
@@ -330,6 +344,124 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output_file", type=Path, required=True)
     parser.add_argument("--reports_file", type=Path, required=True)
     return parser.parse_args()
+
+
+def find_justification_yaml(workspace_root: str) -> Path | None:
+    """Find the coverage_justifications.yaml file in the workspace."""
+    candidates = [
+        Path(workspace_root) / "quality" / "coverage" / "coverage_justifications.yaml",
+        Path(workspace_root) / "coverage_justifications.yaml",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def run_justification_processing(
+    justification_yaml: Path,
+    source_root: str,
+    html_report_dir: Path,
+    output_dir: Path,
+) -> None:
+    """Run the justification processing pipeline.
+
+    Calls justify.py and effective_coverage.py as subprocesses. These scripts
+    are standalone and only require Python stdlib + PyYAML (for justify.py).
+    """
+    script_dir = Path(__file__).resolve().parent
+
+    manifest_path = output_dir / "manifest.json"
+    report_path = output_dir / "report.json"
+
+    # Run justify.py
+    justify_script = script_dir / "justify.py"
+    if not justify_script.exists():
+        # Try runfiles location
+        justify_script = _find_in_runfiles("quality/coverage/llvm_cov/justify.py")
+    if not justify_script or not justify_script.exists():
+        print("WARNING: justify.py not found, skipping justification processing.",
+              file=sys.stderr)
+        return
+
+    justify_cmd = [
+        sys.executable,
+        str(justify_script),
+        "--yaml", str(justification_yaml),
+        "--source-root", source_root.rstrip("/"),
+        "--output", str(manifest_path),
+    ]
+
+    try:
+        result = subprocess.run(
+            justify_cmd,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        if result.stderr:
+            print(result.stderr, file=sys.stderr, end="")
+    except subprocess.CalledProcessError as e:
+        print(f"WARNING: Justification processing failed: {e.stderr}", file=sys.stderr)
+        return
+
+    if not manifest_path.exists():
+        return
+
+    # Run effective_coverage.py
+    effective_script = script_dir / "effective_coverage.py"
+    if not effective_script.exists():
+        effective_script = _find_in_runfiles(
+            "quality/coverage/llvm_cov/effective_coverage.py"
+        )
+    if not effective_script or not effective_script.exists():
+        print("WARNING: effective_coverage.py not found.", file=sys.stderr)
+        return
+
+    effective_cmd = [
+        sys.executable,
+        str(effective_script),
+        "--html-dir", str(html_report_dir),
+        "--manifest", str(manifest_path),
+        "--output", str(report_path),
+    ]
+
+    try:
+        result = subprocess.run(
+            effective_cmd,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        if result.stderr:
+            print(result.stderr, file=sys.stderr, end="")
+    except subprocess.CalledProcessError as e:
+        print(
+            f"WARNING: Effective coverage calculation failed: {e.stderr}",
+            file=sys.stderr,
+        )
+
+
+def _find_in_runfiles(rel_path: str) -> Path | None:
+    """Find a file in Bazel runfiles."""
+    # Try RUNFILES_DIR env var
+    runfiles_dir = os.environ.get("RUNFILES_DIR", "")
+    if runfiles_dir:
+        # Try common workspace names
+        for ws in ["_main", "score", ""]:
+            candidate = Path(runfiles_dir) / ws / rel_path if ws else Path(runfiles_dir) / rel_path
+            if candidate.exists():
+                return candidate
+
+    # Try relative to this script's location
+    script_dir = Path(__file__).resolve().parent
+    candidate = script_dir / Path(rel_path).name
+    if candidate.exists():
+        return candidate
+
+    return None
 
 
 if __name__ == "__main__":

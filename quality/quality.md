@@ -147,6 +147,51 @@ Alternatively, you can unzip the report directly:
 unzip -o $(bazel info output_path)/_coverage/_coverage_report.dat -d /tmp/coverage && xdg-open /tmp/coverage/html_report/index.html
 ```
 
+### Coverage Justifications
+
+To achieve 100% effective line coverage, lines that cannot be covered by tests (defensive programming, tool false positives, etc.) can be *justified*. Justified lines appear in **yellow/orange** in the HTML report (vs green=covered, red=uncovered).
+
+Justifications are defined in [`quality/coverage/coverage_justifications.yaml`](coverage/coverage_justifications.yaml).
+
+#### Adding a Justification
+
+1. Add an entry to `coverage_justifications.yaml`:
+
+```yaml
+justifications:
+  - id: my-justification-id
+    category: defensive_programming  # or: tool_false_positive, platform_specific, other
+    reason: >
+      Explanation of why these lines cannot be covered.
+    locations:
+      - file: score/mw/com/impl/some_file.cpp
+        line_start: 42
+        line_end: 45
+```
+
+2. Alternatively, reference the justification from code (no `locations` needed in YAML):
+
+```cpp
+unreachable_code();  // COV_JUSTIFIED my-justification-id
+
+// COV_JUSTIFIED_START my-justification-id
+defensive_block();
+more_defensive_code();
+// COV_JUSTIFIED_STOP
+```
+
+#### Effective Coverage
+
+The coverage pipeline calculates:
+- **Raw coverage**: actual lines hit / total instrumented lines
+- **Effective coverage**: (lines hit + justified lines) / total instrumented lines
+
+The `generate_coverage_html` script prints the effective coverage summary. Set `COVERAGE_THRESHOLD` to enforce a minimum (default: 100%):
+
+```bash
+COVERAGE_THRESHOLD=95 bazel run //quality/coverage:generate_coverage_html
+```
+
 ## Sanitizers
 
 Address, undefined behavior, leak, and thread sanitizers are also available:
