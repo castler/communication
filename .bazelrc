@@ -120,3 +120,6 @@ build --tool_java_runtime_version=remotejdk_21
 
 # Import AI checker custom configuration
 try-import %workspace%/.bazelrc.ai_checker
+
+# Enable user-defined configs
+try-import %workspace%/user.bazelrc
