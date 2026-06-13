@@ -110,13 +110,13 @@ The query configuration is defined in [`quality/static_analysis/config.yaml`](st
 
 ## Coverage
 
-Code coverage is generated using LLVM's source-based coverage instrumentation. The instrumentation filter is configured in [`quality/coverage.bazelrc`](coverage.bazelrc) to cover `//score/message_passing` and `//score/mw/com` while excluding test and benchmark code.
+Code coverage is generated using LLVM's source-based coverage instrumentation. The instrumentation filter is configured in [`quality/coverage.bazelrc`](coverage/coverage.bazelrc) to cover `//score/message_passing` and `//score/mw/com` while excluding test and benchmark code.
 
 ### Running Coverage
 
 > **Note:** The commands below assume `--combined_report=lcov` is set, which enables
 > a combined LCOV report across all test targets. This flag is already configured in
-> [`quality/coverage.bazelrc`](coverage.bazelrc) (imported from the repository root `.bazelrc`).
+> [`quality/coverage.bazelrc`](coverage/coverage.bazelrc) (imported from the repository root `.bazelrc`).
 
 ```bash
 bazel coverage //...
@@ -128,7 +128,7 @@ To run coverage for a specific target:
 bazel coverage --combined_report=lcov //score/message_passing:client_connection_test_linux
 ```
 
-When [`quality/coverage.bazelrc`](coverage.bazelrc) is active, the combined LCOV report is written to
+When [`quality/coverage.bazelrc`](coverage/coverage.bazelrc) is active, the combined LCOV report is written to
 `bazel-out/_coverage/_coverage_report.dat`.
 
 To generate an HTML report from the LCOV data (works for both full and single-target runs):
