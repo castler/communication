@@ -132,10 +132,17 @@ jobs:
           uses: castler/setup-bazel@cache-optimized
           with:
             bazelisk-cache: true
-            disk-cache: build_and_test_qnx
             repository-cache: true
             cache-optimized: true
             cache-save: ${{ github.ref == 'refs/heads/main' }}
+        - name: Configure BuildBuddy remote cache
+          env:
+            BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
+          run: |
+            if [[ "${{ github.event_name }}" == "merge_group" && -n "${BUILDBUDDY_API_KEY}" ]]; then
+              echo "common:ci --remote_header=x-buildbuddy-api-key=${BUILDBUDDY_API_KEY}" >> ~/.bazelrc
+              echo "common:ci --remote_upload_local_results=true" >> ~/.bazelrc
+            fi
         - name: Allow linux-sandbox
           uses: ./actions/unblock_user_namespace_for_linux_sandbox
         - name: Setup QNX License
@@ -151,7 +158,7 @@ jobs:
             SCORE_QNX_USER: ${{ secrets.SCORE_QNX_USER }}
             SCORE_QNX_PASSWORD: ${{ secrets.SCORE_QNX_PASSWORD }}
           run: |
-            bazel build --config=qnx -- //score/...
+            bazel build --config=ci --config=qnx -- //score/...
         - name: Install qemu
           run: |
             sudo apt-get update
@@ -169,7 +176,7 @@ jobs:
             SCORE_QNX_USER: ${{ secrets.SCORE_QNX_USER }}
             SCORE_QNX_PASSWORD: ${{ secrets.SCORE_QNX_PASSWORD }}
           run: |
-            bazel test --config=qnx -- //score/...
+            bazel test --config=ci --config=qnx -- //score/...
         - name: Cleanup QNX License
           if: ${{ !cancelled() }}
           run: sudo rm -rf ${{ env.LICENSE_DIR }}

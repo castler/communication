@@ -101,18 +101,25 @@ jobs:
         - uses: castler/setup-bazel@cache-optimized
           with:
             bazelisk-cache: true
-            disk-cache: build_and_test_host${{ matrix.identifier }}
             repository-cache: true
             cache-optimized: true
             cache-save: ${{ github.ref == 'refs/heads/main' }}
+        - name: Configure BuildBuddy remote cache
+          env:
+            BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
+          run: |
+            if [[ "${{ github.event_name }}" == "merge_group" && -n "${BUILDBUDDY_API_KEY}" ]]; then
+              echo "common:ci --remote_header=x-buildbuddy-api-key=${BUILDBUDDY_API_KEY}" >> ~/.bazelrc
+              echo "common:ci --remote_upload_local_results=true" >> ~/.bazelrc
+            fi
         - name: Allow linux-sandbox
           uses: ./actions/unblock_user_namespace_for_linux_sandbox
         - name: Bazel build communication targets
           run: |
-            bazel build ${{ matrix.config }} //...
+            bazel build --config=ci ${{ matrix.config }} //...
         - name: Bazel test communication targets
           run: |
-            bazel test ${{ matrix.config }} //... --build_tests_only
+            bazel test --config=ci ${{ matrix.config }} //... --build_tests_only
         - name: Bazel test integration as module
           run: |
             # for the beginning, we do this only with the default configuration

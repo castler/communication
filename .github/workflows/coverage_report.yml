@@ -52,10 +52,18 @@ jobs:
         uses: castler/setup-bazel@cache-optimized
         with:
           bazelisk-cache: true
-          disk-cache: ${{ github.workflow }}
           repository-cache: true
           cache-optimized: true
           cache-save: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Configure BuildBuddy remote cache
+        env:
+          BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
+        run: |
+          if [[ "${{ github.event_name }}" == "merge_group" && -n "${BUILDBUDDY_API_KEY}" ]]; then
+            echo "common:ci --remote_header=x-buildbuddy-api-key=${BUILDBUDDY_API_KEY}" >> ~/.bazelrc
+            echo "common:ci --remote_upload_local_results=true" >> ~/.bazelrc
+          fi
 
       - name: Allow linux-sandbox
         uses: ./actions/unblock_user_namespace_for_linux_sandbox
@@ -66,12 +74,12 @@ jobs:
       - name: Run Unit Test with Coverage for C++
         id: run-coverage
         run: |
-          bazel coverage //... --build_tests_only
+          bazel coverage --config=ci //... --build_tests_only
 
       - name: Generate HTML Coverage Report and Create Archive
         if: steps.run-coverage.outcome == 'success'
         run: |
-          bazel run //quality/coverage:generate_coverage_html -- \
+          bazel run --config=ci //quality/coverage:generate_coverage_html -- \
             --archive "${{ github.event.repository.name }}_coverage_report_${{ github.sha }}" \
             cpp_coverage
 

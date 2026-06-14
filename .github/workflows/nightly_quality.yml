@@ -79,10 +79,18 @@ jobs:
         uses: castler/setup-bazel@cache-optimized
         with:
           bazelisk-cache: true
-          disk-cache: ${{ github.workflow }}
           repository-cache: true
           cache-optimized: true
           cache-save: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Configure BuildBuddy remote cache
+        env:
+          BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
+        run: |
+          if [[ "${{ github.event_name }}" == "merge_group" && -n "${BUILDBUDDY_API_KEY}" ]]; then
+            echo "common:ci --remote_header=x-buildbuddy-api-key=${BUILDBUDDY_API_KEY}" >> ~/.bazelrc
+            echo "common:ci --remote_upload_local_results=true" >> ~/.bazelrc
+          fi
 
       - name: Allow linux-sandbox
         id: setup
@@ -139,7 +147,7 @@ jobs:
         run: |
           # Pass LCOV data and clang-tidy findings, generate_dashboard handles
           # absent files gracefully (shows N/A for that metric).
-          bazel run //quality/dashboard:generate_dashboard -- \
+          bazel run --config=ci //quality/dashboard:generate_dashboard -- \
             --lcov     /tmp/coverage_zip/extracted/artifacts/coverage_report.dat \
             --clang-tidy /tmp/clang_tidy/clang_tidy_findings.txt \
             --html     "${GITHUB_WORKSPACE}/_quality/index.html" \
