@@ -59,9 +59,9 @@ jobs:
           prerelease: false
           target_commitish: ${{ github.sha }}
 
-  run-build-and-test-host:
+  run-host-quality:
     needs: create-draft-release
-    uses: ./.github/workflows/build_and_test_host.yml
+    uses: ./.github/workflows/pr_quality_host.yml
     permissions:
       contents: read
       actions: write
@@ -77,20 +77,6 @@ jobs:
       SCORE_QNX_LICENSE: ${{ secrets.SCORE_QNX_LICENSE }}
       SCORE_QNX_USER: ${{ secrets.SCORE_QNX_USER }}
       SCORE_QNX_PASSWORD: ${{ secrets.SCORE_QNX_PASSWORD }}
-
-  run-thread-sanitizer:
-    needs: create-draft-release
-    uses: ./.github/workflows/thread_sanitizer.yml
-    permissions:
-      contents: read
-      actions: write
-
-  run-address-sanitizer:
-    needs: create-draft-release
-    uses: ./.github/workflows/address_undefined_behavior_leak_sanitizer.yml
-    permissions:
-      contents: read
-      actions: write
 
   run-coverage-report:
     needs: create-draft-release
@@ -136,10 +122,8 @@ jobs:
     runs-on: ubuntu-24.04
     needs:
       - create-draft-release
-      - run-build-and-test-host
+      - run-host-quality
       - run-build-and-test-qnx
-      - run-thread-sanitizer
-      - run-address-sanitizer
       - run-coverage-report
       - upload-coverage-report
     if: ${{ success() }}
@@ -157,10 +141,8 @@ jobs:
     runs-on: ubuntu-24.04
     needs:
       - create-draft-release
-      - run-build-and-test-host
+      - run-host-quality
       - run-build-and-test-qnx
-      - run-thread-sanitizer
-      - run-address-sanitizer
       - run-coverage-report
       - upload-coverage-report
     if: ${{ failure() || cancelled() }}

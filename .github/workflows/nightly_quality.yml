@@ -58,9 +58,11 @@ jobs:
   # Quality job 2: Clang-Tidy
   # --------------------------------------------------------------------
   run-clang-tidy:
-    uses: ./.github/workflows/clang_tidy.yml
+    uses: ./.github/workflows/pr_quality_host.yml
+    with:
+      jobs: "clang-tidy"
     permissions:
-      contents: read    
+      contents: read
       actions: write
 
   # --------------------------------------------------------------------
@@ -127,7 +129,7 @@ jobs:
         continue-on-error: true
         uses: actions/download-artifact@v4
         with:
-          name: ${{ needs.run-clang-tidy.outputs.artifact-name }}
+          name: ${{ needs.run-clang-tidy.outputs.clang-tidy-artifact-name }}
           path: /tmp/clang_tidy
 
       - name: Copy clang-tidy findings into quality output

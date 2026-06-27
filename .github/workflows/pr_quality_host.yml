@@ -11,27 +11,26 @@
 # SPDX-License-Identifier: Apache-2.0
 # *******************************************************************************
 
-# Workflow: Clang-Tidy PR check (blocking on changed files).
+# Workflow: PR Quality Gates (Host)
 #
-# Runs clang-tidy on every pull_request, push to main, and merge_group.
-# - Fails if clang-tidy errors are found in C++ files changed by the PR.
-# - The same changed-files scope is applied for both pull_request and
-#   merge_group (gate) so that a passing PR check guarantees a passing gate.
-# - Writes a job summary with error/warning counts and the first 20 error lines.
-# - Uploads full findings + errors-only file as a downloadable artifact.
+# Runs all host-platform quality checks as parallel jobs:
+#   - build-and-test: Full build + test + examples
+#   - tsan: Thread sanitizer
+#   - asan: Address, undefined behavior, and leak sanitizers
+#   - clang-tidy: Static analysis (blocks PRs on errors in changed files)
 #
-# Cache is saved only on pushes to main (not on PRs) to avoid
-# cache poisoning from unreviewed code.
+# Callers can selectively run a subset of jobs via the 'jobs' input.
 
-name: Clang-Tidy Check
+name: PR Quality (Host)
 
 on:
-  pull_request:
-    types: [opened, reopened, synchronize]
   push:
     branches: [main]
+  pull_request:
+    types: [opened, reopened, synchronize]
   merge_group:
     types: [checks_requested]
+  workflow_dispatch:
   workflow_call:
     inputs:
       recreate_cache:
@@ -44,26 +43,31 @@ on:
         required: false
         type: string
         default: "recreate"
+      jobs:
+        description: "Comma-separated list of jobs to run. Default (empty): all jobs."
+        required: false
+        type: string
+        default: ""
     outputs:
-      artifact-name:
+      clang-tidy-artifact-name:
         description: "Name of the clang-tidy findings artifact"
         value: ${{ jobs.clang-tidy.outputs.artifact-name }}
-      errors:
+      clang-tidy-errors:
         description: "Total clang-tidy error count"
         value: ${{ jobs.clang-tidy.outputs.errors }}
-      warnings:
+      clang-tidy-warnings:
         description: "Total clang-tidy warning count"
         value: ${{ jobs.clang-tidy.outputs.warnings }}
-      conclusion:
-        description: "Job conclusion: success or failure"
+      clang-tidy-conclusion:
+        description: "Clang-tidy job conclusion: success or failure"
         value: ${{ jobs.clang-tidy.outputs.conclusion }}
 
 permissions:
   contents: read
-  actions: write # Needed to delete old bazel caches
+  actions: write
 
 concurrency:
-  group: clang-tidy-pr-${{ github.event.pull_request.number || github.run_id }}
+  group: pr-quality-host-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
 
 env:
@@ -72,14 +76,72 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   CACHE_MODE: >-
     ${{
-      inputs.recreate_cache == true && inputs.recreate_cache_mode ||
+      (inputs.recreate_cache || false) == true && (inputs.recreate_cache_mode || 'recreate') ||
       (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'read-only' ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main') && 'update-disk' ||
       'disabled'
     }}
 
 jobs:
+  # --------------------------------------------------------------------
+  # Job 1: Build & Test (host)
+  # --------------------------------------------------------------------
+  build-and-test:
+    if: ${{ !inputs.jobs || contains(inputs.jobs, 'build-and-test') }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6.0.2
+
+      - name: Setup and run
+        uses: ./.github/actions/bazel-job
+        with:
+          disk-cache: build_and_test_host
+          cache-mode: ${{ env.CACHE_MODE }}
+          commands: |
+            bazel build //...
+            bazel test //... --build_tests_only
+            cd examples && bazel build //... && bazel mod deps --lockfile_mode=update
+
+  # --------------------------------------------------------------------
+  # Job 2: Thread Sanitizer
+  # --------------------------------------------------------------------
+  tsan:
+    if: ${{ !inputs.jobs || contains(inputs.jobs, 'tsan') }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6.0.2
+
+      - name: Setup and run
+        uses: ./.github/actions/bazel-job
+        with:
+          disk-cache: build_and_test_tsan
+          cache-mode: ${{ env.CACHE_MODE }}
+          commands: "bazel test --config=tsan //... --build_tests_only"
+
+  # --------------------------------------------------------------------
+  # Job 3: Address / UB / Leak Sanitizer
+  # --------------------------------------------------------------------
+  asan:
+    if: ${{ !inputs.jobs || contains(inputs.jobs, 'asan') }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6.0.2
+
+      - name: Setup and run
+        uses: ./.github/actions/bazel-job
+        with:
+          disk-cache: build_and_test_asan_ubsan_lsan
+          cache-mode: ${{ env.CACHE_MODE }}
+          commands: "bazel test --config=asan_ubsan_lsan //... --build_tests_only"
+
+  # --------------------------------------------------------------------
+  # Job 4: Clang-Tidy
+  # --------------------------------------------------------------------
   clang-tidy:
+    if: ${{ !inputs.jobs || contains(inputs.jobs, 'clang-tidy') }}
     runs-on: ubuntu-24.04
     outputs:
       artifact-name: clang-tidy-findings
@@ -107,8 +169,6 @@ jobs:
 
       - name: Run clang-tidy via Bazel
         id: run-clang-tidy
-        # continue-on-error so we can collect findings and upload the artifact
-        # even when the Bazel invocation exits non-zero.
         continue-on-error: true
         run: |
           bazel test --config=clang-tidy //... \
@@ -128,12 +188,6 @@ jobs:
           TOTAL=$((ERRORS + WARNINGS))
 
           # Scope blocking errors to C++ files changed in this PR / merge-group
-          # commit set. The same logic is applied for all event types
-          # (pull_request, merge_group, push to main) so that a check passing on
-          # a PR is guaranteed to also pass at gate — no late-feedback surprises.
-          #
-          # GITHUB_BASE_REF is set by GitHub for both pull_request and
-          # merge_group events (it is the name of the target branch, e.g. main).
           CHANGED_CPP=$(git diff --name-only "origin/${GITHUB_BASE_REF}...HEAD" 2>/dev/null \
             | grep -E '\.(cpp|h|cc|cxx|hpp)$' || true)
 
@@ -156,8 +210,6 @@ jobs:
           find -L bazel-bin -name "*.AspectRulesLintClangTidy.out" 2>/dev/null \
             | xargs cat 2>/dev/null > clang_tidy_findings.txt || true
 
-          # Keep the published report human-readable even when no findings
-          # were produced in this run.
           if [[ ! -s clang_tidy_findings.txt ]]; then
             {
               echo "No clang-tidy findings were produced for this run."
@@ -202,9 +254,6 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-      # Clang-tidy findings are always collected and uploaded as an artifact,
-      # but they should only block merging when a developer is actively
-      # submitting code — not during nightly reporting runs.
       - name: Fail check if clang-tidy errors found in changed files
         if: (github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'merge_group') && steps.findings.outputs.errors_blocking != '0'
         run: |

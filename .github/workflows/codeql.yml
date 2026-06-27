@@ -65,26 +65,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Free Disk Space (Ubuntu)
-        uses: eclipse-score/more-disk-space@v1
+      - name: Build and run CodeQL analysis
+        uses: ./.github/actions/bazel-job
         with:
-          level: 4
-
-      - name: Restore Bazel caches
-        uses: ./.github/actions/bazel-cache-restore
-        with:
-          mode: ${{ env.CACHE_MODE }}
-          disk-cache-name: codeql
-
-      - name: Allow linux-sandbox
-        uses: eclipse-score/cicd-actions/unblock-user-namespace-for-linux-sandbox@f89865691445b60e9229c36adb1c37b675e1ca85
-
-      - name: Create CodeQL database
-        run: |
-          bazel run //quality/static_analysis:codeql_lint -- \
-            --output-dir /tmp/codeql-results \
-            --output-prefix codeql-nightly \
-            --target //score/message_passing //score/mw/com
+          disk-cache: codeql
+          cache-mode: ${{ env.CACHE_MODE }}
+          commands: |
+            bazel run //quality/static_analysis:codeql_lint -- \
+              --output-dir /tmp/codeql-results \
+              --output-prefix codeql-nightly \
+              --target //score/message_passing //score/mw/com
 
       - name: Upload SARIF to GitHub Code Scanning
         uses: github/codeql-action/upload-sarif@v4
@@ -98,10 +88,3 @@ jobs:
           name: codeql-csv-results
           path: /tmp/codeql-results/codeql-nightly.csv
           retention-days: 30
-
-      - name: Save Bazel caches
-        if: always()
-        uses: ./.github/actions/bazel-cache-save
-        with:
-          mode: ${{ env.CACHE_MODE }}
-          disk-cache-name: codeql
