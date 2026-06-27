@@ -37,7 +37,6 @@ jobs:
     with:
       recreate_cache: true
       recreate_cache_mode: recreate
-      run_all_configurations: true
     permissions:
       contents: read
       actions: write

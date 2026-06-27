@@ -62,10 +62,9 @@ jobs:
   run-build-and-test-host:
     needs: create-draft-release
     uses: ./.github/workflows/build_and_test_host.yml
-    with:
-      run_all_configurations: true
     permissions:
       contents: read
+      actions: write
 
   run-build-and-test-qnx:
     needs: create-draft-release
@@ -73,6 +72,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
+      actions: write
     secrets:
       SCORE_QNX_LICENSE: ${{ secrets.SCORE_QNX_LICENSE }}
       SCORE_QNX_USER: ${{ secrets.SCORE_QNX_USER }}
@@ -83,18 +83,21 @@ jobs:
     uses: ./.github/workflows/thread_sanitizer.yml
     permissions:
       contents: read
+      actions: write
 
   run-address-sanitizer:
     needs: create-draft-release
     uses: ./.github/workflows/address_undefined_behavior_leak_sanitizer.yml
     permissions:
       contents: read
+      actions: write
 
   run-coverage-report:
     needs: create-draft-release
     uses: ./.github/workflows/coverage_report.yml
     permissions:
       contents: read
+      actions: write
 
   upload-coverage-report:
     needs:

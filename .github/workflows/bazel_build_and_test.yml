@@ -1,0 +1,108 @@
+# *******************************************************************************
+# Copyright (c) 2026 Contributors to the Eclipse Foundation
+#
+# See the NOTICE file(s) distributed with this work for additional
+# information regarding copyright ownership.
+#
+# This program and the accompanying materials are made available under the
+# terms of the Apache License Version 2.0 which is available at
+# https://www.apache.org/licenses/LICENSE-2.0
+#
+# SPDX-License-Identifier: Apache-2.0
+# *******************************************************************************
+
+# Reusable workflow: Bazel Build & Test
+#
+# Generic workflow that handles the common CI boilerplate:
+#   - Environment setup (ANDROID_HOME, FORCE_JAVASCRIPT_ACTIONS_TO_NODE24)
+#   - Cache mode computation
+#   - Checkout, disk space, cache restore, sandbox, commands, cache save
+#
+# Individual workflow files call this with their specific commands.
+
+name: Bazel Build & Test (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      job-name:
+        description: "Display name for the job in the GitHub UI"
+        required: true
+        type: string
+      disk-cache-name:
+        description: "Unique identifier for the disk cache"
+        required: true
+        type: string
+      commands:
+        description: |
+          Newline-separated shell commands to run after setup.
+          Each non-empty, non-comment line is executed as a separate step.
+        required: true
+        type: string
+      recreate_cache:
+        description: "Recreate caches from scratch (nightly)"
+        required: false
+        type: boolean
+        default: false
+      recreate_cache_mode:
+        description: "Nightly cache mode: recreate or recreate-update"
+        required: false
+        type: string
+        default: "recreate"
+
+env:
+  ANDROID_HOME: ""
+  ANDROID_SDK_ROOT: ""
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  CACHE_MODE: >-
+    ${{
+      inputs.recreate_cache == true && inputs.recreate_cache_mode ||
+      (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'read-only' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') && 'update-disk' ||
+      'disabled'
+    }}
+
+jobs:
+  run:
+    name: ${{ inputs.job-name }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6.0.2
+
+      - name: Free Disk Space (Ubuntu)
+        uses: eclipse-score/more-disk-space@v1
+        with:
+          level: 4
+
+      - name: Restore Bazel caches
+        uses: ./.github/actions/bazel-cache-restore
+        with:
+          mode: ${{ env.CACHE_MODE }}
+          disk-cache-name: ${{ inputs.disk-cache-name }}
+
+      - name: Allow linux-sandbox
+        uses: eclipse-score/cicd-actions/unblock-user-namespace-for-linux-sandbox@f89865691445b60e9229c36adb1c37b675e1ca85
+
+      - name: Run commands
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r cmd; do
+            [[ -z "$cmd" || "$cmd" == \#* ]] && continue
+            echo "::group::$ $cmd"
+            eval "$cmd"
+            echo "::endgroup::"
+          done <<'COMMANDS'
+          ${{ inputs.commands }}
+          COMMANDS
+
+      - name: Save Bazel caches
+        if: always()
+        uses: ./.github/actions/bazel-cache-save
+        with:
+          mode: ${{ env.CACHE_MODE }}
+          disk-cache-name: ${{ inputs.disk-cache-name }}

@@ -37,43 +37,16 @@ on:
 concurrency:
   group: thread_sanitizer-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
-env:
-  ANDROID_HOME: ""
-  ANDROID_SDK_ROOT: ""
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  CACHE_MODE: >-
-    ${{
-      inputs.recreate_cache == true && inputs.recreate_cache_mode ||
-      (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'read-only' ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/main') && 'update-disk' ||
-      'disabled'
-    }}
+
 jobs:
-    build_and_test_tsan:
-      runs-on: ubuntu-24.04
-      permissions:
-        contents: read
-        actions: write
-      steps:
-        - name: Checkout repository
-          uses: actions/checkout@v6.0.2
-        - name: Free Disk Space (Ubuntu)
-          uses: eclipse-score/more-disk-space@v1
-          with:
-            level: 4
-        - name: Restore Bazel caches
-          uses: ./.github/actions/bazel-cache-restore
-          with:
-            mode: ${{ env.CACHE_MODE }}
-            disk-cache-name: build_and_test_tsan
-        - name: Allow linux-sandbox
-          uses: eclipse-score/cicd-actions/unblock-user-namespace-for-linux-sandbox@f89865691445b60e9229c36adb1c37b675e1ca85
-        - name: Bazel test communication targets with thread sanitizer
-          run: |
-            bazel test --config=tsan //... --build_tests_only
-        - name: Save Bazel caches
-          if: always()
-          uses: ./.github/actions/bazel-cache-save
-          with:
-            mode: ${{ env.CACHE_MODE }}
-            disk-cache-name: build_and_test_tsan
+  build_and_test_tsan:
+    uses: ./.github/workflows/bazel_build_and_test.yml
+    with:
+      job-name: build_and_test_tsan
+      disk-cache-name: build_and_test_tsan
+      commands: "bazel test --config=tsan //... --build_tests_only"
+      recreate_cache: ${{ inputs.recreate_cache || false }}
+      recreate_cache_mode: ${{ inputs.recreate_cache_mode || 'recreate' }}
+    permissions:
+      contents: read
+      actions: write
