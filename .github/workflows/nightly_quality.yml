@@ -89,13 +89,10 @@ jobs:
         uses: actions/checkout@v6.0.2
 
       - name: Setup Bazel with shared caching
-        uses: castler/setup-bazel@cache-optimized
+        uses: ./.github/actions/bazel-cache-restore
         with:
-          bazelisk-cache: true
-          disk-cache: "deploy_quality_reports"
-          repository-cache: true
-          cache-optimized: true
-          cache-save: ${{ github.ref == 'refs/heads/main' }}
+          mode: disabled
+          disk-cache-name: deploy_quality_reports
 
       - name: Allow linux-sandbox
         id: setup

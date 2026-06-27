@@ -18,6 +18,17 @@ on:
     - cron: '0 2 * * *'  # Nightly at 2 AM UTC
   workflow_dispatch:  # Allow maintainers to trigger manually when needed
   workflow_call:
+    inputs:
+      recreate_cache:
+        description: "Recreate caches from scratch (nightly). Skips restore, saves new cache."
+        required: false
+        type: boolean
+        default: false
+      recreate_cache_mode:
+        description: "Nightly cache mode: recreate (first job, no restore) or recreate-update (subsequent, restores repo from previous)"
+        required: false
+        type: string
+        default: "recreate"
     outputs:
       artifact-name:
         description: Name of the uploaded CSV artifact
@@ -38,6 +49,13 @@ env:
   ANDROID_HOME: ""
   ANDROID_SDK_ROOT: ""
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  CACHE_MODE: >-
+    ${{
+      inputs.recreate_cache == true && inputs.recreate_cache_mode ||
+      (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'read-only' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') && 'update-disk' ||
+      'disabled'
+    }}
 
 jobs:
   run-codeql:
@@ -52,8 +70,11 @@ jobs:
         with:
           level: 4
 
-      - name: Setup Bazel
-        uses: castler/setup-bazel@cache-optimized
+      - name: Restore Bazel caches
+        uses: ./.github/actions/bazel-cache-restore
+        with:
+          mode: ${{ env.CACHE_MODE }}
+          disk-cache-name: codeql
 
       - name: Allow linux-sandbox
         uses: eclipse-score/cicd-actions/unblock-user-namespace-for-linux-sandbox@f89865691445b60e9229c36adb1c37b675e1ca85
@@ -77,3 +98,10 @@ jobs:
           name: codeql-csv-results
           path: /tmp/codeql-results/codeql-nightly.csv
           retention-days: 30
+
+      - name: Save Bazel caches
+        if: always()
+        uses: ./.github/actions/bazel-cache-save
+        with:
+          mode: ${{ env.CACHE_MODE }}
+          disk-cache-name: codeql
