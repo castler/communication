@@ -70,7 +70,5 @@ runs:
       if: inputs.mode != 'disabled'
       shell: bash
       run: |
-        cat >> ~/.bazelrc <<'EOF'
-        common --repository_cache=$HOME/.cache/bazel/repository_cache
-        common --disk_cache=$HOME/.cache/bazel/disk_cache
-        EOF
+        echo "common --repository_cache=${HOME}/.cache/bazel/repository_cache" >> ~/.bazelrc
+        echo "common --disk_cache=${HOME}/.cache/bazel/disk_cache" >> ~/.bazelrc
