@@ -33,43 +33,55 @@ env:
 
 jobs:
   recreate-host-build:
-    uses: ./.github/workflows/build_and_test_host.yml
-    with:
-      recreate_cache: true
-      recreate_cache_mode: recreate
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       actions: write
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: ./.github/actions/build-and-test-host
+        with:
+          recreate-cache: "true"
+          recreate-cache-mode: "recreate"
 
   recreate-tsan:
     needs: recreate-host-build
-    uses: ./.github/workflows/thread_sanitizer.yml
-    with:
-      recreate_cache: true
-      recreate_cache_mode: recreate-update
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       actions: write
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: ./.github/actions/thread-sanitizer
+        with:
+          recreate-cache: "true"
+          recreate-cache-mode: "recreate-update"
 
   recreate-asan:
     needs: recreate-tsan
-    uses: ./.github/workflows/address_sanitizer.yml
-    with:
-      recreate_cache: true
-      recreate_cache_mode: recreate-update
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       actions: write
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: ./.github/actions/address-sanitizer
+        with:
+          recreate-cache: "true"
+          recreate-cache-mode: "recreate-update"
 
   recreate-clang-tidy:
     needs: recreate-asan
-    uses: ./.github/workflows/clang_tidy.yml
-    with:
-      recreate_cache: true
-      recreate_cache_mode: recreate-update
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       actions: write
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: ./.github/actions/clang-tidy
+        with:
+          recreate-cache: "true"
+          recreate-cache-mode: "recreate-update"
 
   recreate-coverage:
     needs: recreate-clang-tidy

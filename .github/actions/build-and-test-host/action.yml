@@ -1,0 +1,36 @@
+# *******************************************************************************
+# Copyright (c) 2024 Contributors to the Eclipse Foundation
+#
+# See the NOTICE file(s) distributed with this work for additional
+# information regarding copyright ownership.
+#
+# This program and the accompanying materials are made available under the
+# terms of the Apache License Version 2.0 which is available at
+# https://www.apache.org/licenses/LICENSE-2.0
+#
+# SPDX-License-Identifier: Apache-2.0
+# *******************************************************************************
+
+name: "Build & Test (Host)"
+description: "Builds all targets, runs all tests, and verifies the examples project."
+
+inputs:
+  recreate-cache:
+    description: "Set to 'true' for nightly cache recreation."
+    default: "false"
+  recreate-cache-mode:
+    description: "Nightly mode: recreate or recreate-update."
+    default: "recreate"
+
+runs:
+  using: "composite"
+  steps:
+    - uses: ./.github/actions/bazel-job
+      with:
+        disk-cache: build_and_test_host
+        recreate-cache: ${{ inputs.recreate-cache }}
+        recreate-cache-mode: ${{ inputs.recreate-cache-mode }}
+        commands: |
+          bazel build //...
+          bazel test //... --build_tests_only
+          cd examples && bazel build //... && bazel mod deps --lockfile_mode=update

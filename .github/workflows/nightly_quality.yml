@@ -58,10 +58,19 @@ jobs:
   # Quality job 2: Clang-Tidy
   # --------------------------------------------------------------------
   run-clang-tidy:
-    uses: ./.github/workflows/clang_tidy.yml
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       actions: write
+    outputs:
+      artifact-name: ${{ steps.run.outputs.artifact-name }}
+      errors: ${{ steps.run.outputs.errors }}
+      warnings: ${{ steps.run.outputs.warnings }}
+      conclusion: ${{ steps.run.outputs.conclusion }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - id: run
+        uses: ./.github/actions/clang-tidy
 
   # --------------------------------------------------------------------
   # Quality job 3: CodeQL

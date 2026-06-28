@@ -46,16 +46,7 @@ concurrency:
   cancel-in-progress: false  # Never cancel an in-progress CodeQL run; it takes hours
 
 env:
-  ANDROID_HOME: ""
-  ANDROID_SDK_ROOT: ""
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  CACHE_MODE: >-
-    ${{
-      inputs.recreate_cache == true && inputs.recreate_cache_mode ||
-      (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'read-only' ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/main') && 'update-disk' ||
-      'disabled'
-    }}
 
 jobs:
   run-codeql:
@@ -69,7 +60,8 @@ jobs:
         uses: ./.github/actions/bazel-job
         with:
           disk-cache: codeql
-          cache-mode: ${{ env.CACHE_MODE }}
+          recreate-cache: ${{ inputs.recreate_cache || 'false' }}
+          recreate-cache-mode: ${{ inputs.recreate_cache_mode || 'recreate' }}
           commands: |
             bazel run //quality/static_analysis:codeql_lint -- \
               --output-dir /tmp/codeql-results \

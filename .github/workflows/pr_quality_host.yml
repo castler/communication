@@ -13,9 +13,9 @@
 
 # Orchestrator: PR Quality Gates (Host)
 #
-# Runs all host-platform quality checks in parallel by calling thin
-# callable workflows. Each job's logic is defined in exactly one place
-# (the callable workflow); this file only arranges execution.
+# Runs all host-platform quality checks in parallel. Each job's logic is
+# defined as a composite action (single source of truth); this workflow
+# only arranges execution.
 #
 # Also callable via workflow_call (used by automated_release).
 
@@ -48,37 +48,56 @@ concurrency:
 
 jobs:
   build-and-test:
-    uses: ./.github/workflows/build_and_test_host.yml
-    with:
-      recreate_cache: ${{ inputs.recreate_cache || false }}
-      recreate_cache_mode: ${{ inputs.recreate_cache_mode || 'recreate' }}
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       actions: write
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: ./.github/actions/build-and-test-host
+        with:
+          recreate-cache: ${{ inputs.recreate_cache || 'false' }}
+          recreate-cache-mode: ${{ inputs.recreate_cache_mode || 'recreate' }}
 
   tsan:
-    uses: ./.github/workflows/thread_sanitizer.yml
-    with:
-      recreate_cache: ${{ inputs.recreate_cache || false }}
-      recreate_cache_mode: ${{ inputs.recreate_cache_mode || 'recreate' }}
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       actions: write
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: ./.github/actions/thread-sanitizer
+        with:
+          recreate-cache: ${{ inputs.recreate_cache || 'false' }}
+          recreate-cache-mode: ${{ inputs.recreate_cache_mode || 'recreate' }}
 
   asan:
-    uses: ./.github/workflows/address_sanitizer.yml
-    with:
-      recreate_cache: ${{ inputs.recreate_cache || false }}
-      recreate_cache_mode: ${{ inputs.recreate_cache_mode || 'recreate' }}
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       actions: write
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: ./.github/actions/address-sanitizer
+        with:
+          recreate-cache: ${{ inputs.recreate_cache || 'false' }}
+          recreate-cache-mode: ${{ inputs.recreate_cache_mode || 'recreate' }}
 
   clang-tidy:
-    uses: ./.github/workflows/clang_tidy.yml
-    with:
-      recreate_cache: ${{ inputs.recreate_cache || false }}
-      recreate_cache_mode: ${{ inputs.recreate_cache_mode || 'recreate' }}
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       actions: write
+    outputs:
+      artifact-name: ${{ steps.run.outputs.artifact-name }}
+      errors: ${{ steps.run.outputs.errors }}
+      warnings: ${{ steps.run.outputs.warnings }}
+      conclusion: ${{ steps.run.outputs.conclusion }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - id: run
+        uses: ./.github/actions/clang-tidy
+        with:
+          recreate-cache: ${{ inputs.recreate_cache || 'false' }}
+          recreate-cache-mode: ${{ inputs.recreate_cache_mode || 'recreate' }}
+
