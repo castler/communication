@@ -53,7 +53,7 @@ runs:
 
         if [[ -n "${{ inputs.cache-mode }}" ]]; then
           MODE="${{ inputs.cache-mode }}"
-        elif [[ "${{ github.event_name }}" == "pull_request" || "${{ github.event_name }}" == "merge_group" ]]; then
+        elif [[ "${{ github.event_name }}" == "pull_request" || "${{ github.event_name }}" == "pull_request_target" || "${{ github.event_name }}" == "merge_group" ]]; then
           MODE="read-only"
         elif [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/main" ]]; then
           MODE="update-disk"

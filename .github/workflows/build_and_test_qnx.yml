@@ -43,13 +43,6 @@ concurrency:
 
 env:
   LICENSE_DIR: "/opt/score_qnx/license"
-  CACHE_MODE: >-
-    ${{
-      inputs.cache_mode != '' && inputs.cache_mode ||
-      (github.event_name == 'pull_request_target' || github.event_name == 'merge_group') && 'read-only' ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/main') && 'update-disk' ||
-      'disabled'
-    }}
 jobs:
     precheck:
       runs-on: ubuntu-24.04
@@ -155,7 +148,7 @@ jobs:
           uses: ./.github/actions/00_infrastructure/bazel_job
           with:
             disk-cache: build_and_test_qnx
-            cache-mode: ${{ env.CACHE_MODE }}
+            cache-mode: ${{ inputs.cache_mode }}
             commands: |
               bazel build --config=qnx -- //score/...
               bazel test --config=qnx -- //score/...
