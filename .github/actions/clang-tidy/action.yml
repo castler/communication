@@ -38,46 +38,15 @@ outputs:
 runs:
   using: "composite"
   steps:
-    - name: Set environment and compute cache mode
-      shell: bash
-      run: |
-        echo "ANDROID_HOME=" >> "$GITHUB_ENV"
-        echo "ANDROID_SDK_ROOT=" >> "$GITHUB_ENV"
-        echo "FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true" >> "$GITHUB_ENV"
-
-        if [[ -n "${{ inputs.cache-mode }}" ]]; then
-          MODE="${{ inputs.cache-mode }}"
-        elif [[ "${{ github.event_name }}" == "pull_request" || "${{ github.event_name }}" == "merge_group" ]]; then
-          MODE="read-only"
-        elif [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/main" ]]; then
-          MODE="update-disk"
-        else
-          MODE="disabled"
-        fi
-        echo "CACHE_MODE=${MODE}" >> "$GITHUB_ENV"
-        echo "Cache mode: ${MODE}"
-
-    - name: Free Disk Space (Ubuntu)
-      uses: eclipse-score/more-disk-space@v1
-      with:
-        level: 4
-
-    - name: Restore Bazel caches
-      uses: ./.github/actions/bazel-cache-restore
-      with:
-        mode: ${{ env.CACHE_MODE }}
-        disk-cache-name: clang_tidy
-
-    - name: Allow linux-sandbox
-      uses: eclipse-score/cicd-actions/unblock-user-namespace-for-linux-sandbox@f89865691445b60e9229c36adb1c37b675e1ca85
-
     - name: Run clang-tidy via Bazel
       id: run-clang-tidy
-      continue-on-error: true
-      shell: bash
-      run: |
-        bazel test --config=clang-tidy //... \
-          2>&1 | tee clang_tidy_raw.log
+      uses: ./.github/actions/bazel-job
+      with:
+        disk-cache: clang_tidy
+        cache-mode: ${{ inputs.cache-mode }}
+        commands: |
+          bazel test --config=clang-tidy //... \
+            2>&1 | tee clang_tidy_raw.log || true
 
     - name: Collect findings
       id: findings
@@ -170,15 +139,8 @@ runs:
       if: always()
       shell: bash
       run: |
-        if [[ "${{ steps.run-clang-tidy.outcome }}" == "success" ]]; then
+        if [[ "${{ steps.findings.outputs.errors_blocking }}" == "0" || -z "${{ steps.findings.outputs.errors_blocking }}" ]]; then
           echo "conclusion=success" >> $GITHUB_OUTPUT
         else
           echo "conclusion=failure" >> $GITHUB_OUTPUT
         fi
-
-    - name: Save Bazel caches
-      if: always()
-      uses: ./.github/actions/bazel-cache-save
-      with:
-        mode: ${{ env.CACHE_MODE }}
-        disk-cache-name: clang_tidy
