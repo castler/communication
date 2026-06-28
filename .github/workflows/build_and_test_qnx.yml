@@ -43,9 +43,6 @@ concurrency:
 
 env:
   LICENSE_DIR: "/opt/score_qnx/license"
-  ANDROID_HOME: ""
-  ANDROID_SDK_ROOT: ""
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   CACHE_MODE: >-
     ${{
       inputs.cache_mode != '' && inputs.cache_mode ||
@@ -137,32 +134,7 @@ jobs:
           with:
             ref: ${{ github.head_ref || github.event.pull_request.head.ref || github.ref }}
             repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
-        - name: Free Disk Space (Ubuntu)
-          uses: eclipse-score/more-disk-space@v1
-          with:
-            level: 4
-        - name: Restore Bazel caches
-          uses: ./.github/actions/00_infrastructure/bazel_cache_restore
-          with:
-            mode: ${{ env.CACHE_MODE }}
-            disk-cache-name: build_and_test_qnx
-        - name: Allow linux-sandbox
-          uses: eclipse-score/cicd-actions/unblock-user-namespace-for-linux-sandbox@f89865691445b60e9229c36adb1c37b675e1ca85
-        - name: Setup QNX License
-          env:
-            SCORE_QNX_LICENSE: ${{ secrets.SCORE_QNX_LICENSE }}
-          run: |
-            set -euo pipefail
-
-            sudo mkdir -p "${{ env.LICENSE_DIR }}"
-            echo "${SCORE_QNX_LICENSE}" | base64 --decode | sudo tee "${{ env.LICENSE_DIR }}/licenses" >/dev/null
-        - name: Build targets
-          env:
-            SCORE_QNX_USER: ${{ secrets.SCORE_QNX_USER }}
-            SCORE_QNX_PASSWORD: ${{ secrets.SCORE_QNX_PASSWORD }}
-          run: |
-            bazel build --config=qnx -- //score/...
-        - name: Install qemu
+        - name: Install QEMU
           run: |
             sudo apt-get update
             sudo apt-get install -y qemu-system
@@ -172,20 +144,24 @@ jobs:
             sudo udevadm control --reload-rules
             sudo udevadm trigger --name-match=kvm
         - name: Allow unprivileged user namespaces
+          run: sudo sysctl kernel.apparmor_restrict_unprivileged_userns=0
+        - name: Setup QNX License
+          env:
+            SCORE_QNX_LICENSE: ${{ secrets.SCORE_QNX_LICENSE }}
           run: |
-            sudo sysctl kernel.apparmor_restrict_unprivileged_userns=0
-        - name: Test targets
+            sudo mkdir -p "${{ env.LICENSE_DIR }}"
+            echo "${SCORE_QNX_LICENSE}" | base64 --decode | sudo tee "${{ env.LICENSE_DIR }}/licenses" >/dev/null
+        - name: Build and test QNX
+          uses: ./.github/actions/00_infrastructure/bazel_job
+          with:
+            disk-cache: build_and_test_qnx
+            cache-mode: ${{ env.CACHE_MODE }}
+            commands: |
+              bazel build --config=qnx -- //score/...
+              bazel test --config=qnx -- //score/...
           env:
             SCORE_QNX_USER: ${{ secrets.SCORE_QNX_USER }}
             SCORE_QNX_PASSWORD: ${{ secrets.SCORE_QNX_PASSWORD }}
-          run: |
-            bazel test --config=qnx -- //score/...
         - name: Cleanup QNX License
-          if: ${{ !cancelled() }}
-          run: sudo rm -rf ${{ env.LICENSE_DIR }}
-        - name: Save Bazel caches
           if: always()
-          uses: ./.github/actions/00_infrastructure/bazel_cache_save
-          with:
-            mode: ${{ env.CACHE_MODE }}
-            disk-cache-name: build_and_test_qnx
+          run: sudo rm -rf "${{ env.LICENSE_DIR }}"
