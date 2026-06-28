@@ -49,10 +49,17 @@ jobs:
   # Quality job 1: Coverage
   # --------------------------------------------------------------------
   run-coverage:
-    uses: ./.github/workflows/coverage_report.yml
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       actions: write
+    outputs:
+      artifact-name: ${{ steps.run.outputs.artifact-name }}
+      conclusion: ${{ steps.run.outputs.conclusion }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - id: run
+        uses: ./.github/actions/coverage-report
 
   # --------------------------------------------------------------------
   # Quality job 2: Clang-Tidy
