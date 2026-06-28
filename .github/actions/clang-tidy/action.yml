@@ -40,7 +40,7 @@ runs:
   steps:
     - name: Run clang-tidy via Bazel
       id: run-clang-tidy
-      uses: ./.github/actions/bazel-job
+      uses: ./.github/actions/bazel_job
       with:
         disk-cache: clang_tidy
         cache-mode: ${{ inputs.cache-mode }}

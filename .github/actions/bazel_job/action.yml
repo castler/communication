@@ -1,0 +1,101 @@
+# *******************************************************************************
+# Copyright (c) 2026 Contributors to the Eclipse Foundation
+#
+# See the NOTICE file(s) distributed with this work for additional
+# information regarding copyright ownership.
+#
+# This program and the accompanying materials are made available under the
+# terms of the Apache License Version 2.0 which is available at
+# https://www.apache.org/licenses/LICENSE-2.0
+#
+# SPDX-License-Identifier: Apache-2.0
+# *******************************************************************************
+
+name: "Bazel Job Setup & Run"
+description: >
+  Sets up the runner (env, disk space, Bazel cache, sandbox) and runs a list of
+  shell commands. The calling workflow must checkout the repository before
+  using this action (required for local composite actions).
+
+  Computes the cache mode automatically from the GitHub event context and
+  optional recreate inputs. Sets ANDROID_HOME, ANDROID_SDK_ROOT, and
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24 environment variables.
+
+inputs:
+  disk-cache:
+    description: "Name of the Bazel disk cache to use."
+    required: true
+  cache-mode:
+    description: >
+      Cache mode override. If empty (default), auto-computed from event context:
+      PR/merge_group → read-only, push to main → update-disk, otherwise → disabled.
+      Explicit values: recreate, recreate-update, read-only, update-disk, disabled.
+    required: false
+    default: ""
+  commands:
+    description: >
+      Newline-separated list of shell commands to execute after setup.
+      Each non-empty line is run as a separate command.
+      Leave empty to only perform setup (useful when subsequent workflow steps
+      need step IDs or conditional logic).
+    required: false
+    default: ""
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set environment and compute cache mode
+      shell: bash
+      run: |
+        echo "ANDROID_HOME=" >> "$GITHUB_ENV"
+        echo "ANDROID_SDK_ROOT=" >> "$GITHUB_ENV"
+        echo "FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true" >> "$GITHUB_ENV"
+
+        if [[ -n "${{ inputs.cache-mode }}" ]]; then
+          MODE="${{ inputs.cache-mode }}"
+        elif [[ "${{ github.event_name }}" == "pull_request" || "${{ github.event_name }}" == "merge_group" ]]; then
+          MODE="read-only"
+        elif [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/main" ]]; then
+          MODE="update-disk"
+        else
+          MODE="disabled"
+        fi
+        echo "CACHE_MODE=${MODE}" >> "$GITHUB_ENV"
+        echo "Cache mode: ${MODE}"
+
+    - name: Free Disk Space (Ubuntu)
+      uses: eclipse-score/more-disk-space@v1
+      with:
+        level: 4
+
+    - name: Restore Bazel caches
+      uses: ./.github/actions/bazel_cache_restore
+      with:
+        mode: ${{ env.CACHE_MODE }}
+        disk-cache-name: ${{ inputs.disk-cache }}
+
+    - name: Allow linux-sandbox
+      uses: eclipse-score/cicd-actions/unblock-user-namespace-for-linux-sandbox@f89865691445b60e9229c36adb1c37b675e1ca85
+
+    - name: Run commands
+      if: inputs.commands != ''
+      shell: bash
+      run: |
+        set -euo pipefail
+        while IFS= read -r cmd; do
+          # skip blank lines and comments
+          [[ -z "$cmd" || "$cmd" == \#* ]] && continue
+          echo "::group::$ $cmd"
+          eval "$cmd"
+          echo "::endgroup::"
+        done <<'COMMANDS'
+        ${{ inputs.commands }}
+        COMMANDS
+
+    - name: Save Bazel caches
+      if: always()
+      uses: ./.github/actions/bazel_cache_save
+      with:
+        mode: ${{ env.CACHE_MODE }}
+        disk-cache-name: ${{ inputs.disk-cache }}
+

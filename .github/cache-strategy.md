@@ -57,11 +57,11 @@ Workflows are organized into two layers:
 
 | Action | Description |
 |--------|-------------|
-| `build-and-test-host` | Full build + test + examples (wraps `bazel-job`) |
-| `thread-sanitizer` | Tests with `--config=tsan` (wraps `bazel-job`) |
-| `address-sanitizer` | Tests with `--config=asan_ubsan_lsan` (wraps `bazel-job`) |
+| `build-and-test-host` | Full build + test + examples (wraps `bazel_job`) |
+| `thread-sanitizer` | Tests with `--config=tsan` (wraps `bazel_job`) |
+| `address-sanitizer` | Tests with `--config=asan_ubsan_lsan` (wraps `bazel_job`) |
 | `clang-tidy` | Static analysis with findings collection and artifact upload |
-| `codeql` | CodeQL / MISRA analysis with SARIF upload (wraps `bazel-job`) |
+| `codeql` | CodeQL / MISRA analysis with SARIF upload (wraps `bazel_job`) |
 | `coverage-report` | Coverage report with HTML archive and artifact upload |
 
 **Standalone callable workflows** (too complex for composite actions):
@@ -86,17 +86,17 @@ Nesting depth: `automated_release → pr_quality_host → composite action` = 2 
 ```
 .github/
 ├── actions/
-│   ├── bazel-cache-restore/   # Composite action: conditional cache restore
+│   ├── bazel_cache_restore/   # Composite action: conditional cache restore
 │   │   └── action.yml
-│   ├── bazel-cache-save/      # Composite action: conditional cache save + cleanup
+│   ├── bazel_cache_save/      # Composite action: conditional cache save + cleanup
 │   │   └── action.yml
-│   ├── bazel-job/             # Composite action: full job setup
+│   ├── bazel_job/             # Composite action: full job setup
 │   │   └── action.yml         #   (env, cache-mode, disk space, cache, sandbox, commands, save)
-│   ├── build-and-test-host/   # Layer 1: wraps bazel-job with host build commands
+│   ├── build-and-test-host/   # Layer 1: wraps bazel_job with host build commands
 │   │   └── action.yml
-│   ├── thread-sanitizer/      # Layer 1: wraps bazel-job with --config=tsan
+│   ├── thread-sanitizer/      # Layer 1: wraps bazel_job with --config=tsan
 │   │   └── action.yml
-│   ├── address-sanitizer/     # Layer 1: wraps bazel-job with --config=asan_ubsan_lsan
+│   ├── address-sanitizer/     # Layer 1: wraps bazel_job with --config=asan_ubsan_lsan
 │   │   └── action.yml
 │   ├── codeql/                 # Layer 1: CodeQL/MISRA with SARIF + CSV upload
 │   │   └── action.yml
@@ -125,7 +125,7 @@ or `cache_mode` input (callable workflows). When empty (the default), the
 mode is auto-computed from the GitHub event context:
 
 ```yaml
-# In bazel-job (composite action) — computed automatically:
+# In bazel_job (composite action) — computed automatically:
 CACHE_MODE: >-
   ${{
     inputs.cache-mode != '' && inputs.cache-mode ||
@@ -174,14 +174,14 @@ The `restore-keys` prefix match restores the most recent available entry.
 
 ### 4.5 Composite Actions
 
-#### `bazel-cache-restore`
+#### `bazel_cache_restore`
 
 1. Creates cache directories (`~/.cache/bazel/{repository_cache,disk_cache}`).
 2. Conditionally calls `actions/cache/restore@v4` for repository and disk
    caches (only in `read-only` and `update-disk` modes).
 3. Appends `--repository_cache` and `--disk_cache` flags to `~/.bazelrc`.
 
-#### `bazel-cache-save`
+#### `bazel_cache_save`
 
 1. Conditionally calls `actions/cache/save@v4` for disk cache
    (`update-disk`, `recreate`) and repository cache (`recreate` only).
@@ -190,7 +190,7 @@ The `restore-keys` prefix match restores the most recent available entry.
 Both actions are called explicitly (not via `post` hooks) because composite
 actions do not support automatic post-steps.
 
-#### `bazel-job`
+#### `bazel_job`
 
 Wraps the full job lifecycle into a single composite action call:
 1. Set environment variables (ANDROID_HOME, etc.)

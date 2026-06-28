@@ -22,7 +22,7 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - uses: ./.github/actions/bazel-job
+    - uses: ./.github/actions/bazel_job
       with:
         disk-cache: build_and_test_tsan
         cache-mode: ${{ inputs.cache-mode }}

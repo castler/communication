@@ -1,0 +1,108 @@
+# *******************************************************************************
+# Copyright (c) 2026 Contributors to the Eclipse Foundation
+#
+# See the NOTICE file(s) distributed with this work for additional
+# information regarding copyright ownership.
+#
+# This program and the accompanying materials are made available under the
+# terms of the Apache License Version 2.0 which is available at
+# https://www.apache.org/licenses/LICENSE-2.0
+#
+# SPDX-License-Identifier: Apache-2.0
+# *******************************************************************************
+
+name: "Save Bazel Caches"
+description: "Conditionally save Bazel disk and repository caches and clean up old cache entries."
+
+inputs:
+  mode:
+    description: |
+      Cache mode:
+        - read-only: Do not save (PR / merge queue)
+        - update-disk: Save disk cache, delete old disk cache entries (push to main)
+        - recreate: Save disk + repo cache (content-hash key), delete old entries (first nightly job, no prior restore)
+        - recreate-update: Same as recreate (subsequent nightly jobs, restore repo from previous job)
+        - disabled: Do nothing
+    required: true
+  disk-cache-name:
+    description: "Unique name for the disk cache (must match the restore action)"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    # --- Save disk cache (all write modes) ---
+    - name: Save disk cache
+      if: inputs.mode == 'update-disk' || inputs.mode == 'recreate' || inputs.mode == 'recreate-update'
+      uses: actions/cache/save@v4
+      with:
+        path: ~/.cache/bazel/disk_cache
+        key: disk-cache-${{ inputs.disk-cache-name }}-${{ github.run_id }}
+
+    # --- Save repository cache under content-hash key (nightly jobs) ---
+    - name: Compute repository cache content hash
+      if: inputs.mode == 'recreate' || inputs.mode == 'recreate-update'
+      id: repo-hash
+      shell: bash
+      run: |
+        # The content_addressable/sha256/ directory contains files named by their
+        # SHA-256 hash. Hashing the sorted list of these names gives us a fast,
+        # accurate fingerprint of the entire repository cache content.
+        CACHE_DIR="$HOME/.cache/bazel/repository_cache"
+        CA_DIR="${CACHE_DIR}/content_addressable/sha256"
+
+        if [[ -d "${CA_DIR}" ]]; then
+          HASH=$(ls "${CA_DIR}" | sort | sha256sum | cut -d' ' -f1)
+        else
+          # Fallback: hash the contents directory listing
+          HASH=$(find "${CACHE_DIR}" -type f -name '*.recorded_inputs' | sort | sha256sum | cut -d' ' -f1)
+        fi
+
+        echo "hash=${HASH}" >> "$GITHUB_OUTPUT"
+        echo "Repository cache content hash: ${HASH}"
+
+    - name: Save repository cache
+      if: inputs.mode == 'recreate' || inputs.mode == 'recreate-update'
+      uses: actions/cache/save@v4
+      with:
+        path: ~/.cache/bazel/repository_cache
+        key: repo-cache-${{ steps.repo-hash.outputs.hash }}
+
+    # --- Delete old disk cache entries ---
+    - name: Delete old disk cache entries
+      if: inputs.mode == 'update-disk' || inputs.mode == 'recreate' || inputs.mode == 'recreate-update'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        CURRENT_KEY="disk-cache-${{ inputs.disk-cache-name }}-${{ github.run_id }}"
+        PREFIX="disk-cache-${{ inputs.disk-cache-name }}-"
+
+        echo "Cleaning old disk caches with prefix '${PREFIX}' (keeping '${CURRENT_KEY}')"
+
+        gh api "repos/${{ github.repository }}/actions/caches?key=${PREFIX}" \
+          --jq '.actions_caches[] | select(.key != "'"${CURRENT_KEY}"'") | .id' \
+          | while read -r cache_id; do
+              echo "Deleting cache id=${cache_id}"
+              gh api -X DELETE "repos/${{ github.repository }}/actions/caches/${cache_id}" || true
+            done
+
+    # --- Delete old repository cache entries (nightly jobs) ---
+    - name: Delete old repository cache entries
+      if: inputs.mode == 'recreate' || inputs.mode == 'recreate-update'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        CURRENT_KEY="repo-cache-${{ steps.repo-hash.outputs.hash }}"
+
+        echo "Cleaning all repo caches except '${CURRENT_KEY}'"
+
+        gh api "repos/${{ github.repository }}/actions/caches?key=repo-cache-" \
+          --jq '.actions_caches[] | select(.key != "'"${CURRENT_KEY}"'") | .id' \
+          | while read -r cache_id; do
+              echo "Deleting old repo cache id=${cache_id}"
+              gh api -X DELETE "repos/${{ github.repository }}/actions/caches/${cache_id}" || true
+            done

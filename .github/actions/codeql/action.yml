@@ -34,7 +34,7 @@ runs:
   steps:
     - name: Build and run CodeQL analysis
       id: run-codeql
-      uses: ./.github/actions/bazel-job
+      uses: ./.github/actions/bazel_job
       with:
         disk-cache: codeql
         cache-mode: ${{ inputs.cache-mode }}

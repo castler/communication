@@ -1,0 +1,76 @@
+# *******************************************************************************
+# Copyright (c) 2026 Contributors to the Eclipse Foundation
+#
+# See the NOTICE file(s) distributed with this work for additional
+# information regarding copyright ownership.
+#
+# This program and the accompanying materials are made available under the
+# terms of the Apache License Version 2.0 which is available at
+# https://www.apache.org/licenses/LICENSE-2.0
+#
+# SPDX-License-Identifier: Apache-2.0
+# *******************************************************************************
+
+name: "Restore Bazel Caches"
+description: "Conditionally restore Bazel disk and repository caches and configure Bazel to use them."
+
+inputs:
+  mode:
+    description: |
+      Cache mode:
+        - read-only: Restore caches, do not save (PR / merge queue)
+        - update-disk: Restore caches, save disk cache after job (push to main)
+        - recreate: Do not restore anything, start fresh (first nightly job)
+        - recreate-update: Restore repo cache (from previous nightly job), do not restore disk (subsequent nightly jobs)
+        - disabled: Do not use caches at all
+    required: true
+  disk-cache-name:
+    description: "Unique name for the disk cache (e.g., build_and_test_host)"
+    required: true
+
+outputs:
+  disk-cache-restored-key:
+    description: "The cache key that was restored for the disk cache (empty if not restored)"
+    value: ${{ steps.disk-restore.outputs.cache-matched-key }}
+  repo-cache-restored-key:
+    description: "The cache key that was restored for the repository cache (empty if not restored)"
+    value: ${{ steps.repo-restore.outputs.cache-matched-key }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Create cache directories
+      if: inputs.mode != 'disabled'
+      shell: bash
+      run: |
+        mkdir -p ~/.cache/bazel/repository_cache
+        mkdir -p ~/.cache/bazel/disk_cache
+
+    - name: Restore repository cache
+      if: inputs.mode == 'read-only' || inputs.mode == 'update-disk' || inputs.mode == 'recreate-update'
+      id: repo-restore
+      uses: actions/cache/restore@v4
+      with:
+        path: ~/.cache/bazel/repository_cache
+        key: repo-cache-impossible-exact-match
+        restore-keys: |
+          repo-cache-
+
+    - name: Restore disk cache
+      if: inputs.mode == 'read-only' || inputs.mode == 'update-disk'
+      id: disk-restore
+      uses: actions/cache/restore@v4
+      with:
+        path: ~/.cache/bazel/disk_cache
+        key: disk-cache-${{ inputs.disk-cache-name }}-${{ github.run_id }}
+        restore-keys: |
+          disk-cache-${{ inputs.disk-cache-name }}-
+
+    - name: Configure Bazel cache paths
+      if: inputs.mode != 'disabled'
+      shell: bash
+      run: |
+        cat >> ~/.bazelrc <<'EOF'
+        common --repository_cache=$HOME/.cache/bazel/repository_cache
+        common --disk_cache=$HOME/.cache/bazel/disk_cache
+        EOF
