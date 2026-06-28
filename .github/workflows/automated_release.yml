@@ -61,7 +61,7 @@ jobs:
 
   run-host-quality:
     needs: create-draft-release
-    uses: ./.github/workflows/pr_quality_host.yml
+    uses: ./.github/workflows/build_and_test_host.yml
     permissions:
       contents: read
       actions: write

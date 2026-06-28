@@ -39,7 +39,7 @@ jobs:
       actions: write
     steps:
       - uses: actions/checkout@v6.0.2
-      - uses: ./.github/actions/build-and-test-host
+      - uses: ./.github/actions/build-and-test-x86_64-gcc15
         with:
           cache-mode: "recreate"
 
