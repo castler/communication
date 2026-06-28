@@ -33,7 +33,7 @@ requirements, design decisions, and the implementation architecture.
 | R1 | Jobs triggered by **pull request** or **merge queue** SHALL use both caches in **read-only** mode (restore only, no save). |
 | R2 | Jobs triggered by **push to main** SHALL **update** the disk cache (restore existing → execute → save new → delete old entry). |
 | R3 | Jobs triggered by **push to main** SHALL use the repository cache in **read-only** mode. |
-| R4 | Jobs triggered by triggers **other than** pull request, merge queue, or push to main SHALL **not** use any caches (unless explicitly opted in via `recreate_cache`). |
+| R4 | Jobs triggered by triggers **other than** pull request, merge queue, or push to main SHALL **not** use any caches (unless explicitly opted in via the `cache-mode` / `cache_mode` input). |
 | R5 | The **repository cache** SHALL be **recreated nightly** — no old cache is restored, the job runs from scratch, and a fresh cache is saved. |
 | R6 | The **disk cache** SHALL be **recreated nightly** — same semantics as R5, applied per job type. |
 | R7 | After recreation, **old cache entries** SHALL be **deleted** from the GitHub Actions cache store. |
@@ -53,28 +53,33 @@ requirements, design decisions, and the implementation architecture.
 
 Workflows are organized into two layers:
 
-**Layer 1 — Callable workflows** (job logic defined once):
+**Layer 1 — Composite actions** (job logic defined once):
+
+| Action | Description |
+|--------|-------------|
+| `build-and-test-host` | Full build + test + examples (wraps `bazel-job`) |
+| `thread-sanitizer` | Tests with `--config=tsan` (wraps `bazel-job`) |
+| `address-sanitizer` | Tests with `--config=asan_ubsan_lsan` (wraps `bazel-job`) |
+| `clang-tidy` | Static analysis with findings collection and artifact upload |
+
+**Standalone callable workflows** (too complex for composite actions):
 
 | Workflow | Description |
 |----------|-------------|
-| `build_and_test_host.yml` | Full build + test + examples (uses `bazel-job`) |
-| `thread_sanitizer.yml` | Tests with `--config=tsan` (uses `bazel-job`) |
-| `address_sanitizer.yml` | Tests with `--config=asan_ubsan_lsan` (uses `bazel-job`) |
-| `clang_tidy.yml` | Static analysis with findings collection and artifact upload |
-| `coverage_report.yml` | Coverage report generation |
+| `coverage_report.yml` | Coverage report generation (post-build `uses:` steps) |
 | `codeql.yml` | CodeQL / MISRA analysis (uses `bazel-job`) |
-| `build_and_test_qnx.yml` | QNX cross-compilation with approval gate |
+| `build_and_test_qnx.yml` | QNX cross-compilation with approval gate and secrets |
 
 **Layer 2 — Orchestrators** (arrange execution pattern):
 
 | Orchestrator | Calls | Execution |
 |-------------|-------|-----------|
-| `pr_quality_host.yml` | host, tsan, asan, clang-tidy | **Parallel** (PR/push/merge_group) |
-| `nightly_cache_recreation.yml` | All 7 callable workflows | **Sequential** (repo cache accumulation) |
+| `pr_quality_host.yml` | host, tsan, asan, clang-tidy (composite actions) | **Parallel** (PR/push/merge_group) |
+| `nightly_cache_recreation.yml` | All 7 job types (composite actions + callable workflows) | **Sequential** (repo cache accumulation) |
 | `nightly_quality.yml` | coverage, clang-tidy, codeql | **Parallel** (KPI reporting) |
 | `automated_release.yml` | `pr_quality_host`, QNX, coverage | **Parallel** (via `pr_quality_host`) |
 
-Nesting depth: `automated_release → pr_quality_host → thin workflow` = 3 levels (max 10).
+Nesting depth: `automated_release → pr_quality_host → composite action` = 2 levels (max 10).
 
 ### 4.2 Components
 
@@ -85,18 +90,22 @@ Nesting depth: `automated_release → pr_quality_host → thin workflow` = 3 lev
 │   │   └── action.yml
 │   ├── bazel-cache-save/      # Composite action: conditional cache save + cleanup
 │   │   └── action.yml
-│   └── bazel-job/             # Composite action: full job setup
-│       └── action.yml         #   (disk space, cache, sandbox, commands, save)
+│   ├── bazel-job/             # Composite action: full job setup
+│   │   └── action.yml         #   (env, cache-mode, disk space, cache, sandbox, commands, save)
+│   ├── build-and-test-host/   # Layer 1: wraps bazel-job with host build commands
+│   │   └── action.yml
+│   ├── thread-sanitizer/      # Layer 1: wraps bazel-job with --config=tsan
+│   │   └── action.yml
+│   ├── address-sanitizer/     # Layer 1: wraps bazel-job with --config=asan_ubsan_lsan
+│   │   └── action.yml
+│   └── clang-tidy/            # Layer 1: static analysis with findings collection
+│       └── action.yml
 ├── workflows/
-│   │  # Layer 1: Callable workflows (workflow_call only)
-│   ├── build_and_test_host.yml
-│   ├── thread_sanitizer.yml
-│   ├── address_sanitizer.yml
-│   ├── clang_tidy.yml
+│   │  # Standalone callable workflows (workflow_call)
 │   ├── coverage_report.yml
 │   ├── codeql.yml
 │   ├── build_and_test_qnx.yml
-│   │  # Layer 2: Orchestrators
+│   │  # Orchestrators
 │   ├── pr_quality_host.yml          # PR quality gates (parallel)
 │   ├── nightly_cache_recreation.yml # Nightly sequential cache rebuild
 │   ├── nightly_quality.yml          # Nightly KPI reporting
@@ -109,18 +118,23 @@ Nesting depth: `automated_release → pr_quality_host → thin workflow` = 3 lev
 
 ### 4.3 Cache Modes
 
-Each workflow computes a `CACHE_MODE` environment variable based on the
-trigger context:
+Cache mode is controlled by a single `cache-mode` input (composite actions)
+or `cache_mode` input (callable workflows). When empty (the default), the
+mode is auto-computed from the GitHub event context:
 
 ```yaml
+# In bazel-job (composite action) — computed automatically:
 CACHE_MODE: >-
   ${{
-    inputs.recreate_cache == true && inputs.recreate_cache_mode ||
+    inputs.cache-mode != '' && inputs.cache-mode ||
     (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'read-only' ||
     (github.event_name == 'push' && github.ref == 'refs/heads/main') && 'update-disk' ||
     'disabled'
   }}
 ```
+
+Orchestrators pass an explicit value (e.g., `cache-mode: "recreate"`) to
+override the auto-computed mode during nightly recreation.
 
 | Mode | Restore Disk | Restore Repo | Save Disk | Save Repo | Delete Old |
 |------|:---:|:---:|:---:|:---:|:---:|
@@ -177,15 +191,18 @@ actions do not support automatic post-steps.
 #### `bazel-job`
 
 Wraps the full job lifecycle into a single composite action call:
-1. Free disk space
-2. Restore caches
-3. Allow linux-sandbox
-4. Run commands (newline-separated)
-5. Save caches (`if: always()`)
+1. Set environment variables (ANDROID_HOME, etc.)
+2. Compute CACHE_MODE from `cache-mode` input or event context
+3. Free disk space
+4. Restore caches
+5. Allow linux-sandbox
+6. Run commands (newline-separated)
+7. Save caches (`if: always()`)
 
-Used by simple callable workflows (build_and_test_host, thread_sanitizer,
-address_sanitizer, codeql). Complex workflows (clang_tidy, coverage_report,
-build_and_test_qnx) call restore/save directly for finer control.
+Used by Layer 1 composite actions (build-and-test-host, thread-sanitizer,
+address-sanitizer) and directly by orchestrators (codeql job in
+pr_quality_host). Complex workflows (coverage_report, build_and_test_qnx)
+compute CACHE_MODE themselves and call restore/save directly.
 
 ### 4.6 Nightly Recreation Flow
 
@@ -260,23 +277,23 @@ All workflows that save or delete caches already declare this permission.
 
 | Workflow | Behavior |
 |----------|----------|
-| `automated_release.yml` | Calls `pr_quality_host.yml` → thin callable workflows (3-level nesting). Cache mode evaluates to `disabled` (no `recreate_cache`, no PR/push trigger). |
-| `nightly_quality.yml` | Calls `coverage_report.yml`, `clang_tidy.yml`, `codeql.yml` directly (2-level nesting). `disabled` cache mode. |
+| `automated_release.yml` | Calls `pr_quality_host.yml` (parallel composite actions). Cache mode auto-computes to `disabled` (no PR/push trigger). |
+| `nightly_quality.yml` | Calls `coverage_report.yml`, `codeql.yml` directly and uses `clang-tidy` composite action. Cache mode auto-computes to `disabled`. |
 | `deploy_docs.yml` | Standalone, uses cache restore/save directly. |
 | `stale_pr.yml` | Does not use Bazel — unaffected. |
 
 ## 7. Disk Cache Names
 
-| Callable Workflow | Disk Cache Name |
-|-------------------|----------------|
-| `build_and_test_host.yml` | `build_and_test_host` |
-| `thread_sanitizer.yml` | `build_and_test_tsan` |
-| `address_sanitizer.yml` | `build_and_test_asan_ubsan_lsan` |
-| `clang_tidy.yml` | `clang_tidy` |
-| `build_and_test_qnx.yml` | `build_and_test_qnx` |
-| `coverage_report.yml` | `coverage_report` |
-| `codeql.yml` | `codeql` |
-| `deploy_docs.yml` | `build_docs` |
+| Job | Disk Cache Name |
+|-----|----------------|
+| `build-and-test-host` (action) | `build_and_test_host` |
+| `thread-sanitizer` (action) | `build_and_test_tsan` |
+| `address-sanitizer` (action) | `build_and_test_asan_ubsan_lsan` |
+| `clang-tidy` (action) | `clang_tidy` |
+| `build_and_test_qnx.yml` (workflow) | `build_and_test_qnx` |
+| `coverage_report.yml` (workflow) | `coverage_report` |
+| `codeql.yml` (workflow) | `codeql` |
+| `deploy_docs.yml` (workflow) | `build_docs` |
 
 ## 8. Risks and Mitigations
 
