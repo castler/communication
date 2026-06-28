@@ -31,16 +31,11 @@ on:
   workflow_dispatch:
   workflow_call:
     inputs:
-      recreate_cache:
-        description: "Recreate caches from scratch (nightly)"
-        required: false
-        type: boolean
-        default: false
-      recreate_cache_mode:
-        description: "Nightly cache mode: recreate or recreate-update"
+      cache_mode:
+        description: "Cache mode override (empty = auto-compute from event context)"
         required: false
         type: string
-        default: "recreate"
+        default: ""
 
 concurrency:
   group: pr-quality-host-${{ github.event.pull_request.number || github.run_id }}
@@ -56,8 +51,7 @@ jobs:
       - uses: actions/checkout@v6.0.2
       - uses: ./.github/actions/build-and-test-host
         with:
-          recreate-cache: ${{ inputs.recreate_cache || 'false' }}
-          recreate-cache-mode: ${{ inputs.recreate_cache_mode || 'recreate' }}
+          cache-mode: ${{ inputs.cache_mode }}
 
   tsan:
     runs-on: ubuntu-24.04
@@ -68,8 +62,7 @@ jobs:
       - uses: actions/checkout@v6.0.2
       - uses: ./.github/actions/thread-sanitizer
         with:
-          recreate-cache: ${{ inputs.recreate_cache || 'false' }}
-          recreate-cache-mode: ${{ inputs.recreate_cache_mode || 'recreate' }}
+          cache-mode: ${{ inputs.cache_mode }}
 
   asan:
     runs-on: ubuntu-24.04
@@ -80,8 +73,7 @@ jobs:
       - uses: actions/checkout@v6.0.2
       - uses: ./.github/actions/address-sanitizer
         with:
-          recreate-cache: ${{ inputs.recreate_cache || 'false' }}
-          recreate-cache-mode: ${{ inputs.recreate_cache_mode || 'recreate' }}
+          cache-mode: ${{ inputs.cache_mode }}
 
   clang-tidy:
     runs-on: ubuntu-24.04
@@ -98,6 +90,5 @@ jobs:
       - id: run
         uses: ./.github/actions/clang-tidy
         with:
-          recreate-cache: ${{ inputs.recreate_cache || 'false' }}
-          recreate-cache-mode: ${{ inputs.recreate_cache_mode || 'recreate' }}
+          cache-mode: ${{ inputs.cache_mode }}
 

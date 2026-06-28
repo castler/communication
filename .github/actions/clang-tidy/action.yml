@@ -17,12 +17,9 @@ description: >
   Fails if errors are found in changed files. Uploads findings artifact.
 
 inputs:
-  recreate-cache:
-    description: "Set to 'true' for nightly cache recreation."
-    default: "false"
-  recreate-cache-mode:
-    description: "Nightly mode: recreate or recreate-update."
-    default: "recreate"
+  cache-mode:
+    description: "Cache mode override (empty = auto-compute from event context)."
+    default: ""
 
 outputs:
   artifact-name:
@@ -48,8 +45,8 @@ runs:
         echo "ANDROID_SDK_ROOT=" >> "$GITHUB_ENV"
         echo "FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true" >> "$GITHUB_ENV"
 
-        if [[ "${{ inputs.recreate-cache }}" == "true" ]]; then
-          MODE="${{ inputs.recreate-cache-mode }}"
+        if [[ -n "${{ inputs.cache-mode }}" ]]; then
+          MODE="${{ inputs.cache-mode }}"
         elif [[ "${{ github.event_name }}" == "pull_request" || "${{ github.event_name }}" == "merge_group" ]]; then
           MODE="read-only"
         elif [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/main" ]]; then

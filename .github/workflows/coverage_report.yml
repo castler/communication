@@ -15,16 +15,11 @@ name: Coverage Report
 on:
   workflow_call:
     inputs:
-      recreate_cache:
-        description: "Recreate caches from scratch (nightly). Skips restore, saves new cache."
-        required: false
-        type: boolean
-        default: false
-      recreate_cache_mode:
-        description: "Nightly cache mode: recreate (first job, no restore) or recreate-update (subsequent, restores repo from previous)"
+      cache_mode:
+        description: "Cache mode override (empty = auto-compute from event context)"
         required: false
         type: string
-        default: "recreate"
+        default: ""
     outputs:
       artifact-name:
         description: 'Name of the coverage report artifact'
@@ -46,7 +41,7 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   CACHE_MODE: >-
     ${{
-      inputs.recreate_cache == true && inputs.recreate_cache_mode ||
+      inputs.cache_mode != '' && inputs.cache_mode ||
       (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'read-only' ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main') && 'update-disk' ||
       'disabled'

@@ -15,12 +15,9 @@ name: "Thread Sanitizer"
 description: "Runs all tests with --config=tsan to detect data races."
 
 inputs:
-  recreate-cache:
-    description: "Set to 'true' for nightly cache recreation."
-    default: "false"
-  recreate-cache-mode:
-    description: "Nightly mode: recreate or recreate-update."
-    default: "recreate"
+  cache-mode:
+    description: "Cache mode override (empty = auto-compute from event context)."
+    default: ""
 
 runs:
   using: "composite"
@@ -28,6 +25,5 @@ runs:
     - uses: ./.github/actions/bazel-job
       with:
         disk-cache: build_and_test_tsan
-        recreate-cache: ${{ inputs.recreate-cache }}
-        recreate-cache-mode: ${{ inputs.recreate-cache-mode }}
+        cache-mode: ${{ inputs.cache-mode }}
         commands: "bazel test --config=tsan //... --build_tests_only"

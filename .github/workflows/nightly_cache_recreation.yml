@@ -41,8 +41,7 @@ jobs:
       - uses: actions/checkout@v6.0.2
       - uses: ./.github/actions/build-and-test-host
         with:
-          recreate-cache: "true"
-          recreate-cache-mode: "recreate"
+          cache-mode: "recreate"
 
   recreate-tsan:
     needs: recreate-host-build
@@ -54,8 +53,7 @@ jobs:
       - uses: actions/checkout@v6.0.2
       - uses: ./.github/actions/thread-sanitizer
         with:
-          recreate-cache: "true"
-          recreate-cache-mode: "recreate-update"
+          cache-mode: "recreate-update"
 
   recreate-asan:
     needs: recreate-tsan
@@ -67,8 +65,7 @@ jobs:
       - uses: actions/checkout@v6.0.2
       - uses: ./.github/actions/address-sanitizer
         with:
-          recreate-cache: "true"
-          recreate-cache-mode: "recreate-update"
+          cache-mode: "recreate-update"
 
   recreate-clang-tidy:
     needs: recreate-asan
@@ -80,15 +77,13 @@ jobs:
       - uses: actions/checkout@v6.0.2
       - uses: ./.github/actions/clang-tidy
         with:
-          recreate-cache: "true"
-          recreate-cache-mode: "recreate-update"
+          cache-mode: "recreate-update"
 
   recreate-coverage:
     needs: recreate-clang-tidy
     uses: ./.github/workflows/coverage_report.yml
     with:
-      recreate_cache: true
-      recreate_cache_mode: recreate-update
+      cache_mode: "recreate-update"
     permissions:
       contents: read
       actions: write
@@ -97,8 +92,7 @@ jobs:
     needs: recreate-coverage
     uses: ./.github/workflows/codeql.yml
     with:
-      recreate_cache: true
-      recreate_cache_mode: recreate-update
+      cache_mode: "recreate-update"
     permissions:
       contents: read
       actions: write
@@ -108,8 +102,7 @@ jobs:
     needs: recreate-codeql
     uses: ./.github/workflows/build_and_test_qnx.yml
     with:
-      recreate_cache: true
-      recreate_cache_mode: recreate-update
+      cache_mode: "recreate-update"
     secrets:
       SCORE_QNX_LICENSE: ${{ secrets.SCORE_QNX_LICENSE }}
       SCORE_QNX_USER: ${{ secrets.SCORE_QNX_USER }}

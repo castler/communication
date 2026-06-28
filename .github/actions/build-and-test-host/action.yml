@@ -15,12 +15,9 @@ name: "Build & Test (Host)"
 description: "Builds all targets, runs all tests, and verifies the examples project."
 
 inputs:
-  recreate-cache:
-    description: "Set to 'true' for nightly cache recreation."
-    default: "false"
-  recreate-cache-mode:
-    description: "Nightly mode: recreate or recreate-update."
-    default: "recreate"
+  cache-mode:
+    description: "Cache mode override (empty = auto-compute from event context)."
+    default: ""
 
 runs:
   using: "composite"
@@ -28,8 +25,7 @@ runs:
     - uses: ./.github/actions/bazel-job
       with:
         disk-cache: build_and_test_host
-        recreate-cache: ${{ inputs.recreate-cache }}
-        recreate-cache-mode: ${{ inputs.recreate-cache-mode }}
+        cache-mode: ${{ inputs.cache-mode }}
         commands: |
           bazel build //...
           bazel test //... --build_tests_only
