@@ -1,0 +1,64 @@
+# *******************************************************************************
+# Copyright (c) 2024 Contributors to the Eclipse Foundation
+#
+# See the NOTICE file(s) distributed with this work for additional
+# information regarding copyright ownership.
+#
+# This program and the accompanying materials are made available under the
+# terms of the Apache License Version 2.0 which is available at
+# https://www.apache.org/licenses/LICENSE-2.0
+#
+# SPDX-License-Identifier: Apache-2.0
+# *******************************************************************************
+
+# Callable workflow: Address / UB / Leak Sanitizer
+#
+# Runs all tests with --config=asan_ubsan_lsan to detect memory errors,
+# undefined behavior, and memory leaks.
+# Called by orchestrators (pr_quality_host, nightly_cache_recreation).
+
+name: Address / UB / Leak Sanitizer
+
+on:
+  workflow_call:
+    inputs:
+      recreate_cache:
+        description: "Recreate caches from scratch (nightly)"
+        required: false
+        type: boolean
+        default: false
+      recreate_cache_mode:
+        description: "Nightly cache mode: recreate or recreate-update"
+        required: false
+        type: string
+        default: "recreate"
+
+permissions:
+  contents: read
+  actions: write
+
+env:
+  ANDROID_HOME: ""
+  ANDROID_SDK_ROOT: ""
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  CACHE_MODE: >-
+    ${{
+      inputs.recreate_cache == true && inputs.recreate_cache_mode ||
+      (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'read-only' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') && 'update-disk' ||
+      'disabled'
+    }}
+
+jobs:
+  asan:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6.0.2
+
+      - name: Setup and run
+        uses: ./.github/actions/bazel-job
+        with:
+          disk-cache: build_and_test_asan_ubsan_lsan
+          cache-mode: ${{ env.CACHE_MODE }}
+          commands: "bazel test --config=asan_ubsan_lsan //... --build_tests_only"

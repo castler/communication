@@ -39,7 +39,7 @@ requirements, design decisions, and the implementation architecture.
 | R7 | After recreation, **old cache entries** SHALL be **deleted** from the GitHub Actions cache store. |
 | R8 | Nightly recreation SHALL also be **triggerable manually** via `workflow_dispatch`. |
 | R9 | During nightly recreation, jobs SHALL run **sequentially** to avoid cache key conflicts and excessive parallel resource consumption. |
-| R10 | The repository cache SHALL be **shared** across all jobs (single cache key based on `MODULE.bazel` + lockfile hash). |
+| R10 | The repository cache SHALL be **shared** across all jobs (single cache key based on content hash of Bazel's `content_addressable/sha256/` directory). |
 | R11 | Disk caches SHALL be **per-job** (unique key per workflow/configuration). |
 
 ### 3.3 Non-Requirements
@@ -49,7 +49,34 @@ requirements, design decisions, and the implementation architecture.
 
 ## 4. Architecture
 
-### 4.1 Components
+### 4.1 Workflow Organization
+
+Workflows are organized into two layers:
+
+**Layer 1 — Callable workflows** (job logic defined once):
+
+| Workflow | Description |
+|----------|-------------|
+| `build_and_test_host.yml` | Full build + test + examples (uses `bazel-job`) |
+| `thread_sanitizer.yml` | Tests with `--config=tsan` (uses `bazel-job`) |
+| `address_sanitizer.yml` | Tests with `--config=asan_ubsan_lsan` (uses `bazel-job`) |
+| `clang_tidy.yml` | Static analysis with findings collection and artifact upload |
+| `coverage_report.yml` | Coverage report generation |
+| `codeql.yml` | CodeQL / MISRA analysis (uses `bazel-job`) |
+| `build_and_test_qnx.yml` | QNX cross-compilation with approval gate |
+
+**Layer 2 — Orchestrators** (arrange execution pattern):
+
+| Orchestrator | Calls | Execution |
+|-------------|-------|-----------|
+| `pr_quality_host.yml` | host, tsan, asan, clang-tidy | **Parallel** (PR/push/merge_group) |
+| `nightly_cache_recreation.yml` | All 7 callable workflows | **Sequential** (repo cache accumulation) |
+| `nightly_quality.yml` | coverage, clang-tidy, codeql | **Parallel** (KPI reporting) |
+| `automated_release.yml` | `pr_quality_host`, QNX, coverage | **Parallel** (via `pr_quality_host`) |
+
+Nesting depth: `automated_release → pr_quality_host → thin workflow` = 3 levels (max 10).
+
+### 4.2 Components
 
 ```
 .github/
@@ -58,21 +85,29 @@ requirements, design decisions, and the implementation architecture.
 │   │   └── action.yml
 │   ├── bazel-cache-save/      # Composite action: conditional cache save + cleanup
 │   │   └── action.yml
-│   └── bazel-job/             # Composite action: full job setup (optional)
-│       └── action.yml
-└── workflows/
-    ├── nightly_cache_recreation.yml   # Orchestrates nightly recreation
-    ├── build_and_test_host.yml        # ┐
-    ├── build_and_test_qnx.yml        # │
-    ├── thread_sanitizer.yml           # │ Individual workflows
-    ├── address_undefined_behavior_..  # │ (each uses restore + save actions)
-    ├── clang_tidy.yml                 # │
-    ├── coverage_report.yml            # │
-    ├── codeql.yml                     # │
-    └── deploy_docs.yml                # ┘
+│   └── bazel-job/             # Composite action: full job setup
+│       └── action.yml         #   (disk space, cache, sandbox, commands, save)
+├── workflows/
+│   │  # Layer 1: Callable workflows (workflow_call only)
+│   ├── build_and_test_host.yml
+│   ├── thread_sanitizer.yml
+│   ├── address_sanitizer.yml
+│   ├── clang_tidy.yml
+│   ├── coverage_report.yml
+│   ├── codeql.yml
+│   ├── build_and_test_qnx.yml
+│   │  # Layer 2: Orchestrators
+│   ├── pr_quality_host.yml          # PR quality gates (parallel)
+│   ├── nightly_cache_recreation.yml # Nightly sequential cache rebuild
+│   ├── nightly_quality.yml          # Nightly KPI reporting
+│   ├── automated_release.yml        # Release process
+│   │  # Standalone
+│   ├── deploy_docs.yml
+│   └── stale_pr.yml
+└── cache-strategy.md
 ```
 
-### 4.2 Cache Modes
+### 4.3 Cache Modes
 
 Each workflow computes a `CACHE_MODE` environment variable based on the
 trigger context:
@@ -95,7 +130,7 @@ CACHE_MODE: >-
 | `recreate-update` | ❌ | ✅ (from prev job) | ✅ | ✅ (content-hash key) | old disk + repo entries |
 | `disabled` | ❌ | ❌ | ❌ | ❌ | ❌ |
 
-### 4.3 Cache Keys
+### 4.4 Cache Keys
 
 | Cache | Key Pattern | Restore Keys |
 |-------|-------------|-------------|
@@ -121,7 +156,7 @@ the latest (most complete) entry survives for the next job to restore.
 **Disk cache key**: Uses `run_id` to ensure each save creates a unique entry.
 The `restore-keys` prefix match restores the most recent available entry.
 
-### 4.4 Composite Actions
+### 4.5 Composite Actions
 
 #### `bazel-cache-restore`
 
@@ -139,7 +174,20 @@ The `restore-keys` prefix match restores the most recent available entry.
 Both actions are called explicitly (not via `post` hooks) because composite
 actions do not support automatic post-steps.
 
-### 4.5 Nightly Recreation Flow
+#### `bazel-job`
+
+Wraps the full job lifecycle into a single composite action call:
+1. Free disk space
+2. Restore caches
+3. Allow linux-sandbox
+4. Run commands (newline-separated)
+5. Save caches (`if: always()`)
+
+Used by simple callable workflows (build_and_test_host, thread_sanitizer,
+address_sanitizer, codeql). Complex workflows (clang_tidy, coverage_report,
+build_and_test_qnx) call restore/save directly for finer control.
+
+### 4.6 Nightly Recreation Flow
 
 ```
 ┌─────────────────────────────────────────────────┐
@@ -183,21 +231,21 @@ actions do not support automatic post-steps.
   └───────────────┘    saves repo-cache-<hash7>, deletes old
 ```
 
-### 4.6 Push-to-Main Flow
+### 4.7 Push-to-Main Flow
 
 ```
 PR merged → push to main
     │
     ▼
-┌──────────────────────────┐
-│ build_and_test_host      │
-│  mode: update-disk       │
-│  1. Restore disk + repo  │
-│  2. Build & test         │
-│  3. Save disk cache      │
-│  4. Delete old disk      │
-└──────────────────────────┘
-    (same for all workflows triggered on push)
+┌────────────────────────────────────┐
+│ pr_quality_host.yml (parallel)     │
+│  mode: update-disk                 │
+│  ┌──────────────┬───────┬───────┐  │
+│  │ host build   │ tsan  │ asan  │  │
+│  └──────────────┴───────┴───────┘  │
+│  Each: restore → run → save disk   │
+└────────────────────────────────────┘
+    (same for QNX, triggered separately on push)
 ```
 
 ## 5. Permissions
@@ -212,19 +260,20 @@ All workflows that save or delete caches already declare this permission.
 
 | Workflow | Behavior |
 |----------|----------|
-| `automated_release.yml` | Calls workflows via `workflow_call` without `recreate_cache` → mode evaluates to `disabled` (no caches). This is acceptable for release builds which prioritize correctness. |
-| `nightly_quality.yml` | Calls coverage, clang-tidy, codeql via `workflow_call` without `recreate_cache` → `disabled` mode. Quality jobs run after nightly recreation, so this is by design. |
+| `automated_release.yml` | Calls `pr_quality_host.yml` → thin callable workflows (3-level nesting). Cache mode evaluates to `disabled` (no `recreate_cache`, no PR/push trigger). |
+| `nightly_quality.yml` | Calls `coverage_report.yml`, `clang_tidy.yml`, `codeql.yml` directly (2-level nesting). `disabled` cache mode. |
+| `deploy_docs.yml` | Standalone, uses cache restore/save directly. |
 | `stale_pr.yml` | Does not use Bazel — unaffected. |
 
 ## 7. Disk Cache Names
 
-| Workflow | Disk Cache Name |
-|----------|----------------|
-| `build_and_test_host.yml` | `build_and_test_host` (+ matrix identifier suffix) |
-| `build_and_test_qnx.yml` | `build_and_test_qnx` |
+| Callable Workflow | Disk Cache Name |
+|-------------------|----------------|
+| `build_and_test_host.yml` | `build_and_test_host` |
 | `thread_sanitizer.yml` | `build_and_test_tsan` |
-| `address_undefined_behavior_leak_sanitizer.yml` | `build_and_test_asan_ubsan_lsan` |
+| `address_sanitizer.yml` | `build_and_test_asan_ubsan_lsan` |
 | `clang_tidy.yml` | `clang_tidy` |
+| `build_and_test_qnx.yml` | `build_and_test_qnx` |
 | `coverage_report.yml` | `coverage_report` |
 | `codeql.yml` | `codeql` |
 | `deploy_docs.yml` | `build_docs` |

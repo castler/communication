@@ -32,8 +32,8 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  recreate-host-quality:
-    uses: ./.github/workflows/pr_quality_host.yml
+  recreate-host-build:
+    uses: ./.github/workflows/build_and_test_host.yml
     with:
       recreate_cache: true
       recreate_cache_mode: recreate
@@ -41,8 +41,38 @@ jobs:
       contents: read
       actions: write
 
+  recreate-tsan:
+    needs: recreate-host-build
+    uses: ./.github/workflows/thread_sanitizer.yml
+    with:
+      recreate_cache: true
+      recreate_cache_mode: recreate-update
+    permissions:
+      contents: read
+      actions: write
+
+  recreate-asan:
+    needs: recreate-tsan
+    uses: ./.github/workflows/address_sanitizer.yml
+    with:
+      recreate_cache: true
+      recreate_cache_mode: recreate-update
+    permissions:
+      contents: read
+      actions: write
+
+  recreate-clang-tidy:
+    needs: recreate-asan
+    uses: ./.github/workflows/clang_tidy.yml
+    with:
+      recreate_cache: true
+      recreate_cache_mode: recreate-update
+    permissions:
+      contents: read
+      actions: write
+
   recreate-coverage:
-    needs: recreate-host-quality
+    needs: recreate-clang-tidy
     uses: ./.github/workflows/coverage_report.yml
     with:
       recreate_cache: true
