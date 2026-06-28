@@ -20,6 +20,9 @@ inputs:
   cache-mode:
     description: "Cache mode override (empty = auto-compute from event context)."
     default: ""
+  max-retries:
+    description: "Maximum number of attempts for the commands block."
+    default: "1"
 
 outputs:
   artifact-name:
@@ -38,6 +41,7 @@ runs:
       with:
         disk-cache: coverage_report
         cache-mode: ${{ inputs.cache-mode }}
+        max-retries: ${{ inputs.max-retries }}
         commands: |
           bazel coverage //... --build_tests_only
           bazel run //quality/coverage:generate_coverage_html -- \

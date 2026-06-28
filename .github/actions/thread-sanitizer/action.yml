@@ -18,6 +18,9 @@ inputs:
   cache-mode:
     description: "Cache mode override (empty = auto-compute from event context)."
     default: ""
+  max-retries:
+    description: "Maximum number of attempts for the commands block."
+    default: "1"
 
 runs:
   using: "composite"
@@ -26,4 +29,5 @@ runs:
       with:
         disk-cache: build_and_test_tsan
         cache-mode: ${{ inputs.cache-mode }}
+        max-retries: ${{ inputs.max-retries }}
         commands: "bazel test --config=tsan //... --build_tests_only"

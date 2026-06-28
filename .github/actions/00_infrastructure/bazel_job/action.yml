@@ -40,6 +40,13 @@ inputs:
       need step IDs or conditional logic).
     required: false
     default: ""
+  max-retries:
+    description: >
+      Maximum number of attempts for the commands block. If a command fails,
+      the entire block is retried from the beginning up to this many times.
+      Default is 1 (no retry).
+    required: false
+    default: "1"
 
 runs:
   using: "composite"
@@ -81,16 +88,34 @@ runs:
       if: inputs.commands != ''
       shell: bash
       run: |
-        set -euo pipefail
-        while IFS= read -r cmd; do
-          # skip blank lines and comments
-          [[ -z "$cmd" || "$cmd" == \#* ]] && continue
-          echo "::group::$ $cmd"
-          eval "$cmd"
-          echo "::endgroup::"
-        done <<'COMMANDS'
+        set -uo pipefail
+        MAX_RETRIES=${{ inputs.max-retries }}
+        for attempt in $(seq 1 "$MAX_RETRIES"); do
+          echo "::group::Attempt ${attempt}/${MAX_RETRIES}"
+          FAILED=false
+          while IFS= read -r cmd; do
+            # skip blank lines and comments
+            [[ -z "$cmd" || "$cmd" == \#* ]] && continue
+            echo "$ $cmd"
+            if ! eval "$cmd"; then
+              FAILED=true
+              break
+            fi
+          done <<'COMMANDS'
         ${{ inputs.commands }}
         COMMANDS
+          echo "::endgroup::"
+          if [[ "$FAILED" == "false" ]]; then
+            echo "Commands succeeded on attempt ${attempt}."
+            exit 0
+          fi
+          if [[ "$attempt" -lt "$MAX_RETRIES" ]]; then
+            echo "::warning::Attempt ${attempt} failed, retrying..."
+          else
+            echo "::error::All ${MAX_RETRIES} attempts failed."
+            exit 1
+          fi
+        done
 
     - name: Save Bazel caches
       if: always()

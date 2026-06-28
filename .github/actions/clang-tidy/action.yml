@@ -20,6 +20,9 @@ inputs:
   cache-mode:
     description: "Cache mode override (empty = auto-compute from event context)."
     default: ""
+  max-retries:
+    description: "Maximum number of attempts for the commands block."
+    default: "1"
 
 outputs:
   artifact-name:
@@ -44,6 +47,7 @@ runs:
       with:
         disk-cache: clang_tidy
         cache-mode: ${{ inputs.cache-mode }}
+        max-retries: ${{ inputs.max-retries }}
         commands: |
           bazel test --config=clang-tidy //... \
             2>&1 | tee clang_tidy_raw.log || true
