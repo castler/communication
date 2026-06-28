@@ -119,14 +119,11 @@ runs:
             fi
             cmd="${accumulated}${line}"
             accumulated=""
-            # In fetch-only mode: convert 'bazel test' to 'bazel build' and add --nobuild
+            # In fetch-only mode: add --nobuild to bazel commands to skip compilation
             if [[ "${BAZEL_JOB_FETCH_ONLY:-}" == "true" ]]; then
-              cmd="${cmd/bazel test/bazel build}"
-              cmd="${cmd/bazel coverage/bazel build}"
-              cmd="${cmd/bazel run/bazel build}"
-              # Add --nobuild after 'bazel build' if not already present
-              if [[ "$cmd" == *"bazel build"* && "$cmd" != *"--nobuild"* ]]; then
-                cmd="${cmd/bazel build/bazel build --nobuild}"
+              if [[ "$cmd" == *"bazel "* && "$cmd" != *"--nobuild"* ]]; then
+                # Insert --nobuild after the bazel subcommand
+                cmd=$(echo "$cmd" | sed -E 's/(bazel (build|test|coverage|run))/\1 --nobuild/')
               fi
             fi
             echo "$ $cmd"
