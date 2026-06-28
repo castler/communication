@@ -21,6 +21,9 @@ inputs:
   max-retries:
     description: "Maximum number of attempts for the commands block."
     default: "1"
+  fetch-only:
+    description: "When true, adds --nobuild to skip compilation (fetch dependencies only)."
+    default: "false"
 
 runs:
   using: "composite"
@@ -30,6 +33,7 @@ runs:
         disk-cache: build_and_test_host
         cache-mode: ${{ inputs.cache-mode }}
         max-retries: ${{ inputs.max-retries }}
+        fetch-only: ${{ inputs.fetch-only }}
         commands: |
           bazel build //...
           bazel test //... --build_tests_only

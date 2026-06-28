@@ -23,6 +23,9 @@ inputs:
   max-retries:
     description: "Maximum number of attempts for the commands block."
     default: "1"
+  fetch-only:
+    description: "When true, adds --nobuild to skip compilation (fetch dependencies only)."
+    default: "false"
 
 outputs:
   artifact-name:
@@ -42,6 +45,7 @@ runs:
         disk-cache: codeql
         cache-mode: ${{ inputs.cache-mode }}
         max-retries: ${{ inputs.max-retries }}
+        fetch-only: ${{ inputs.fetch-only }}
         commands: |
           bazel run //quality/static_analysis:codeql_lint -- \
             --output-dir /tmp/codeql-results \

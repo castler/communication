@@ -13,11 +13,15 @@
 
 # Workflow: Nightly Cache Recreation
 #
-# Recreates all Bazel caches (disk + repository) from scratch by running
-# each CI workflow sequentially. The repository cache accumulates across jobs:
-#   - First job: starts empty (recreate mode)
-#   - Subsequent jobs: restore repo cache from previous job (recreate-update mode)
-#   - Every job saves repo cache under content-hash key and cleans up old entries
+# Recreates all Bazel caches (disk + repository) from scratch.
+#
+# Phase 1 — Fetch (sequential): Each job runs with --nobuild to populate
+# the repository cache without compiling. Jobs run sequentially so the
+# repo cache accumulates across configs.
+#
+# Phase 2 — Build (parallel): All jobs run the actual builds in parallel,
+# restoring the complete repo cache from Phase 1. Each job saves its own
+# disk cache.
 #
 # Can also be triggered manually via workflow_dispatch.
 
@@ -32,7 +36,11 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  recreate-host-build:
+  # ======================================================================
+  # Phase 1: Fetch dependencies (sequential, --nobuild)
+  # Populates the shared repository cache without compiling.
+  # ======================================================================
+  fetch-host-build:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -42,10 +50,115 @@ jobs:
       - uses: ./.github/actions/build-and-test-x86_64-gcc15
         with:
           cache-mode: "recreate"
+          fetch-only: "true"
           max-retries: "10"
 
-  recreate-tsan:
-    needs: recreate-host-build
+  fetch-tsan:
+    needs: fetch-host-build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: ./.github/actions/thread-sanitizer
+        with:
+          cache-mode: "recreate-update"
+          fetch-only: "true"
+          max-retries: "10"
+
+  fetch-asan:
+    needs: fetch-tsan
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: ./.github/actions/address-sanitizer
+        with:
+          cache-mode: "recreate-update"
+          fetch-only: "true"
+          max-retries: "10"
+
+  fetch-clang-tidy:
+    needs: fetch-asan
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: ./.github/actions/clang-tidy
+        with:
+          cache-mode: "recreate-update"
+          fetch-only: "true"
+          max-retries: "10"
+
+  fetch-coverage:
+    needs: fetch-clang-tidy
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: ./.github/actions/coverage-report
+        with:
+          cache-mode: "recreate-update"
+          fetch-only: "true"
+          max-retries: "10"
+
+  fetch-codeql:
+    needs: fetch-coverage
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: write
+      security-events: write
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: ./.github/actions/codeql
+        with:
+          cache-mode: "recreate-update"
+          fetch-only: "true"
+          max-retries: "10"
+
+  fetch-qnx:
+    needs: fetch-codeql
+    uses: ./.github/workflows/build_and_test_qnx.yml
+    with:
+      cache_mode: "recreate-update"
+      fetch_only: "true"
+      max_retries: "10"
+    secrets:
+      SCORE_QNX_LICENSE: ${{ secrets.SCORE_QNX_LICENSE }}
+      SCORE_QNX_USER: ${{ secrets.SCORE_QNX_USER }}
+      SCORE_QNX_PASSWORD: ${{ secrets.SCORE_QNX_PASSWORD }}
+    permissions:
+      contents: read
+      actions: write
+      pull-requests: read
+
+  # ======================================================================
+  # Phase 2: Build (parallel)
+  # All jobs restore the repo cache from Phase 1 and build their disk cache.
+  # ======================================================================
+  build-host:
+    needs: fetch-qnx
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: ./.github/actions/build-and-test-x86_64-gcc15
+        with:
+          cache-mode: "recreate-update"
+          max-retries: "10"
+
+  build-tsan:
+    needs: fetch-qnx
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -57,8 +170,8 @@ jobs:
           cache-mode: "recreate-update"
           max-retries: "10"
 
-  recreate-asan:
-    needs: recreate-tsan
+  build-asan:
+    needs: fetch-qnx
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -70,8 +183,8 @@ jobs:
           cache-mode: "recreate-update"
           max-retries: "10"
 
-  recreate-clang-tidy:
-    needs: recreate-asan
+  build-clang-tidy:
+    needs: fetch-qnx
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -83,8 +196,8 @@ jobs:
           cache-mode: "recreate-update"
           max-retries: "10"
 
-  recreate-coverage:
-    needs: recreate-clang-tidy
+  build-coverage:
+    needs: fetch-qnx
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -96,8 +209,8 @@ jobs:
           cache-mode: "recreate-update"
           max-retries: "10"
 
-  recreate-codeql:
-    needs: recreate-coverage
+  build-codeql:
+    needs: fetch-qnx
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -110,8 +223,8 @@ jobs:
           cache-mode: "recreate-update"
           max-retries: "10"
 
-  recreate-qnx:
-    needs: recreate-codeql
+  build-qnx:
+    needs: fetch-qnx
     uses: ./.github/workflows/build_and_test_qnx.yml
     with:
       cache_mode: "recreate-update"

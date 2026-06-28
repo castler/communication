@@ -47,6 +47,13 @@ inputs:
       Default is 1 (no retry).
     required: false
     default: "1"
+  fetch-only:
+    description: >
+      When 'true', adds --nobuild to all bazel commands via .bazelrc.
+      This runs loading and analysis (triggering repository fetches) but
+      skips actual compilation. Useful for populating the repository cache.
+    required: false
+    default: "false"
 
 runs:
   using: "composite"
@@ -69,6 +76,13 @@ runs:
         fi
         echo "CACHE_MODE=${MODE}" >> "$GITHUB_ENV"
         echo "Cache mode: ${MODE}"
+
+    - name: Enable fetch-only mode (--nobuild)
+      if: inputs.fetch-only == 'true'
+      shell: bash
+      run: |
+        echo "common --nobuild" >> ~/.bazelrc
+        echo "Fetch-only mode enabled: --nobuild added to all bazel commands"
 
     - name: Free Disk Space (Ubuntu)
       uses: eclipse-score/more-disk-space@v1
