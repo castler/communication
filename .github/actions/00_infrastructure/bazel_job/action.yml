@@ -89,7 +89,8 @@ runs:
       shell: bash
       run: |
         set -uo pipefail
-        MAX_RETRIES=${{ inputs.max-retries }}
+        MAX_RETRIES="${{ inputs.max-retries }}"
+        MAX_RETRIES="${MAX_RETRIES:-1}"
         for attempt in $(seq 1 "$MAX_RETRIES"); do
           echo "::group::Attempt ${attempt}/${MAX_RETRIES}"
           FAILED=false
