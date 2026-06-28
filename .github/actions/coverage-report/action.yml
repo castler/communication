@@ -34,7 +34,7 @@ runs:
   steps:
     - name: Run coverage and generate report
       id: run-coverage
-      uses: ./.github/actions/bazel_job
+      uses: ./.github/actions/00_infrastructure/bazel_job
       with:
         disk-cache: coverage_report
         cache-mode: ${{ inputs.cache-mode }}

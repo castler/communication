@@ -142,7 +142,7 @@ jobs:
           with:
             level: 4
         - name: Restore Bazel caches
-          uses: ./.github/actions/bazel_cache_restore
+          uses: ./.github/actions/00_infrastructure/bazel_cache_restore
           with:
             mode: ${{ env.CACHE_MODE }}
             disk-cache-name: build_and_test_qnx
@@ -185,7 +185,7 @@ jobs:
           run: sudo rm -rf ${{ env.LICENSE_DIR }}
         - name: Save Bazel caches
           if: always()
-          uses: ./.github/actions/bazel_cache_save
+          uses: ./.github/actions/00_infrastructure/bazel_cache_save
           with:
             mode: ${{ env.CACHE_MODE }}
             disk-cache-name: build_and_test_qnx

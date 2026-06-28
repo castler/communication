@@ -57,7 +57,7 @@ jobs:
         uses: actions/checkout@v6.0.2
 
       - name: Set up Bazel
-        uses: ./.github/actions/bazel_cache_restore
+        uses: ./.github/actions/00_infrastructure/bazel_cache_restore
         with:
           mode: ${{ env.CACHE_MODE }}
           disk-cache-name: build_docs
@@ -188,7 +188,7 @@ jobs:
 
       - name: Save Bazel caches
         if: always()
-        uses: ./.github/actions/bazel_cache_save
+        uses: ./.github/actions/00_infrastructure/bazel_cache_save
         with:
           mode: ${{ env.CACHE_MODE }}
           disk-cache-name: build_docs

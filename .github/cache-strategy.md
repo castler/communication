@@ -86,21 +86,22 @@ Nesting depth: `automated_release → build_and_test_host → composite action` 
 ```
 .github/
 ├── actions/
-│   ├── bazel_cache_restore/   # Composite action: conditional cache restore
-│   │   └── action.yml
-│   ├── bazel_cache_save/      # Composite action: conditional cache save + cleanup
-│   │   └── action.yml
-│   ├── bazel_job/             # Composite action: full job setup
-│   │   └── action.yml         #   (env, cache-mode, disk space, cache, sandbox, commands, save)
+│   ├── 00_infrastructure/
+│   │   ├── bazel_cache_restore/   # Composite action: conditional cache restore
+│   │   │   └── action.yml
+│   │   ├── bazel_cache_save/      # Composite action: conditional cache save + cleanup
+│   │   │   └── action.yml
+│   │   └── bazel_job/             # Composite action: full job setup
+│   │       └── action.yml         #   (env, cache-mode, disk space, cache, sandbox, commands, save)
 │   ├── build-and-test-x86_64-gcc15/   # Layer 1: wraps bazel_job with host build commands
 │   │   └── action.yml
 │   ├── thread-sanitizer/      # Layer 1: wraps bazel_job with --config=tsan
 │   │   └── action.yml
 │   ├── address-sanitizer/     # Layer 1: wraps bazel_job with --config=asan_ubsan_lsan
 │   │   └── action.yml
-│   ├── codeql/                 # Layer 1: CodeQL/MISRA with SARIF + CSV upload
+│   ├── codeql/                # Layer 1: CodeQL/MISRA with SARIF + CSV upload
 │   │   └── action.yml
-│   ├── coverage-report/        # Layer 1: coverage with HTML report + artifact
+│   ├── coverage-report/       # Layer 1: coverage with HTML report + artifact
 │   │   └── action.yml
 │   └── clang-tidy/            # Layer 1: static analysis with findings collection
 │       └── action.yml
