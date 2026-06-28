@@ -81,8 +81,8 @@ runs:
       if: inputs.fetch-only == 'true'
       shell: bash
       run: |
-        echo "common --nobuild" >> ~/.bazelrc
-        echo "Fetch-only mode enabled: --nobuild added to all bazel commands"
+        echo "BAZEL_JOB_FETCH_ONLY=true" >> "$GITHUB_ENV"
+        echo "Fetch-only mode enabled: bazel commands will use --nobuild"
 
     - name: Free Disk Space (Ubuntu)
       uses: eclipse-score/more-disk-space@v1
@@ -119,6 +119,16 @@ runs:
             fi
             cmd="${accumulated}${line}"
             accumulated=""
+            # In fetch-only mode: convert 'bazel test' to 'bazel build' and add --nobuild
+            if [[ "${BAZEL_JOB_FETCH_ONLY:-}" == "true" ]]; then
+              cmd="${cmd/bazel test/bazel build}"
+              cmd="${cmd/bazel coverage/bazel build}"
+              cmd="${cmd/bazel run/bazel build}"
+              # Add --nobuild after 'bazel build' if not already present
+              if [[ "$cmd" == *"bazel build"* && "$cmd" != *"--nobuild"* ]]; then
+                cmd="${cmd/bazel build/bazel build --nobuild}"
+              fi
+            fi
             echo "$ $cmd"
             if ! eval "$cmd"; then
               FAILED=true
