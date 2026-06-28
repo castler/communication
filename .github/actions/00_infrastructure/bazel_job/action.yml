@@ -94,9 +94,17 @@ runs:
         for attempt in $(seq 1 "$MAX_RETRIES"); do
           echo "::group::Attempt ${attempt}/${MAX_RETRIES}"
           FAILED=false
-          while IFS= read -r cmd; do
+          accumulated=""
+          while IFS= read -r line; do
             # skip blank lines and comments
-            [[ -z "$cmd" || "$cmd" == \#* ]] && continue
+            [[ -z "$line" || "$line" == \#* ]] && continue
+            # handle line continuations (trailing \)
+            if [[ "$line" == *'\' ]]; then
+              accumulated+="${line%\\} "
+              continue
+            fi
+            cmd="${accumulated}${line}"
+            accumulated=""
             echo "$ $cmd"
             if ! eval "$cmd"; then
               FAILED=true
