@@ -83,10 +83,18 @@ jobs:
   # Quality job 3: CodeQL
   # --------------------------------------------------------------------
   run-codeql:
-    uses: ./.github/workflows/codeql.yml
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
+      actions: write
       security-events: write
+    outputs:
+      artifact-name: ${{ steps.run.outputs.artifact-name }}
+      conclusion: ${{ steps.run.outputs.conclusion }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - id: run
+        uses: ./.github/actions/codeql
 
   # --------------------------------------------------------------------
   # Collect results, build the dashboard, upload artifact for docs.yml

@@ -1,0 +1,71 @@
+# *******************************************************************************
+# Copyright (c) 2026 Contributors to the Eclipse Foundation
+#
+# See the NOTICE file(s) distributed with this work for additional
+# information regarding copyright ownership.
+#
+# This program and the accompanying materials are made available under the
+# terms of the Apache License Version 2.0 which is available at
+# https://www.apache.org/licenses/LICENSE-2.0
+#
+# SPDX-License-Identifier: Apache-2.0
+# *******************************************************************************
+
+name: "CodeQL Analysis"
+description: >
+  Runs CodeQL / MISRA C++ analysis via Bazel, uploads SARIF to GitHub Code
+  Scanning, and publishes CSV results as an artifact.
+
+inputs:
+  cache-mode:
+    description: "Cache mode override (empty = auto-compute from event context)."
+    default: ""
+
+outputs:
+  artifact-name:
+    description: "Name of the uploaded CSV artifact"
+    value: codeql-csv-results
+  conclusion:
+    description: "Job conclusion: success or failure"
+    value: ${{ steps.set-conclusion.outputs.conclusion }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Build and run CodeQL analysis
+      id: run-codeql
+      uses: ./.github/actions/bazel-job
+      with:
+        disk-cache: codeql
+        cache-mode: ${{ inputs.cache-mode }}
+        commands: |
+          bazel run //quality/static_analysis:codeql_lint -- \
+            --output-dir /tmp/codeql-results \
+            --output-prefix codeql-nightly \
+            --target //score/message_passing //score/mw/com
+
+    - name: Upload SARIF to GitHub Code Scanning
+      if: always() && steps.run-codeql.outcome == 'success'
+      uses: github/codeql-action/upload-sarif@v4
+      with:
+        sarif_file: /tmp/codeql-results/codeql-nightly.sarif
+        category: codeql-nightly
+
+    - name: Upload CSV results
+      if: always() && steps.run-codeql.outcome == 'success'
+      uses: actions/upload-artifact@v4
+      with:
+        name: codeql-csv-results
+        path: /tmp/codeql-results/codeql-nightly.csv
+        retention-days: 30
+
+    - name: Set conclusion
+      id: set-conclusion
+      if: always()
+      shell: bash
+      run: |
+        if [[ "${{ steps.run-codeql.outcome }}" == "success" ]]; then
+          echo "conclusion=success" >> $GITHUB_OUTPUT
+        else
+          echo "conclusion=failure" >> $GITHUB_OUTPUT
+        fi

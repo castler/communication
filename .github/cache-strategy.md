@@ -61,13 +61,13 @@ Workflows are organized into two layers:
 | `thread-sanitizer` | Tests with `--config=tsan` (wraps `bazel-job`) |
 | `address-sanitizer` | Tests with `--config=asan_ubsan_lsan` (wraps `bazel-job`) |
 | `clang-tidy` | Static analysis with findings collection and artifact upload |
+| `codeql` | CodeQL / MISRA analysis with SARIF upload (wraps `bazel-job`) |
+| `coverage-report` | Coverage report with HTML archive and artifact upload |
 
 **Standalone callable workflows** (too complex for composite actions):
 
 | Workflow | Description |
 |----------|-------------|
-| `coverage-report` | Coverage report with HTML archive and artifact upload |
-| `codeql.yml` | CodeQL / MISRA analysis (uses `bazel-job`) |
 | `build_and_test_qnx.yml` | QNX cross-compilation with approval gate and secrets |
 
 **Layer 2 — Orchestrators** (arrange execution pattern):
@@ -98,13 +98,14 @@ Nesting depth: `automated_release → pr_quality_host → composite action` = 2 
 │   │   └── action.yml
 │   ├── address-sanitizer/     # Layer 1: wraps bazel-job with --config=asan_ubsan_lsan
 │   │   └── action.yml
+│   ├── codeql/                 # Layer 1: CodeQL/MISRA with SARIF + CSV upload
+│   │   └── action.yml
 │   ├── coverage-report/        # Layer 1: coverage with HTML report + artifact
 │   │   └── action.yml
 │   └── clang-tidy/            # Layer 1: static analysis with findings collection
 │       └── action.yml
 ├── workflows/
 │   │  # Standalone callable workflows (workflow_call)
-│   ├── codeql.yml
 │   ├── build_and_test_qnx.yml
 │   │  # Orchestrators
 │   ├── pr_quality_host.yml          # PR quality gates (parallel)
@@ -279,7 +280,7 @@ All workflows that save or delete caches already declare this permission.
 | Workflow | Behavior |
 |----------|----------|
 | `automated_release.yml` | Calls `pr_quality_host.yml` (parallel composite actions). Cache mode auto-computes to `disabled` (no PR/push trigger). |
-| `nightly_quality.yml` | Uses `coverage-report` and `clang-tidy` composite actions + calls `codeql.yml`. Cache mode auto-computes to `disabled`. |
+| `nightly_quality.yml` | Uses `coverage-report`, `clang-tidy`, and `codeql` composite actions. Cache mode auto-computes to `disabled`. |
 | `deploy_docs.yml` | Standalone, uses cache restore/save directly. |
 | `stale_pr.yml` | Does not use Bazel — unaffected. |
 
@@ -293,7 +294,7 @@ All workflows that save or delete caches already declare this permission.
 | `clang-tidy` (action) | `clang_tidy` |
 | `build_and_test_qnx.yml` (workflow) | `build_and_test_qnx` |
 | `coverage-report` (action) | `coverage_report` |
-| `codeql.yml` (workflow) | `codeql` |
+| `codeql` (action) | `codeql` |
 | `deploy_docs.yml` (workflow) | `build_docs` |
 
 ## 8. Risks and Mitigations

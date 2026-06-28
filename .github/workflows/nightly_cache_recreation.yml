@@ -93,13 +93,16 @@ jobs:
 
   recreate-codeql:
     needs: recreate-coverage
-    uses: ./.github/workflows/codeql.yml
-    with:
-      cache_mode: "recreate-update"
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       actions: write
       security-events: write
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: ./.github/actions/codeql
+        with:
+          cache-mode: "recreate-update"
 
   recreate-qnx:
     needs: recreate-codeql
