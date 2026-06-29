@@ -11,20 +11,21 @@
 # SPDX-License-Identifier: Apache-2.0
 # *******************************************************************************
 
-name: "Bazel Job Setup & Run"
+name: "Bazel Job"
 description: >
-  Sets up the runner (env, disk space, Bazel cache, sandbox) and runs a list of
-  shell commands. The calling workflow must checkout the repository before
-  using this action (required for local composite actions).
+  Sets up the runner for Bazel builds: environment variables, disk space,
+  cache restore, and sandbox. The post step saves caches automatically.
 
-  Computes the cache mode automatically from the GitHub event context and
-  optional recreate inputs. Sets ANDROID_HOME, ANDROID_SDK_ROOT, and
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24 environment variables.
+  Uses pre/post lifecycle: place your bazel commands as normal 'run:' steps
+  after this action. Cache save runs automatically at job end.
 
 inputs:
   disk-cache:
-    description: "Name of the Bazel disk cache to use."
-    required: true
+    description: >
+      Name of the Bazel disk cache. Leave empty to skip disk caching
+      (e.g. for CodeQL where cached results are undesirable).
+    required: false
+    default: ""
   cache-mode:
     description: >
       Cache mode override. If empty (default), auto-computed from event context:
@@ -32,128 +33,10 @@ inputs:
       Explicit values: recreate, recreate-update, read-only, update-disk, disabled.
     required: false
     default: ""
-  commands:
-    description: >
-      Newline-separated list of shell commands to execute after setup.
-      Each non-empty line is run as a separate command.
-      Leave empty to only perform setup (useful when subsequent workflow steps
-      need step IDs or conditional logic).
-    required: false
-    default: ""
-  max-retries:
-    description: >
-      Maximum number of attempts for the commands block. If a command fails,
-      the entire block is retried from the beginning up to this many times.
-      Default is 1 (no retry).
-    required: false
-    default: "1"
-  fetch-only:
-    description: >
-      When 'true', adds --nobuild to all bazel commands via .bazelrc.
-      This runs loading and analysis (triggering repository fetches) but
-      skips actual compilation. Useful for populating the repository cache.
-    required: false
-    default: "false"
 
 runs:
-  using: "composite"
-  steps:
-    - name: Set environment and compute cache mode
-      shell: bash
-      run: |
-        echo "ANDROID_HOME=" >> "$GITHUB_ENV"
-        echo "ANDROID_SDK_ROOT=" >> "$GITHUB_ENV"
-        echo "FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true" >> "$GITHUB_ENV"
-
-        if [[ -n "${{ inputs.cache-mode }}" ]]; then
-          MODE="${{ inputs.cache-mode }}"
-        elif [[ "${{ github.event_name }}" == "pull_request" || "${{ github.event_name }}" == "pull_request_target" || "${{ github.event_name }}" == "merge_group" ]]; then
-          MODE="read-only"
-        elif [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/main" ]]; then
-          MODE="update-disk"
-        else
-          MODE="disabled"
-        fi
-        echo "CACHE_MODE=${MODE}" >> "$GITHUB_ENV"
-        echo "Cache mode: ${MODE}"
-
-    - name: Enable fetch-only mode (--nobuild)
-      if: inputs.fetch-only == 'true'
-      shell: bash
-      run: |
-        echo "BAZEL_JOB_FETCH_ONLY=true" >> "$GITHUB_ENV"
-        echo "Fetch-only mode enabled: bazel commands will use --nobuild"
-
-    - name: Free Disk Space (Ubuntu)
-      uses: eclipse-score/more-disk-space@v1
-      with:
-        level: 4
-
-    - name: Restore Bazel caches
-      uses: ./.github/actions/00_infrastructure/bazel_cache_restore
-      with:
-        mode: ${{ env.CACHE_MODE }}
-        disk-cache-name: ${{ inputs.disk-cache }}
-
-    - name: Allow linux-sandbox
-      uses: eclipse-score/cicd-actions/unblock-user-namespace-for-linux-sandbox@f89865691445b60e9229c36adb1c37b675e1ca85
-
-    - name: Run commands
-      if: inputs.commands != ''
-      shell: bash
-      run: |
-        set -uo pipefail
-        MAX_RETRIES="${{ inputs.max-retries }}"
-        MAX_RETRIES="${MAX_RETRIES:-1}"
-        for attempt in $(seq 1 "$MAX_RETRIES"); do
-          echo "::group::Attempt ${attempt}/${MAX_RETRIES}"
-          FAILED=false
-          accumulated=""
-          while IFS= read -r line; do
-            # skip blank lines and comments
-            [[ -z "$line" || "$line" == \#* ]] && continue
-            # handle line continuations (trailing \)
-            if [[ "$line" == *'\' ]]; then
-              accumulated+="${line%\\} "
-              continue
-            fi
-            cmd="${accumulated}${line}"
-            accumulated=""
-            # In fetch-only mode: transform bazel commands to 'bazel build --nobuild'
-            # This runs loading+analysis (fetching deps) without compiling.
-            # 'bazel test --nobuild' is invalid, so we replace the subcommand.
-            # Also strip everything after '--' since those are runtime/test args
-            # that would be misinterpreted as targets in build mode.
-            if [[ "${BAZEL_JOB_FETCH_ONLY:-}" == "true" ]]; then
-              if [[ "$cmd" == *"bazel "* ]]; then
-                cmd=$(echo "$cmd" | sed -E 's/ -- .*$//' | sed -E 's/bazel (test|coverage|run|build)/bazel build --nobuild/')
-              fi
-            fi
-            echo "$ $cmd"
-            if ! eval "$cmd"; then
-              FAILED=true
-              break
-            fi
-          done <<'COMMANDS'
-        ${{ inputs.commands }}
-        COMMANDS
-          echo "::endgroup::"
-          if [[ "$FAILED" == "false" ]]; then
-            echo "Commands succeeded on attempt ${attempt}."
-            exit 0
-          fi
-          if [[ "$attempt" -lt "$MAX_RETRIES" ]]; then
-            echo "::warning::Attempt ${attempt} failed, retrying..."
-          else
-            echo "::error::All ${MAX_RETRIES} attempts failed."
-            exit 1
-          fi
-        done
-
-    - name: Save Bazel caches
-      if: always()
-      uses: ./.github/actions/00_infrastructure/bazel_cache_save
-      with:
-        mode: ${{ env.CACHE_MODE }}
-        disk-cache-name: ${{ inputs.disk-cache }}
-
+  using: "node24"
+  pre: "dist/pre/index.js"
+  main: "dist/main/index.js"
+  post: "dist/post/index.js"
+  post-if: "always()"
