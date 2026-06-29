@@ -87,12 +87,14 @@ Nesting depth: `automated_release → build_and_test_host → composite action` 
 .github/
 ├── actions/
 │   ├── 00_infrastructure/
-│   │   ├── bazel_cache_restore/   # Composite action: conditional cache restore
+│   │   ├── bazel_cache_restore/   # Composite action: conditional cache restore (standalone use)
 │   │   │   └── action.yml
-│   │   ├── bazel_cache_save/      # Composite action: conditional cache save + cleanup
+│   │   ├── bazel_cache_save/      # Composite action: conditional cache save + cleanup (standalone use)
 │   │   │   └── action.yml
-│   │   └── bazel_job/             # Composite action: full job setup
-│   │       └── action.yml         #   (env, cache-mode, disk space, cache, sandbox, commands, save)
+│   │   └── bazel_job/             # Node.js action with pre/post lifecycle
+│   │       ├── action.yml         #   using: node24, pre/main/post
+│   │       ├── src/               #   Source: pre.js, main.js, post.js
+│   │       └── dist/              #   Bundled with @vercel/ncc
 │   ├── build-and-test-x86_64-gcc15/   # Layer 1: wraps bazel_job with host build commands
 │   │   └── action.yml
 │   ├── thread-sanitizer/      # Layer 1: wraps bazel_job with --config=tsan
@@ -193,21 +195,40 @@ actions do not support automatic post-steps.
 
 #### `bazel_job`
 
-Wraps the full job lifecycle into a single composite action call:
-1. Set environment variables (ANDROID_HOME, etc.)
-2. Compute CACHE_MODE from `cache-mode` input or event context
-3. Free disk space
-4. Restore caches
-5. Allow linux-sandbox
-6. Run commands (newline-separated)
-7. Save caches (`if: always()`)
+A **Node.js action** (`using: node24`) with pre/main/post lifecycle:
 
-Used by Layer 1 composite actions (build-and-test-x86_64-gcc15, thread-sanitizer,
-address-sanitizer) and directly by orchestrators (codeql job in
-build_and_test_host). Complex workflows (coverage_report, build_and_test_qnx)
-compute CACHE_MODE themselves and call restore/save directly.
+- **`pre` step**: Sets environment variables (ANDROID_HOME, etc.), computes
+  CACHE_MODE from `cache-mode` input or event context, frees disk space,
+  restores caches via `@actions/cache`, enables linux-sandbox.
+- **`main` step**: No-op (logs configuration). User's bazel commands go in
+  subsequent `run:` steps.
+- **`post` step** (`post-if: always()`): Saves caches, deletes old entries
+  via GitHub API. Guaranteed to run even on job cancellation.
+
+**Inputs**: `disk-cache` (name, empty to skip disk caching), `cache-mode`
+(override, empty = auto-compute).
+
+Used by Layer 1 composite actions — each calls `bazel_job` first, then
+defines its bazel commands as normal `run:` steps that execute between
+the pre (setup) and post (teardown).
+
+`bazel_cache_restore` and `bazel_cache_save` are retained as standalone
+composite actions for use cases that don't need the full `bazel_job`
+lifecycle, but `bazel_job` implements its own cache logic independently
+via `@actions/cache`.
 
 ### 4.6 Nightly Recreation Flow
+
+Two-phase approach for maximum efficiency:
+
+**Phase 1 — Fetch (sequential)**: Each job runs `bazel build --nobuild` with
+its config to trigger loading and analysis phases, fetching all config-specific
+external dependencies. The repository cache accumulates across sequential jobs.
+Retry up to 10 times on failure.
+
+**Phase 2 — Build (parallel)**: All jobs run the actual builds in parallel,
+restoring the complete repository cache from Phase 1. Each saves its own disk
+cache.
 
 ```
 ┌─────────────────────────────────────────────────┐
@@ -215,41 +236,29 @@ compute CACHE_MODE themselves and call restore/save directly.
 │  (schedule: 0 3 * * * | workflow_dispatch)      │
 └─────────────────────────────────────────────────┘
           │
+          │ PHASE 1: Fetch (sequential, --nobuild)
           ▼ mode: recreate (first job, starts empty)
   ┌───────────────┐
-  │  host build   │──▶ saves disk-cache-build_and_test_host-*
-  └───────────────┘    saves repo-cache-<hash1>, deletes old
+  │ fetch-host    │──▶ bazel build --nobuild //...
+  └───────────────┘    saves repo-cache-<hash1>
           │
-          ▼ mode: recreate-update (restores repo from prev job)
+          ▼ mode: recreate-update (restores repo from prev)
   ┌───────────────┐
-  │    tsan       │──▶ saves disk-cache-build_and_test_tsan-*
-  └───────────────┘    saves repo-cache-<hash2>, deletes old
+  │ fetch-tsan    │──▶ bazel build --nobuild --config=tsan //...
+  └───────────────┘    saves repo-cache-<hash2>
           │
-          ▼ mode: recreate-update
-  ┌───────────────┐
-  │  asan/ubsan   │──▶ saves disk-cache-build_and_test_asan_ubsan_lsan-*
-  └───────────────┘    saves repo-cache-<hash3>, deletes old
+          ▼ ... (asan, clang-tidy, coverage, codeql, qnx)
           │
-          ▼ mode: recreate-update
-  ┌───────────────┐
-  │  clang-tidy   │──▶ saves disk-cache-clang_tidy-*
-  └───────────────┘    saves repo-cache-<hash4>, deletes old
-          │
-          ▼ mode: recreate-update
-  ┌───────────────┐
-  │   coverage    │──▶ saves disk-cache-coverage_report-*
-  └───────────────┘    saves repo-cache-<hash5>, deletes old
-          │
-          ▼ mode: recreate-update
-  ┌───────────────┐
-  │    codeql     │──▶ saves disk-cache-codeql-*
-  └───────────────┘    saves repo-cache-<hash6>, deletes old
-          │
-          ▼ mode: recreate-update
-  ┌───────────────┐
-  │      qnx     │──▶ saves disk-cache-build_and_test_qnx-*
-  └───────────────┘    saves repo-cache-<hash7>, deletes old
+          │ PHASE 2: Build (parallel)
+          ▼ mode: recreate-update (restores complete repo cache)
+  ┌────────────┬──────┬──────┬─────────────┬──────────┬────────┬─────┐
+  │ host build │ tsan │ asan │ clang-tidy  │ coverage │ codeql │ qnx │
+  └────────────┴──────┴──────┴─────────────┴──────────┴────────┴─────┘
+       Each: full build → saves disk-cache-<name>-<run_id>
 ```
+
+Note: CodeQL runs without disk cache (`disk-cache: ""`) since cached
+analysis results are undesirable.
 
 ### 4.7 Push-to-Main Flow
 
