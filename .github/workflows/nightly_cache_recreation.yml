@@ -34,6 +34,7 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  MAX_RETRIES: 10
 
 jobs:
   # ======================================================================
@@ -47,11 +48,23 @@ jobs:
       actions: write
     steps:
       - uses: actions/checkout@v6.0.2
-      - uses: ./.github/actions/build-and-test-x86_64-gcc15
+      - uses: ./.github/actions/00_infrastructure/bazel_job
         with:
+          disk-cache: build_and_test_host
           cache-mode: "recreate"
-          fetch-only: "true"
-          max-retries: "10"
+      - name: Fetch dependencies (--nobuild)
+        shell: bash
+        run: |
+          for attempt in $(seq 1 "$MAX_RETRIES"); do
+            echo "Attempt ${attempt}/${MAX_RETRIES}"
+            if bazel build --nobuild //... && (cd examples && bazel build --nobuild //...); then
+              echo "Fetch succeeded on attempt ${attempt}."
+              exit 0
+            fi
+            echo "::warning::Attempt ${attempt} failed, retrying..."
+          done
+          echo "::error::All ${MAX_RETRIES} attempts failed."
+          exit 1
 
   fetch-tsan:
     needs: fetch-host-build
@@ -61,11 +74,23 @@ jobs:
       actions: write
     steps:
       - uses: actions/checkout@v6.0.2
-      - uses: ./.github/actions/thread-sanitizer
+      - uses: ./.github/actions/00_infrastructure/bazel_job
         with:
+          disk-cache: build_and_test_tsan
           cache-mode: "recreate-update"
-          fetch-only: "true"
-          max-retries: "10"
+      - name: Fetch dependencies (--nobuild, tsan)
+        shell: bash
+        run: |
+          for attempt in $(seq 1 "$MAX_RETRIES"); do
+            echo "Attempt ${attempt}/${MAX_RETRIES}"
+            if bazel build --nobuild --config=tsan //...; then
+              echo "Fetch succeeded on attempt ${attempt}."
+              exit 0
+            fi
+            echo "::warning::Attempt ${attempt} failed, retrying..."
+          done
+          echo "::error::All ${MAX_RETRIES} attempts failed."
+          exit 1
 
   fetch-asan:
     needs: fetch-tsan
@@ -75,11 +100,23 @@ jobs:
       actions: write
     steps:
       - uses: actions/checkout@v6.0.2
-      - uses: ./.github/actions/address-sanitizer
+      - uses: ./.github/actions/00_infrastructure/bazel_job
         with:
+          disk-cache: build_and_test_asan_ubsan_lsan
           cache-mode: "recreate-update"
-          fetch-only: "true"
-          max-retries: "10"
+      - name: Fetch dependencies (--nobuild, asan_ubsan_lsan)
+        shell: bash
+        run: |
+          for attempt in $(seq 1 "$MAX_RETRIES"); do
+            echo "Attempt ${attempt}/${MAX_RETRIES}"
+            if bazel build --nobuild --config=asan_ubsan_lsan //...; then
+              echo "Fetch succeeded on attempt ${attempt}."
+              exit 0
+            fi
+            echo "::warning::Attempt ${attempt} failed, retrying..."
+          done
+          echo "::error::All ${MAX_RETRIES} attempts failed."
+          exit 1
 
   fetch-clang-tidy:
     needs: fetch-asan
@@ -89,11 +126,23 @@ jobs:
       actions: write
     steps:
       - uses: actions/checkout@v6.0.2
-      - uses: ./.github/actions/clang-tidy
+      - uses: ./.github/actions/00_infrastructure/bazel_job
         with:
+          disk-cache: clang_tidy
           cache-mode: "recreate-update"
-          fetch-only: "true"
-          max-retries: "10"
+      - name: Fetch dependencies (--nobuild, clang-tidy)
+        shell: bash
+        run: |
+          for attempt in $(seq 1 "$MAX_RETRIES"); do
+            echo "Attempt ${attempt}/${MAX_RETRIES}"
+            if bazel build --nobuild --config=clang-tidy //...; then
+              echo "Fetch succeeded on attempt ${attempt}."
+              exit 0
+            fi
+            echo "::warning::Attempt ${attempt} failed, retrying..."
+          done
+          echo "::error::All ${MAX_RETRIES} attempts failed."
+          exit 1
 
   fetch-coverage:
     needs: fetch-clang-tidy
@@ -103,11 +152,23 @@ jobs:
       actions: write
     steps:
       - uses: actions/checkout@v6.0.2
-      - uses: ./.github/actions/coverage-report
+      - uses: ./.github/actions/00_infrastructure/bazel_job
         with:
+          disk-cache: coverage_report
           cache-mode: "recreate-update"
-          fetch-only: "true"
-          max-retries: "10"
+      - name: Fetch dependencies (--nobuild, coverage)
+        shell: bash
+        run: |
+          for attempt in $(seq 1 "$MAX_RETRIES"); do
+            echo "Attempt ${attempt}/${MAX_RETRIES}"
+            if bazel build --nobuild //...; then
+              echo "Fetch succeeded on attempt ${attempt}."
+              exit 0
+            fi
+            echo "::warning::Attempt ${attempt} failed, retrying..."
+          done
+          echo "::error::All ${MAX_RETRIES} attempts failed."
+          exit 1
 
   fetch-codeql:
     needs: fetch-coverage
@@ -118,11 +179,23 @@ jobs:
       security-events: write
     steps:
       - uses: actions/checkout@v6.0.2
-      - uses: ./.github/actions/codeql
+      - uses: ./.github/actions/00_infrastructure/bazel_job
         with:
+          disk-cache: ""
           cache-mode: "recreate-update"
-          fetch-only: "true"
-          max-retries: "10"
+      - name: Fetch dependencies (--nobuild, codeql)
+        shell: bash
+        run: |
+          for attempt in $(seq 1 "$MAX_RETRIES"); do
+            echo "Attempt ${attempt}/${MAX_RETRIES}"
+            if bazel build --nobuild //...; then
+              echo "Fetch succeeded on attempt ${attempt}."
+              exit 0
+            fi
+            echo "::warning::Attempt ${attempt} failed, retrying..."
+          done
+          echo "::error::All ${MAX_RETRIES} attempts failed."
+          exit 1
 
   fetch-qnx:
     needs: fetch-codeql
@@ -155,7 +228,6 @@ jobs:
       - uses: ./.github/actions/build-and-test-x86_64-gcc15
         with:
           cache-mode: "recreate-update"
-          max-retries: "10"
 
   build-tsan:
     needs: fetch-qnx
@@ -168,7 +240,6 @@ jobs:
       - uses: ./.github/actions/thread-sanitizer
         with:
           cache-mode: "recreate-update"
-          max-retries: "10"
 
   build-asan:
     needs: fetch-qnx
@@ -181,7 +252,6 @@ jobs:
       - uses: ./.github/actions/address-sanitizer
         with:
           cache-mode: "recreate-update"
-          max-retries: "10"
 
   build-clang-tidy:
     needs: fetch-qnx
@@ -194,7 +264,6 @@ jobs:
       - uses: ./.github/actions/clang-tidy
         with:
           cache-mode: "recreate-update"
-          max-retries: "10"
 
   build-coverage:
     needs: fetch-qnx
@@ -207,7 +276,6 @@ jobs:
       - uses: ./.github/actions/coverage-report
         with:
           cache-mode: "recreate-update"
-          max-retries: "10"
 
   build-codeql:
     needs: fetch-qnx
@@ -221,7 +289,6 @@ jobs:
       - uses: ./.github/actions/codeql
         with:
           cache-mode: "recreate-update"
-          max-retries: "10"
 
   build-qnx:
     needs: fetch-qnx
