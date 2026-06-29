@@ -14,10 +14,10 @@
 name: "Bazel Job"
 description: >
   Sets up the runner for Bazel builds: environment variables, disk space,
-  cache restore, and sandbox. The post step saves caches automatically.
+  cache restore, and sandbox. Cache save runs automatically at job end
+  via a post hook (even on failure/cancellation).
 
-  Uses pre/post lifecycle: place your bazel commands as normal 'run:' steps
-  after this action. Cache save runs automatically at job end.
+  Place your bazel commands as normal 'run:' steps after this action.
 
 inputs:
   disk-cache:
@@ -35,7 +35,43 @@ inputs:
     default: ""
 
 runs:
-  using: "node24"
-  main: "dist/main/index.js"
-  post: "dist/post/index.js"
-  post-if: "always()"
+  using: "composite"
+  steps:
+    - name: Set environment and compute cache mode
+      shell: bash
+      run: |
+        echo "ANDROID_HOME=" >> "$GITHUB_ENV"
+        echo "ANDROID_SDK_ROOT=" >> "$GITHUB_ENV"
+        echo "FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true" >> "$GITHUB_ENV"
+
+        if [[ -n "${{ inputs.cache-mode }}" ]]; then
+          MODE="${{ inputs.cache-mode }}"
+        elif [[ "${{ github.event_name }}" == "pull_request" || "${{ github.event_name }}" == "pull_request_target" || "${{ github.event_name }}" == "merge_group" ]]; then
+          MODE="read-only"
+        elif [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/main" ]]; then
+          MODE="update-disk"
+        else
+          MODE="disabled"
+        fi
+        echo "CACHE_MODE=${MODE}" >> "$GITHUB_ENV"
+        echo "Cache mode: ${MODE}"
+
+    - name: Register post cache save hook
+      uses: ./.github/actions/00_infrastructure/bazel_post_cache_save
+      with:
+        cache-mode: ${{ env.CACHE_MODE }}
+        disk-cache-name: ${{ inputs.disk-cache }}
+
+    - name: Free Disk Space (Ubuntu)
+      uses: eclipse-score/more-disk-space@v1
+      with:
+        level: 4
+
+    - name: Restore Bazel caches
+      uses: ./.github/actions/00_infrastructure/bazel_cache_restore
+      with:
+        mode: ${{ env.CACHE_MODE }}
+        disk-cache-name: ${{ inputs.disk-cache }}
+
+    - name: Allow linux-sandbox
+      uses: eclipse-score/cicd-actions/unblock-user-namespace-for-linux-sandbox@f89865691445b60e9229c36adb1c37b675e1ca85
