@@ -40,7 +40,7 @@ runs:
   steps:
     - uses: ./.github/actions/00_infrastructure/bazel_job
       with:
-        disk-cache: ${{ inputs.disk-cache }}
+        disk-cache: ${{ inputs.fetch-only == 'true' && '' || inputs.disk-cache }}
         cache-mode: ${{ inputs.cache-mode }}
 
     - name: Fetch dependencies (--nobuild)
