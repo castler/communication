@@ -100,7 +100,7 @@ async function run() {
         core.info("Disk cache saved.");
         await deleteOldCaches(`disk-cache-${diskCacheName}-`, diskKey);
       } catch (error) {
-        if (error.name === "ReserveCacheError") {
+        if (error.name === "ReserveCacheError" || error.message?.includes("Unable to reserve cache")) {
           core.info("Disk cache already exists, skipping save.");
         } else {
           core.warning(`Failed to save disk cache: ${error.message}`);
@@ -118,7 +118,7 @@ async function run() {
         core.info("Repository cache saved.");
         await deleteOldCaches("repo-cache-", repoKey);
       } catch (error) {
-        if (error.name === "ReserveCacheError") {
+        if (error.name === "ReserveCacheError" || error.message?.includes("Unable to reserve cache")) {
           core.info("Repository cache already exists (same content hash), skipping save.");
         } else {
           core.warning(`Failed to save repository cache: ${error.message}`);
