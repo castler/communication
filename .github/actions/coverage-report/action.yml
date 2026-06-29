@@ -23,6 +23,9 @@ inputs:
   disk-cache:
     description: "Disk cache name."
     default: "coverage_report"
+  fetch-only:
+    description: "When true, runs --nobuild to fetch dependencies only."
+    default: "false"
 
 outputs:
   artifact-name:
@@ -40,14 +43,20 @@ runs:
         disk-cache: ${{ inputs.disk-cache }}
         cache-mode: ${{ inputs.cache-mode }}
 
+    - name: Fetch dependencies (--nobuild)
+      if: inputs.fetch-only == 'true'
+      shell: bash
+      run: bazel build --nobuild //...
+
     - name: Run coverage
+      if: inputs.fetch-only != 'true'
       id: run-coverage
       shell: bash
       run: bazel coverage //... --build_tests_only
 
     - name: Generate coverage report
+      if: inputs.fetch-only != 'true' && steps.run-coverage.outcome == 'success'
       id: generate-report
-      if: steps.run-coverage.outcome == 'success'
       shell: bash
       run: |
         bazel run //quality/coverage:generate_coverage_html -- \
@@ -59,7 +68,9 @@ runs:
       if: always()
       shell: bash
       run: |
-        if [[ "${{ steps.run-coverage.outcome }}" == "success" && "${{ steps.generate-report.outcome }}" == "success" ]]; then
+        if [[ "${{ inputs.fetch-only }}" == "true" ]]; then
+          echo "conclusion=success" >> $GITHUB_OUTPUT
+        elif [[ "${{ steps.run-coverage.outcome }}" == "success" && "${{ steps.generate-report.outcome }}" == "success" ]]; then
           echo "conclusion=success" >> $GITHUB_OUTPUT
         else
           echo "conclusion=failure" >> $GITHUB_OUTPUT
@@ -67,13 +78,13 @@ runs:
 
     - name: Set artifact name
       id: set-artifact-name
-      if: steps.generate-report.outcome == 'success'
+      if: inputs.fetch-only != 'true' && steps.generate-report.outcome == 'success'
       shell: bash
       run: |
         echo "artifact-name=${{ github.event.repository.name }}_coverage_report_${{ github.sha }}" >> $GITHUB_OUTPUT
 
     - name: Upload coverage artifacts
-      if: steps.generate-report.outcome == 'success'
+      if: inputs.fetch-only != 'true' && steps.generate-report.outcome == 'success'
       uses: actions/upload-artifact@v4
       with:
         name: ${{ steps.set-artifact-name.outputs.artifact-name }}

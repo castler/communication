@@ -20,6 +20,9 @@ inputs:
   cache-mode:
     description: "Cache mode override (empty = auto-compute from event context)."
     default: ""
+  fetch-only:
+    description: "When true, runs --nobuild to fetch dependencies only."
+    default: "false"
 
 outputs:
   artifact-name:
@@ -37,7 +40,13 @@ runs:
         disk-cache: ""
         cache-mode: ${{ inputs.cache-mode }}
 
+    - name: Fetch dependencies (--nobuild)
+      if: inputs.fetch-only == 'true'
+      shell: bash
+      run: bazel build --nobuild //...
+
     - name: Run CodeQL analysis
+      if: inputs.fetch-only != 'true'
       id: run-codeql
       shell: bash
       run: |
@@ -47,14 +56,14 @@ runs:
           --target //score/message_passing //score/mw/com
 
     - name: Upload SARIF to GitHub Code Scanning
-      if: always() && steps.run-codeql.outcome == 'success'
+      if: inputs.fetch-only != 'true' && always() && steps.run-codeql.outcome == 'success'
       uses: github/codeql-action/upload-sarif@v4
       with:
         sarif_file: /tmp/codeql-results/codeql-nightly.sarif
         category: codeql-nightly
 
     - name: Upload CSV results
-      if: always() && steps.run-codeql.outcome == 'success'
+      if: inputs.fetch-only != 'true' && always() && steps.run-codeql.outcome == 'success'
       uses: actions/upload-artifact@v4
       with:
         name: codeql-csv-results
@@ -66,7 +75,9 @@ runs:
       if: always()
       shell: bash
       run: |
-        if [[ "${{ steps.run-codeql.outcome }}" == "success" ]]; then
+        if [[ "${{ inputs.fetch-only }}" == "true" ]]; then
+          echo "conclusion=success" >> $GITHUB_OUTPUT
+        elif [[ "${{ steps.run-codeql.outcome }}" == "success" ]]; then
           echo "conclusion=success" >> $GITHUB_OUTPUT
         else
           echo "conclusion=failure" >> $GITHUB_OUTPUT

@@ -21,6 +21,9 @@ inputs:
   disk-cache:
     description: "Disk cache name."
     default: "build_and_test_host"
+  fetch-only:
+    description: "When true, runs --nobuild to fetch dependencies only."
+    default: "false"
 
 runs:
   using: "composite"
@@ -31,13 +34,23 @@ runs:
         cache-mode: ${{ inputs.cache-mode }}
 
     - name: Build all targets
+      if: inputs.fetch-only != 'true'
       shell: bash
       run: bazel build //...
 
     - name: Run all tests
+      if: inputs.fetch-only != 'true'
       shell: bash
       run: bazel test //... --build_tests_only
 
     - name: Build examples
+      if: inputs.fetch-only != 'true'
       shell: bash
       run: cd examples && bazel build //... && bazel mod deps --lockfile_mode=update
+
+    - name: Fetch dependencies (--nobuild)
+      if: inputs.fetch-only == 'true'
+      shell: bash
+      run: |
+        bazel build --nobuild //...
+        cd examples && bazel build --nobuild //...

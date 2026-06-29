@@ -34,7 +34,6 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  MAX_RETRIES: 10
 
 jobs:
   # ======================================================================
@@ -48,23 +47,10 @@ jobs:
       actions: write
     steps:
       - uses: actions/checkout@v6.0.2
-      - uses: ./.github/actions/00_infrastructure/bazel_job
+      - uses: ./.github/actions/build-and-test-x86_64-gcc15
         with:
-          disk-cache: build_and_test_host
           cache-mode: "recreate"
-      - name: Fetch dependencies (--nobuild)
-        shell: bash
-        run: |
-          for attempt in $(seq 1 "$MAX_RETRIES"); do
-            echo "Attempt ${attempt}/${MAX_RETRIES}"
-            if bazel build --nobuild //... && (cd examples && bazel build --nobuild //...); then
-              echo "Fetch succeeded on attempt ${attempt}."
-              exit 0
-            fi
-            echo "::warning::Attempt ${attempt} failed, retrying..."
-          done
-          echo "::error::All ${MAX_RETRIES} attempts failed."
-          exit 1
+          fetch-only: "true"
 
   fetch-tsan:
     needs: fetch-host-build
@@ -74,23 +60,10 @@ jobs:
       actions: write
     steps:
       - uses: actions/checkout@v6.0.2
-      - uses: ./.github/actions/00_infrastructure/bazel_job
+      - uses: ./.github/actions/thread-sanitizer
         with:
-          disk-cache: build_and_test_tsan
           cache-mode: "recreate-update"
-      - name: Fetch dependencies (--nobuild, tsan)
-        shell: bash
-        run: |
-          for attempt in $(seq 1 "$MAX_RETRIES"); do
-            echo "Attempt ${attempt}/${MAX_RETRIES}"
-            if bazel build --nobuild --config=tsan //...; then
-              echo "Fetch succeeded on attempt ${attempt}."
-              exit 0
-            fi
-            echo "::warning::Attempt ${attempt} failed, retrying..."
-          done
-          echo "::error::All ${MAX_RETRIES} attempts failed."
-          exit 1
+          fetch-only: "true"
 
   fetch-asan:
     needs: fetch-tsan
@@ -100,23 +73,10 @@ jobs:
       actions: write
     steps:
       - uses: actions/checkout@v6.0.2
-      - uses: ./.github/actions/00_infrastructure/bazel_job
+      - uses: ./.github/actions/address-sanitizer
         with:
-          disk-cache: build_and_test_asan_ubsan_lsan
           cache-mode: "recreate-update"
-      - name: Fetch dependencies (--nobuild, asan_ubsan_lsan)
-        shell: bash
-        run: |
-          for attempt in $(seq 1 "$MAX_RETRIES"); do
-            echo "Attempt ${attempt}/${MAX_RETRIES}"
-            if bazel build --nobuild --config=asan_ubsan_lsan //...; then
-              echo "Fetch succeeded on attempt ${attempt}."
-              exit 0
-            fi
-            echo "::warning::Attempt ${attempt} failed, retrying..."
-          done
-          echo "::error::All ${MAX_RETRIES} attempts failed."
-          exit 1
+          fetch-only: "true"
 
   fetch-clang-tidy:
     needs: fetch-asan
@@ -126,23 +86,10 @@ jobs:
       actions: write
     steps:
       - uses: actions/checkout@v6.0.2
-      - uses: ./.github/actions/00_infrastructure/bazel_job
+      - uses: ./.github/actions/clang-tidy
         with:
-          disk-cache: clang_tidy
           cache-mode: "recreate-update"
-      - name: Fetch dependencies (--nobuild, clang-tidy)
-        shell: bash
-        run: |
-          for attempt in $(seq 1 "$MAX_RETRIES"); do
-            echo "Attempt ${attempt}/${MAX_RETRIES}"
-            if bazel build --nobuild --config=clang-tidy //...; then
-              echo "Fetch succeeded on attempt ${attempt}."
-              exit 0
-            fi
-            echo "::warning::Attempt ${attempt} failed, retrying..."
-          done
-          echo "::error::All ${MAX_RETRIES} attempts failed."
-          exit 1
+          fetch-only: "true"
 
   fetch-coverage:
     needs: fetch-clang-tidy
@@ -152,23 +99,10 @@ jobs:
       actions: write
     steps:
       - uses: actions/checkout@v6.0.2
-      - uses: ./.github/actions/00_infrastructure/bazel_job
+      - uses: ./.github/actions/coverage-report
         with:
-          disk-cache: coverage_report
           cache-mode: "recreate-update"
-      - name: Fetch dependencies (--nobuild, coverage)
-        shell: bash
-        run: |
-          for attempt in $(seq 1 "$MAX_RETRIES"); do
-            echo "Attempt ${attempt}/${MAX_RETRIES}"
-            if bazel build --nobuild //...; then
-              echo "Fetch succeeded on attempt ${attempt}."
-              exit 0
-            fi
-            echo "::warning::Attempt ${attempt} failed, retrying..."
-          done
-          echo "::error::All ${MAX_RETRIES} attempts failed."
-          exit 1
+          fetch-only: "true"
 
   fetch-codeql:
     needs: fetch-coverage
@@ -179,23 +113,10 @@ jobs:
       security-events: write
     steps:
       - uses: actions/checkout@v6.0.2
-      - uses: ./.github/actions/00_infrastructure/bazel_job
+      - uses: ./.github/actions/codeql
         with:
-          disk-cache: ""
           cache-mode: "recreate-update"
-      - name: Fetch dependencies (--nobuild, codeql)
-        shell: bash
-        run: |
-          for attempt in $(seq 1 "$MAX_RETRIES"); do
-            echo "Attempt ${attempt}/${MAX_RETRIES}"
-            if bazel build --nobuild //...; then
-              echo "Fetch succeeded on attempt ${attempt}."
-              exit 0
-            fi
-            echo "::warning::Attempt ${attempt} failed, retrying..."
-          done
-          echo "::error::All ${MAX_RETRIES} attempts failed."
-          exit 1
+          fetch-only: "true"
 
   fetch-qnx:
     needs: fetch-codeql
@@ -203,7 +124,6 @@ jobs:
     with:
       cache_mode: "recreate-update"
       fetch_only: "true"
-      max_retries: "10"
     secrets:
       SCORE_QNX_LICENSE: ${{ secrets.SCORE_QNX_LICENSE }}
       SCORE_QNX_USER: ${{ secrets.SCORE_QNX_USER }}
@@ -295,7 +215,6 @@ jobs:
     uses: ./.github/workflows/build_and_test_qnx.yml
     with:
       cache_mode: "recreate-update"
-      max_retries: "10"
     secrets:
       SCORE_QNX_LICENSE: ${{ secrets.SCORE_QNX_LICENSE }}
       SCORE_QNX_USER: ${{ secrets.SCORE_QNX_USER }}

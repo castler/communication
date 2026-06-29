@@ -23,6 +23,9 @@ inputs:
   disk-cache:
     description: "Disk cache name."
     default: "clang_tidy"
+  fetch-only:
+    description: "When true, runs --nobuild to fetch dependencies only."
+    default: "false"
 
 outputs:
   artifact-name:
@@ -46,13 +49,20 @@ runs:
         disk-cache: ${{ inputs.disk-cache }}
         cache-mode: ${{ inputs.cache-mode }}
 
+    - name: Fetch dependencies (--nobuild)
+      if: inputs.fetch-only == 'true'
+      shell: bash
+      run: bazel build --nobuild --config=clang-tidy //...
+
     - name: Run clang-tidy via Bazel
+      if: inputs.fetch-only != 'true'
       id: run-clang-tidy
       shell: bash
       run: |
         bazel test --config=clang-tidy //... 2>&1 | tee clang_tidy_raw.log || true
 
     - name: Collect findings
+      if: inputs.fetch-only != 'true'
       id: findings
       shell: bash
       run: |
@@ -117,7 +127,7 @@ runs:
         } >> "$GITHUB_STEP_SUMMARY"
 
     - name: Upload clang-tidy findings as artifact
-      if: always()
+      if: always() && inputs.fetch-only != 'true'
       uses: actions/upload-artifact@v4
       with:
         name: clang-tidy-findings
@@ -129,7 +139,7 @@ runs:
         retention-days: 7
 
     - name: Fail check if clang-tidy errors found in changed files
-      if: (github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'merge_group') && steps.findings.outputs.errors_blocking != '0'
+      if: inputs.fetch-only != 'true' && (github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'merge_group') && steps.findings.outputs.errors_blocking != '0'
       shell: bash
       run: |
         echo "::error::Clang-tidy found ${{ steps.findings.outputs.errors_blocking }} error(s) in changed files. See the 'clang-tidy-findings' artifact for details."
@@ -143,7 +153,9 @@ runs:
       if: always()
       shell: bash
       run: |
-        if [[ "${{ steps.findings.outputs.errors_blocking }}" == "0" || -z "${{ steps.findings.outputs.errors_blocking }}" ]]; then
+        if [[ "${{ inputs.fetch-only }}" == "true" ]]; then
+          echo "conclusion=success" >> $GITHUB_OUTPUT
+        elif [[ "${{ steps.findings.outputs.errors_blocking }}" == "0" || -z "${{ steps.findings.outputs.errors_blocking }}" ]]; then
           echo "conclusion=success" >> $GITHUB_OUTPUT
         else
           echo "conclusion=failure" >> $GITHUB_OUTPUT

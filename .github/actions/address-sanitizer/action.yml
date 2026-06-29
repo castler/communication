@@ -21,6 +21,9 @@ inputs:
   disk-cache:
     description: "Disk cache name."
     default: "build_and_test_asan_ubsan_lsan"
+  fetch-only:
+    description: "When true, runs --nobuild to fetch dependencies only."
+    default: "false"
 
 runs:
   using: "composite"
@@ -31,5 +34,11 @@ runs:
         cache-mode: ${{ inputs.cache-mode }}
 
     - name: Run tests with address/UB/leak sanitizers
+      if: inputs.fetch-only != 'true'
       shell: bash
       run: bazel test --config=asan_ubsan_lsan //... --build_tests_only
+
+    - name: Fetch dependencies (--nobuild)
+      if: inputs.fetch-only == 'true'
+      shell: bash
+      run: bazel build --nobuild --config=asan_ubsan_lsan //...

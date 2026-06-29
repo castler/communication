@@ -29,11 +29,6 @@ on:
         required: false
         type: string
         default: ""
-      max_retries:
-        description: "Maximum number of retry attempts for bazel commands."
-        required: false
-        type: string
-        default: "1"
       fetch_only:
         description: "When true, runs --nobuild to fetch dependencies only."
         required: false
@@ -157,42 +152,24 @@ jobs:
           with:
             disk-cache: build_and_test_qnx
             cache-mode: ${{ inputs.cache_mode }}
-        - name: Build and test QNX
+        - name: Build QNX
           if: inputs.fetch_only != 'true'
-          shell: bash
           env:
             SCORE_QNX_USER: ${{ secrets.SCORE_QNX_USER }}
             SCORE_QNX_PASSWORD: ${{ secrets.SCORE_QNX_PASSWORD }}
-            MAX_RETRIES: ${{ inputs.max_retries || '1' }}
-          run: |
-            for attempt in $(seq 1 "$MAX_RETRIES"); do
-              echo "Attempt ${attempt}/${MAX_RETRIES}"
-              if bazel build --config=qnx -- //score/... && bazel test --config=qnx -- //score/...; then
-                echo "Build and test succeeded on attempt ${attempt}."
-                exit 0
-              fi
-              echo "::warning::Attempt ${attempt} failed, retrying..."
-            done
-            echo "::error::All ${MAX_RETRIES} attempts failed."
-            exit 1
+          run: bazel build --config=qnx -- //score/...
+        - name: Test QNX
+          if: inputs.fetch_only != 'true'
+          env:
+            SCORE_QNX_USER: ${{ secrets.SCORE_QNX_USER }}
+            SCORE_QNX_PASSWORD: ${{ secrets.SCORE_QNX_PASSWORD }}
+          run: bazel test --config=qnx -- //score/...
         - name: Fetch dependencies (--nobuild)
           if: inputs.fetch_only == 'true'
-          shell: bash
           env:
             SCORE_QNX_USER: ${{ secrets.SCORE_QNX_USER }}
             SCORE_QNX_PASSWORD: ${{ secrets.SCORE_QNX_PASSWORD }}
-            MAX_RETRIES: ${{ inputs.max_retries || '1' }}
-          run: |
-            for attempt in $(seq 1 "$MAX_RETRIES"); do
-              echo "Attempt ${attempt}/${MAX_RETRIES}"
-              if bazel build --nobuild --config=qnx -- //score/...; then
-                echo "Fetch succeeded on attempt ${attempt}."
-                exit 0
-              fi
-              echo "::warning::Attempt ${attempt} failed, retrying..."
-            done
-            echo "::error::All ${MAX_RETRIES} attempts failed."
-            exit 1
+          run: bazel build --nobuild --config=qnx -- //score/...
         - name: Cleanup QNX License
           if: always()
           run: sudo rm -rf "${{ env.LICENSE_DIR }}"
