@@ -44,7 +44,7 @@ async function computeRepoCacheHash(repoCacheDir) {
 }
 
 async function deleteOldCaches(prefix, currentKey) {
-  const token = process.env.GITHUB_TOKEN || core.getInput("github-token") || "";
+  const token = core.getState("github-token") || process.env.GITHUB_TOKEN || "";
   if (!token) {
     core.warning("No GITHUB_TOKEN available, skipping old cache cleanup.");
     return;

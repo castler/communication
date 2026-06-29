@@ -27574,8 +27574,10 @@ const core = __nccwpck_require__(7484);
 function run() {
   const mode = core.getInput("cache-mode");
   const diskCacheName = core.getInput("disk-cache-name");
+  const token = core.getInput("github-token");
   core.saveState("cache-mode", mode);
   core.saveState("disk-cache-name", diskCacheName);
+  core.saveState("github-token", token);
   core.info(`Post cache save registered (mode: ${mode}, disk-cache: ${diskCacheName || "(none)"})`);
 }
 

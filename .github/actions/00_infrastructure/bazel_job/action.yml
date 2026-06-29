@@ -61,6 +61,7 @@ runs:
       with:
         cache-mode: ${{ env.CACHE_MODE }}
         disk-cache-name: ${{ inputs.disk-cache }}
+        github-token: ${{ github.token }}
 
     - name: Free Disk Space (Ubuntu)
       uses: eclipse-score/more-disk-space@v1

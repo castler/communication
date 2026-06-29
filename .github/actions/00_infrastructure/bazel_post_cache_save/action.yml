@@ -25,6 +25,10 @@ inputs:
     description: "Disk cache name (empty = skip disk cache)."
     required: false
     default: ""
+  github-token:
+    description: "GitHub token for cache cleanup API calls."
+    required: false
+    default: ""
 
 runs:
   using: "node24"
