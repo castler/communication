@@ -2,11 +2,10 @@
   "name": "bazel-job",
   "version": "1.0.0",
   "private": true,
-  "description": "GitHub Action: Bazel job setup with pre/post lifecycle for cache management",
+  "description": "GitHub Action: Bazel job setup with main/post lifecycle for cache management",
   "scripts": {
-    "build": "npm run build:pre && npm run build:main && npm run build:post",
-    "build:pre": "ncc build src/pre.js -o dist/pre",
-    "build:main": "ncc build src/main.js -o dist/main",
+    "build": "npm run build:main && npm run build:post",
+    "build:main": "ncc build src/pre.js -o dist/main",
     "build:post": "ncc build src/post.js -o dist/post"
   },
   "dependencies": {
