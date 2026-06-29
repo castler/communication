@@ -122,9 +122,11 @@ runs:
             # In fetch-only mode: transform bazel commands to 'bazel build --nobuild'
             # This runs loading+analysis (fetching deps) without compiling.
             # 'bazel test --nobuild' is invalid, so we replace the subcommand.
+            # Also strip everything after '--' since those are runtime/test args
+            # that would be misinterpreted as targets in build mode.
             if [[ "${BAZEL_JOB_FETCH_ONLY:-}" == "true" ]]; then
               if [[ "$cmd" == *"bazel "* ]]; then
-                cmd=$(echo "$cmd" | sed -E 's/bazel (test|coverage|run|build)/bazel build --nobuild/')
+                cmd=$(echo "$cmd" | sed -E 's/ -- .*$//' | sed -E 's/bazel (test|coverage|run|build)/bazel build --nobuild/')
               fi
             fi
             echo "$ $cmd"
