@@ -105,11 +105,11 @@ async function restoreCaches(mode, diskCacheName) {
 
   // Configure Bazel cache paths in ~/.bazelrc
   const bazelrc = path.join(home, ".bazelrc");
-  const config = [
-    `common --repository_cache=${repoCacheDir}`,
-    `common --disk_cache=${diskCacheDir}`,
-  ].join("\n") + "\n";
-  fs.appendFileSync(bazelrc, config);
+  const lines = [`common --repository_cache=${repoCacheDir}`];
+  if (diskCacheName) {
+    lines.push(`common --disk_cache=${diskCacheDir}`);
+  }
+  fs.appendFileSync(bazelrc, lines.join("\n") + "\n");
   core.info(`Bazel cache paths written to ${bazelrc}`);
 }
 
