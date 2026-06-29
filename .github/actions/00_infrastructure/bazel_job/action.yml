@@ -56,7 +56,7 @@ runs:
         echo "CACHE_MODE=${MODE}" >> "$GITHUB_ENV"
         echo "Cache mode: ${MODE}"
 
-    - name: Register post cache save hook
+    - name: Register post cache save hook and restore caches
       uses: ./.github/actions/00_infrastructure/bazel_post_cache_save
       with:
         cache-mode: ${{ env.CACHE_MODE }}
@@ -67,12 +67,6 @@ runs:
       uses: eclipse-score/more-disk-space@v1
       with:
         level: 4
-
-    - name: Restore Bazel caches
-      uses: ./.github/actions/00_infrastructure/bazel_cache_restore
-      with:
-        mode: ${{ env.CACHE_MODE }}
-        disk-cache-name: ${{ inputs.disk-cache }}
 
     - name: Allow linux-sandbox
       uses: eclipse-score/cicd-actions/unblock-user-namespace-for-linux-sandbox@f89865691445b60e9229c36adb1c37b675e1ca85
