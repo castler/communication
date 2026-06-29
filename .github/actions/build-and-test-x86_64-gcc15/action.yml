@@ -18,23 +18,26 @@ inputs:
   cache-mode:
     description: "Cache mode override (empty = auto-compute from event context)."
     default: ""
-  max-retries:
-    description: "Maximum number of attempts for the commands block."
-    default: "1"
-  fetch-only:
-    description: "When true, adds --nobuild to skip compilation (fetch dependencies only)."
-    default: "false"
+  disk-cache:
+    description: "Disk cache name."
+    default: "build_and_test_host"
 
 runs:
   using: "composite"
   steps:
     - uses: ./.github/actions/00_infrastructure/bazel_job
       with:
-        disk-cache: build_and_test_host
+        disk-cache: ${{ inputs.disk-cache }}
         cache-mode: ${{ inputs.cache-mode }}
-        max-retries: ${{ inputs.max-retries }}
-        fetch-only: ${{ inputs.fetch-only }}
-        commands: |
-          bazel build //...
-          bazel test //... --build_tests_only
-          cd examples && bazel build //... && bazel mod deps --lockfile_mode=update
+
+    - name: Build all targets
+      shell: bash
+      run: bazel build //...
+
+    - name: Run all tests
+      shell: bash
+      run: bazel test //... --build_tests_only
+
+    - name: Build examples
+      shell: bash
+      run: cd examples && bazel build //... && bazel mod deps --lockfile_mode=update

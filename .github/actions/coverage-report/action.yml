@@ -20,12 +20,9 @@ inputs:
   cache-mode:
     description: "Cache mode override (empty = auto-compute from event context)."
     default: ""
-  max-retries:
-    description: "Maximum number of attempts for the commands block."
-    default: "1"
-  fetch-only:
-    description: "When true, adds --nobuild to skip compilation (fetch dependencies only)."
-    default: "false"
+  disk-cache:
+    description: "Disk cache name."
+    default: "coverage_report"
 
 outputs:
   artifact-name:
@@ -38,26 +35,31 @@ outputs:
 runs:
   using: "composite"
   steps:
-    - name: Run coverage and generate report
-      id: run-coverage
-      uses: ./.github/actions/00_infrastructure/bazel_job
+    - uses: ./.github/actions/00_infrastructure/bazel_job
       with:
-        disk-cache: coverage_report
+        disk-cache: ${{ inputs.disk-cache }}
         cache-mode: ${{ inputs.cache-mode }}
-        max-retries: ${{ inputs.max-retries }}
-        fetch-only: ${{ inputs.fetch-only }}
-        commands: |
-          bazel coverage //... --build_tests_only
-          bazel run //quality/coverage:generate_coverage_html -- \
-            --archive "${{ github.event.repository.name }}_coverage_report_${{ github.sha }}" \
-            cpp_coverage
+
+    - name: Run coverage
+      id: run-coverage
+      shell: bash
+      run: bazel coverage //... --build_tests_only
+
+    - name: Generate coverage report
+      id: generate-report
+      if: steps.run-coverage.outcome == 'success'
+      shell: bash
+      run: |
+        bazel run //quality/coverage:generate_coverage_html -- \
+          --archive "${{ github.event.repository.name }}_coverage_report_${{ github.sha }}" \
+          cpp_coverage
 
     - name: Set conclusion
       id: set-conclusion
       if: always()
       shell: bash
       run: |
-        if [[ "${{ steps.run-coverage.outcome }}" == "success" ]]; then
+        if [[ "${{ steps.run-coverage.outcome }}" == "success" && "${{ steps.generate-report.outcome }}" == "success" ]]; then
           echo "conclusion=success" >> $GITHUB_OUTPUT
         else
           echo "conclusion=failure" >> $GITHUB_OUTPUT
@@ -65,13 +67,13 @@ runs:
 
     - name: Set artifact name
       id: set-artifact-name
-      if: steps.run-coverage.outcome == 'success'
+      if: steps.generate-report.outcome == 'success'
       shell: bash
       run: |
         echo "artifact-name=${{ github.event.repository.name }}_coverage_report_${{ github.sha }}" >> $GITHUB_OUTPUT
 
     - name: Upload coverage artifacts
-      if: steps.run-coverage.outcome == 'success'
+      if: steps.generate-report.outcome == 'success'
       uses: actions/upload-artifact@v4
       with:
         name: ${{ steps.set-artifact-name.outputs.artifact-name }}

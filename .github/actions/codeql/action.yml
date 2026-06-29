@@ -20,12 +20,6 @@ inputs:
   cache-mode:
     description: "Cache mode override (empty = auto-compute from event context)."
     default: ""
-  max-retries:
-    description: "Maximum number of attempts for the commands block."
-    default: "1"
-  fetch-only:
-    description: "When true, adds --nobuild to skip compilation (fetch dependencies only)."
-    default: "false"
 
 outputs:
   artifact-name:
@@ -38,19 +32,19 @@ outputs:
 runs:
   using: "composite"
   steps:
-    - name: Build and run CodeQL analysis
-      id: run-codeql
-      uses: ./.github/actions/00_infrastructure/bazel_job
+    - uses: ./.github/actions/00_infrastructure/bazel_job
       with:
-        disk-cache: codeql
+        disk-cache: ""
         cache-mode: ${{ inputs.cache-mode }}
-        max-retries: ${{ inputs.max-retries }}
-        fetch-only: ${{ inputs.fetch-only }}
-        commands: |
-          bazel run //quality/static_analysis:codeql_lint -- \
-            --output-dir /tmp/codeql-results \
-            --output-prefix codeql-nightly \
-            --target //score/message_passing //score/mw/com
+
+    - name: Run CodeQL analysis
+      id: run-codeql
+      shell: bash
+      run: |
+        bazel run //quality/static_analysis:codeql_lint -- \
+          --output-dir /tmp/codeql-results \
+          --output-prefix codeql-nightly \
+          --target //score/message_passing //score/mw/com
 
     - name: Upload SARIF to GitHub Code Scanning
       if: always() && steps.run-codeql.outcome == 'success'
