@@ -41,82 +41,64 @@ jobs:
   # Populates the shared repository cache without compiling.
   # ======================================================================
   fetch-host-build:
-    runs-on: ubuntu-24.04
+    uses: ./.github/workflows/_build_and_test.yml
+    with:
+      cache-mode: "recreate"
+      fetch-only: "true"
     permissions:
       contents: read
       actions: write
-    steps:
-      - uses: actions/checkout@v6.0.2
-      - uses: ./.github/actions/build-and-test-x86_64-gcc15
-        with:
-          cache-mode: "recreate"
-          fetch-only: "true"
 
   fetch-tsan:
     needs: fetch-host-build
-    runs-on: ubuntu-24.04
+    uses: ./.github/workflows/_thread_sanitizer.yml
+    with:
+      cache-mode: "recreate-update"
+      fetch-only: "true"
     permissions:
       contents: read
       actions: write
-    steps:
-      - uses: actions/checkout@v6.0.2
-      - uses: ./.github/actions/thread-sanitizer
-        with:
-          cache-mode: "recreate-update"
-          fetch-only: "true"
 
   fetch-asan:
     needs: fetch-tsan
-    runs-on: ubuntu-24.04
+    uses: ./.github/workflows/_address_sanitizer.yml
+    with:
+      cache-mode: "recreate-update"
+      fetch-only: "true"
     permissions:
       contents: read
       actions: write
-    steps:
-      - uses: actions/checkout@v6.0.2
-      - uses: ./.github/actions/address-sanitizer
-        with:
-          cache-mode: "recreate-update"
-          fetch-only: "true"
 
   fetch-clang-tidy:
     needs: fetch-asan
-    runs-on: ubuntu-24.04
+    uses: ./.github/workflows/_clang_tidy.yml
+    with:
+      cache-mode: "recreate-update"
+      fetch-only: "true"
     permissions:
       contents: read
       actions: write
-    steps:
-      - uses: actions/checkout@v6.0.2
-      - uses: ./.github/actions/clang-tidy
-        with:
-          cache-mode: "recreate-update"
-          fetch-only: "true"
 
   fetch-coverage:
     needs: fetch-clang-tidy
-    runs-on: ubuntu-24.04
+    uses: ./.github/workflows/_coverage_report.yml
+    with:
+      cache-mode: "recreate-update"
+      fetch-only: "true"
     permissions:
       contents: read
       actions: write
-    steps:
-      - uses: actions/checkout@v6.0.2
-      - uses: ./.github/actions/coverage-report
-        with:
-          cache-mode: "recreate-update"
-          fetch-only: "true"
 
   fetch-codeql:
     needs: fetch-coverage
-    runs-on: ubuntu-24.04
+    uses: ./.github/workflows/_codeql.yml
+    with:
+      cache-mode: "recreate-update"
+      fetch-only: "true"
     permissions:
       contents: read
       actions: write
       security-events: write
-    steps:
-      - uses: actions/checkout@v6.0.2
-      - uses: ./.github/actions/codeql
-        with:
-          cache-mode: "recreate-update"
-          fetch-only: "true"
 
   fetch-qnx:
     needs: fetch-codeql
@@ -139,76 +121,58 @@ jobs:
   # ======================================================================
   build-host:
     needs: fetch-qnx
-    runs-on: ubuntu-24.04
+    uses: ./.github/workflows/_build_and_test.yml
+    with:
+      cache-mode: "recreate-update"
     permissions:
       contents: read
       actions: write
-    steps:
-      - uses: actions/checkout@v6.0.2
-      - uses: ./.github/actions/build-and-test-x86_64-gcc15
-        with:
-          cache-mode: "recreate-update"
 
   build-tsan:
     needs: fetch-qnx
-    runs-on: ubuntu-24.04
+    uses: ./.github/workflows/_thread_sanitizer.yml
+    with:
+      cache-mode: "recreate-update"
     permissions:
       contents: read
       actions: write
-    steps:
-      - uses: actions/checkout@v6.0.2
-      - uses: ./.github/actions/thread-sanitizer
-        with:
-          cache-mode: "recreate-update"
 
   build-asan:
     needs: fetch-qnx
-    runs-on: ubuntu-24.04
+    uses: ./.github/workflows/_address_sanitizer.yml
+    with:
+      cache-mode: "recreate-update"
     permissions:
       contents: read
       actions: write
-    steps:
-      - uses: actions/checkout@v6.0.2
-      - uses: ./.github/actions/address-sanitizer
-        with:
-          cache-mode: "recreate-update"
 
   build-clang-tidy:
     needs: fetch-qnx
-    runs-on: ubuntu-24.04
+    uses: ./.github/workflows/_clang_tidy.yml
+    with:
+      cache-mode: "recreate-update"
     permissions:
       contents: read
       actions: write
-    steps:
-      - uses: actions/checkout@v6.0.2
-      - uses: ./.github/actions/clang-tidy
-        with:
-          cache-mode: "recreate-update"
 
   build-coverage:
     needs: fetch-qnx
-    runs-on: ubuntu-24.04
+    uses: ./.github/workflows/_coverage_report.yml
+    with:
+      cache-mode: "recreate-update"
     permissions:
       contents: read
       actions: write
-    steps:
-      - uses: actions/checkout@v6.0.2
-      - uses: ./.github/actions/coverage-report
-        with:
-          cache-mode: "recreate-update"
 
   build-codeql:
     needs: fetch-qnx
-    runs-on: ubuntu-24.04
+    uses: ./.github/workflows/_codeql.yml
+    with:
+      cache-mode: "recreate-update"
     permissions:
       contents: read
       actions: write
       security-events: write
-    steps:
-      - uses: actions/checkout@v6.0.2
-      - uses: ./.github/actions/codeql
-        with:
-          cache-mode: "recreate-update"
 
   build-qnx:
     needs: fetch-qnx

@@ -13,9 +13,9 @@
 
 # Orchestrator: PR Quality Gates (Host)
 #
-# Runs all host-platform quality checks in parallel. Each job's logic is
-# defined as a composite action (single source of truth); this workflow
-# only arranges execution.
+# Runs all host-platform quality checks in parallel. Each job is a
+# reusable workflow (single source of truth); this workflow only
+# arranges execution.
 #
 # Also callable via workflow_call (used by automated_release).
 
@@ -37,44 +37,26 @@ concurrency:
 
 jobs:
   build-and-test:
-    runs-on: ubuntu-24.04
+    uses: ./.github/workflows/_build_and_test.yml
     permissions:
       contents: read
       actions: write
-    steps:
-      - uses: actions/checkout@v6.0.2
-      - uses: ./.github/actions/build-and-test-x86_64-gcc15
 
   tsan:
-    runs-on: ubuntu-24.04
+    uses: ./.github/workflows/_thread_sanitizer.yml
     permissions:
       contents: read
       actions: write
-    steps:
-      - uses: actions/checkout@v6.0.2
-      - uses: ./.github/actions/thread-sanitizer
 
   asan:
-    runs-on: ubuntu-24.04
+    uses: ./.github/workflows/_address_sanitizer.yml
     permissions:
       contents: read
       actions: write
-    steps:
-      - uses: actions/checkout@v6.0.2
-      - uses: ./.github/actions/address-sanitizer
 
   clang-tidy:
-    runs-on: ubuntu-24.04
+    uses: ./.github/workflows/_clang_tidy.yml
     permissions:
       contents: read
       actions: write
-    outputs:
-      artifact-name: ${{ steps.run.outputs.artifact-name }}
-      errors: ${{ steps.run.outputs.errors }}
-      warnings: ${{ steps.run.outputs.warnings }}
-      conclusion: ${{ steps.run.outputs.conclusion }}
-    steps:
-      - uses: actions/checkout@v6.0.2
-      - id: run
-        uses: ./.github/actions/clang-tidy
 

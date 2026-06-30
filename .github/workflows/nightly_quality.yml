@@ -49,52 +49,29 @@ jobs:
   # Quality job 1: Coverage
   # --------------------------------------------------------------------
   run-coverage:
-    runs-on: ubuntu-24.04
+    uses: ./.github/workflows/_coverage_report.yml
     permissions:
       contents: read
       actions: write
-    outputs:
-      artifact-name: ${{ steps.run.outputs.artifact-name }}
-      conclusion: ${{ steps.run.outputs.conclusion }}
-    steps:
-      - uses: actions/checkout@v6.0.2
-      - id: run
-        uses: ./.github/actions/coverage-report
 
   # --------------------------------------------------------------------
   # Quality job 2: Clang-Tidy
   # --------------------------------------------------------------------
   run-clang-tidy:
-    runs-on: ubuntu-24.04
+    uses: ./.github/workflows/_clang_tidy.yml
     permissions:
       contents: read
       actions: write
-    outputs:
-      artifact-name: ${{ steps.run.outputs.artifact-name }}
-      errors: ${{ steps.run.outputs.errors }}
-      warnings: ${{ steps.run.outputs.warnings }}
-      conclusion: ${{ steps.run.outputs.conclusion }}
-    steps:
-      - uses: actions/checkout@v6.0.2
-      - id: run
-        uses: ./.github/actions/clang-tidy
 
   # --------------------------------------------------------------------
   # Quality job 3: CodeQL
   # --------------------------------------------------------------------
   run-codeql:
-    runs-on: ubuntu-24.04
+    uses: ./.github/workflows/_codeql.yml
     permissions:
       contents: read
       actions: write
       security-events: write
-    outputs:
-      artifact-name: ${{ steps.run.outputs.artifact-name }}
-      conclusion: ${{ steps.run.outputs.conclusion }}
-    steps:
-      - uses: actions/checkout@v6.0.2
-      - id: run
-        uses: ./.github/actions/codeql
 
   # --------------------------------------------------------------------
   # Collect results, build the dashboard, upload artifact for docs.yml
@@ -127,17 +104,17 @@ jobs:
       # ------------------------------------------------------------------
       - name: Download coverage artifact
         id: download-coverage
-        if: needs.run-coverage.outputs.conclusion == 'success'
+        if: needs.run-coverage.result == 'success'
         uses: actions/download-artifact@v4
         with:
-          name: ${{ needs.run-coverage.outputs.artifact-name }}
+          name: ${{ github.event.repository.name }}_coverage_report_${{ github.sha }}
           path: /tmp/coverage_zip
 
       # ------------------------------------------------------------------
       # Extract coverage artifact to a known location for the dashboard generator
       # ------------------------------------------------------------------
       - name: Extract coverage HTML report
-        if: needs.run-coverage.outputs.conclusion == 'success' && steps.download-coverage.outcome == 'success'
+        if: needs.run-coverage.result == 'success' && steps.download-coverage.outcome == 'success'
         run: |
           bash quality/scripts/extract_coverage_artifact.sh \
             /tmp/coverage_zip \
@@ -151,7 +128,7 @@ jobs:
         continue-on-error: true
         uses: actions/download-artifact@v4
         with:
-          name: ${{ needs.run-clang-tidy.outputs.artifact-name }}
+          name: clang-tidy-findings
           path: /tmp/clang_tidy
 
       - name: Copy clang-tidy findings into quality output
@@ -173,7 +150,7 @@ jobs:
         continue-on-error: true
         uses: actions/download-artifact@v4
         with:
-          name: ${{ needs.run-codeql.outputs.artifact-name }}
+          name: codeql-csv-results
           path: /tmp/codeql
 
       - name: Copy CodeQL CSV into quality output

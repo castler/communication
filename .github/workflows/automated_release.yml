@@ -80,17 +80,10 @@ jobs:
 
   run-coverage-report:
     needs: create-draft-release
-    runs-on: ubuntu-24.04
+    uses: ./.github/workflows/_coverage_report.yml
     permissions:
       contents: read
       actions: write
-    outputs:
-      artifact-name: ${{ steps.run.outputs.artifact-name }}
-      conclusion: ${{ steps.run.outputs.conclusion }}
-    steps:
-      - uses: actions/checkout@v6.0.2
-      - id: run
-        uses: ./.github/actions/coverage-report
 
   upload-coverage-report:
     needs:
@@ -104,11 +97,7 @@ jobs:
         uses: actions/checkout@v6.0.2
 
       - name: Abort if coverage failed
-        # The coverage-report composite action uses continue-on-error so its
-        # "success" — the real outcome is exposed via the conclusion output.
-        # Failing here propagates the failure to finalize-release (skipped) and
-        # delete-release-on-failure (triggered), aborting the release correctly.
-        if: needs.run-coverage-report.outputs.conclusion != 'success'
+        if: needs.run-coverage-report.result != 'success'
         run: |
           echo "::error::Coverage failed — aborting release. Draft will be deleted."
           exit 1
@@ -116,12 +105,12 @@ jobs:
       - name: Download coverage report artifact
         uses: actions/download-artifact@v4
         with:
-          name: ${{ needs.run-coverage-report.outputs.artifact-name }}
+          name: ${{ github.event.repository.name }}_coverage_report_${{ github.sha }}
           path: ./
 
       - name: Upload coverage report to existing draft release
         run: |
-          gh release upload "${{ needs.create-draft-release.outputs.release-tag }}" "${{ needs.run-coverage-report.outputs.artifact-name }}.zip"
+          gh release upload "${{ needs.create-draft-release.outputs.release-tag }}" "${{ github.event.repository.name }}_coverage_report_${{ github.sha }}.zip"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
