@@ -150,7 +150,7 @@ jobs:
         - name: Setup Bazel environment
           uses: ./.github/actions/00_infrastructure/bazel_job
           with:
-            disk-cache: build_and_test_qnx
+            disk-cache: ${{ inputs.fetch_only != 'true' && 'build_and_test_qnx' || '' }}
             cache-mode: ${{ inputs.cache_mode }}
         - name: Build QNX
           if: inputs.fetch_only != 'true'
