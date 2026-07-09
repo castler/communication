@@ -325,7 +325,6 @@ cc_unit_test(
     srcs = [
         "qnx_resource_path_test.cpp",
     ],
-    visibility = ["//visibility:public"],
     deps = [
         ":qnx_resource_path",
     ],

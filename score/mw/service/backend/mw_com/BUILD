@@ -17,7 +17,7 @@ cc_library(
     name = "provided_service_builder",
     hdrs = ["provided_service_builder.h"],
     features = COMPILER_WARNING_FEATURES,
-    visibility = ["//visibility:public"],
+    visibility = ["//score/mw:__subpackages__"],
     deps = [
         ":provided_service_decorator",
         "//score/mw/service:provided_service_container",
@@ -28,7 +28,7 @@ cc_library(
     name = "provided_service_decorator",
     hdrs = ["provided_service_decorator.h"],
     features = COMPILER_WARNING_FEATURES,
-    visibility = ["//visibility:public"],
+    visibility = ["//score/mw:__subpackages__"],
     deps = [
         "//score/mw/service:provided_service",
     ],
@@ -38,5 +38,5 @@ cc_library(
     name = "single_instantiation_strategy",
     hdrs = ["single_instantiation_strategy.h"],
     features = COMPILER_WARNING_FEATURES,
-    visibility = ["//visibility:public"],
+    visibility = ["//score/mw:__subpackages__"],
 )

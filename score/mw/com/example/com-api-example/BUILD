@@ -18,7 +18,6 @@ rust_binary(
     srcs = ["basic-consumer-producer.rs"],
     data = ["etc/mw_com_config.json"],
     features = ["link_std_cpp_lib"],
-    visibility = ["//visibility:public"],
     deps = [
         "//score/mw/com/example/com-api-example/com-api-gen",
         "//score/mw/com/impl/rust/com-api/com-api",
