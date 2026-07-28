@@ -39,6 +39,7 @@ py_test(
         "lint",
         "no-cache",
         "no-sandbox",
+        "no-flaky-test-detection",
     ],
     target_compatible_with = ["@platforms//os:linux"],
     deps = [":parser"],

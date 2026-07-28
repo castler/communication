@@ -71,6 +71,7 @@ format_test(
     starlark = "@buildifier_prebuilt//:buildifier",
     target_compatible_with = ["@platforms//os:linux"],
     workspace = "//:LICENSE",
+    tags = ["no-flaky-test-detection"],
 )
 
 use_clang_tidy_targets()
