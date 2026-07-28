@@ -143,6 +143,7 @@ jobs:
     permissions:
       contents: read
       actions: read
+      issues: write
     steps:
       - uses: actions/checkout@v6.0.2
 
@@ -166,6 +167,21 @@ jobs:
       - name: Add summary to workflow
         if: always()
         run: cat /tmp/nightly_flaky/merged/summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Sync flaky test issues
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          if [[ ! -f /tmp/nightly_flaky/merged/summary.json ]]; then
+            echo "No merged summary found; skipping flaky issue sync."
+            exit 0
+          fi
+          python3 quality/scripts/sync_flaky_issues.py \
+            --merged-summary /tmp/nightly_flaky/merged/summary.json \
+            --repo "${{ github.repository }}" \
+            --run-id "${{ github.run_id }}" \
+            --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
       - name: Upload consolidated artifact
         if: always()

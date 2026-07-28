@@ -16,7 +16,17 @@ import os
 import tempfile
 import unittest
 
-from quality.scripts import collect_flaky_tests, merge_flaky_reports
+from quality.scripts import collect_flaky_tests, merge_flaky_reports, sync_flaky_issues
+from quality.scripts.sync_flaky_issues import (
+    Issue,
+    RunContext,
+    RunRecord,
+    aggregate,
+    merge_body,
+    parse_run_records,
+    render_body,
+    sync,
+)
 
 
 class CollectFlakyTest(unittest.TestCase):
@@ -164,6 +174,164 @@ class MergeFlakyTest(unittest.TestCase):
                 output_text = stream.read()
             self.assertIn("total_flaky_count=1", output_text)
             self.assertIn("total_failed_count=2", output_text)
+
+
+class FakeGitHubClient:
+    """In-memory GitHub client for testing sync orchestration."""
+
+    def __init__(self):
+        self.issues = {}
+        self.comments = {}
+        self._next_number = 1
+        self.labels_ensured = []
+        self.reopened = []
+
+    def ensure_label(self, name):
+        self.labels_ensured.append(name)
+
+    def _find(self, target):
+        for issue in self.issues.values():
+            marker = sync_flaky_issues.TARGET_MARKER_RE.search(issue.body or "")
+            if marker and marker.group("target") == target:
+                return issue
+        return None
+
+    def search_issue(self, target):
+        return self._find(target)
+
+    def list_run_comments(self, issue):
+        return list(self.comments.get(issue.number, []))
+
+    def create_issue(self, title, body, labels):
+        number = self._next_number
+        self._next_number += 1
+        issue = Issue(number=number, body=body, state="open", labels=list(labels))
+        self.issues[number] = issue
+        self.comments[number] = []
+        return issue
+
+    def update_issue_body(self, issue, body):
+        self.issues[issue.number].body = body
+        issue.body = body
+
+    def reopen_issue(self, issue):
+        self.issues[issue.number].state = "open"
+        issue.state = "open"
+        self.reopened.append(issue.number)
+
+    def add_comment(self, issue, body):
+        self.comments.setdefault(issue.number, []).append(body)
+
+
+def _summary(target, failed, total, configs):
+    return {
+        "flaky_targets": [
+            {"target": target, "failed_runs": failed, "total_runs": total, "configs": configs}
+        ]
+    }
+
+
+class SyncFlakyIssuesTest(unittest.TestCase):
+    def _ctx(self, run_id="100"):
+        return RunContext(run_id=run_id, run_url=f"https://ci/{run_id}", date="2026-07-27")
+
+    def test_new_target_creates_issue_with_single_comment(self):
+        client = FakeGitHubClient()
+        summary = _summary("//pkg:a", 7, 300, {"tsan": {"failed_runs": 7, "total_runs": 300}})
+        actions = sync(summary, client, self._ctx())
+
+        self.assertEqual(actions[0]["action"], "created")
+        self.assertEqual(len(client.issues), 1)
+        issue = client.issues[1]
+        self.assertIn("flaky-test", issue.labels)
+        self.assertIn("<!-- flaky-test-target: //pkg:a -->", issue.body)
+        # Exactly one run comment written on creation.
+        self.assertEqual(len(client.comments[1]), 1)
+        self.assertIn("Cumulative failed runs observed:** 7", issue.body)
+
+    def test_recurrence_increments_counter_without_duplicate_issue(self):
+        client = FakeGitHubClient()
+        cfg = {"tsan": {"failed_runs": 7, "total_runs": 300}}
+        sync(_summary("//pkg:a", 7, 300, cfg), client, self._ctx("100"))
+        sync(_summary("//pkg:a", 4, 300, cfg), client, self._ctx("101"))
+
+        self.assertEqual(len(client.issues), 1)
+        self.assertEqual(len(client.comments[1]), 2)
+        issue = client.issues[1]
+        self.assertIn("Cumulative failed runs observed:** 11", issue.body)
+        self.assertIn("over 600 total runs, 2 nightlies", issue.body)
+
+    def test_same_run_id_is_idempotent(self):
+        client = FakeGitHubClient()
+        cfg = {"tsan": {"failed_runs": 7, "total_runs": 300}}
+        sync(_summary("//pkg:a", 7, 300, cfg), client, self._ctx("100"))
+        result = sync(_summary("//pkg:a", 7, 300, cfg), client, self._ctx("100"))
+
+        self.assertEqual(result[0]["action"], "skipped-duplicate")
+        self.assertEqual(len(client.comments[1]), 1)
+        self.assertIn("Cumulative failed runs observed:** 7", client.issues[1].body)
+
+    def test_closed_issue_is_reopened_on_recurrence(self):
+        client = FakeGitHubClient()
+        cfg = {"tsan": {"failed_runs": 7, "total_runs": 300}}
+        sync(_summary("//pkg:a", 7, 300, cfg), client, self._ctx("100"))
+        client.issues[1].state = "closed"
+
+        result = sync(_summary("//pkg:a", 3, 300, cfg), client, self._ctx("101"))
+
+        self.assertEqual(result[0]["action"], "reopened")
+        self.assertIn(1, client.reopened)
+        self.assertEqual(client.issues[1].state, "open")
+        self.assertIn("Reopened", client.comments[1][-1])
+
+    def test_corrupted_body_block_recovers_from_comments(self):
+        client = FakeGitHubClient()
+        cfg = {"tsan": {"failed_runs": 7, "total_runs": 300}}
+        sync(_summary("//pkg:a", 7, 300, cfg), client, self._ctx("100"))
+        # A human corrupts the managed region but keeps the identity marker.
+        client.issues[1].body = "<!-- flaky-test-target: //pkg:a -->\nhuman notes, block deleted"
+
+        sync(_summary("//pkg:a", 4, 300, cfg), client, self._ctx("101"))
+
+        issue = client.issues[1]
+        self.assertIn("human notes, block deleted", issue.body)
+        self.assertIn("Cumulative failed runs observed:** 11", issue.body)
+
+
+class SyncPureFunctionsTest(unittest.TestCase):
+    def test_parse_run_records_ignores_malformed(self):
+        good = RunRecord("1", "2026-07-27", 3, 300, {"tsan": {"failed_runs": 3, "total_runs": 300}}).to_marker()
+        bodies = [good, "just a human comment", "<!-- flaky-run: {not json} -->"]
+        records = parse_run_records(bodies)
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0].failed_runs, 3)
+
+    def test_aggregate_sums_across_configs(self):
+        records = [
+            RunRecord("1", "2026-07-20", 3, 300, {"tsan": {"failed_runs": 3, "total_runs": 300}}),
+            RunRecord("2", "2026-07-27", 5, 300, {"asan": {"failed_runs": 5, "total_runs": 300}}),
+        ]
+        stats = aggregate("//pkg:a", records)
+        self.assertEqual(stats.cumulative_failed_runs, 8)
+        self.assertEqual(stats.cumulative_total_runs, 600)
+        self.assertEqual(stats.nightly_count, 2)
+        self.assertEqual(stats.first_seen, "2026-07-20")
+        self.assertEqual(stats.last_seen, "2026-07-27")
+
+    def test_merge_body_preserves_prose_outside_region(self):
+        stats = aggregate("//pkg:a", [RunRecord("1", "2026-07-27", 1, 10, {})])
+        region = render_body(stats)
+        existing = f"Human triage notes.\n\n{region}\n\nMore notes below."
+        # New stats after a second run.
+        stats2 = aggregate(
+            "//pkg:a",
+            [RunRecord("1", "2026-07-27", 1, 10, {}), RunRecord("2", "2026-07-28", 2, 10, {})],
+        )
+        merged = merge_body(existing, render_body(stats2))
+        self.assertIn("Human triage notes.", merged)
+        self.assertIn("More notes below.", merged)
+        self.assertIn("Cumulative failed runs observed:** 3", merged)
+        self.assertEqual(merged.count(sync_flaky_issues.STATS_BEGIN), 1)
 
 
 if __name__ == "__main__":

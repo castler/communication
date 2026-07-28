@@ -19,6 +19,7 @@ py_library(
         "__init__.py",
         "collect_flaky_tests.py",
         "merge_flaky_reports.py",
+        "sync_flaky_issues.py",
     ],
 )
 
@@ -33,6 +34,13 @@ py_binary(
     name = "merge_flaky_reports",
     srcs = ["merge_flaky_reports.py"],
     main = "merge_flaky_reports.py",
+    deps = [":flaky_reports_lib"],
+)
+
+py_binary(
+    name = "sync_flaky_issues",
+    srcs = ["sync_flaky_issues.py"],
+    main = "sync_flaky_issues.py",
     deps = [":flaky_reports_lib"],
 )
 
