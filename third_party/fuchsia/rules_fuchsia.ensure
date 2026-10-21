@@ -1,0 +1,4 @@
+$ResolvedVersions rules_fuchsia.resolved
+$VerifiedPlatform linux-amd64
+fuchsia/development/rules_fuchsia git_revision:f969c555ff81588a3df1aead385be06e96d2d1fa
+

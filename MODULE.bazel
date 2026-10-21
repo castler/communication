@@ -467,3 +467,46 @@ register_toolchains(
     "//bazel/toolchains:sphinx_toolchain",
     dev_dependency = True,
 )
+
+###############################################################################
+#
+# Fuchsia (FEMU integration tests, see //quality/integration_testing/environments/femu)
+#
+# rules_fuchsia, the Fuchsia SDK and clang are not on the BCR. They are fetched
+# from CIPD through the Fuchsia infra rules, pinned by //third_party/fuchsia.
+# The toolchains are only activated via `--config=fuchsia`.
+#
+###############################################################################
+bazel_dep(name = "fuchsia_infra", dev_dependency = True)
+git_override(
+    module_name = "fuchsia_infra",
+    commit = "310e51303d511feb9b718cc51aeb6d232365da18",
+    remote = "https://fuchsia.googlesource.com/fuchsia-infra-bazel-rules",
+)
+
+cipd_ext = use_extension("@fuchsia_infra//cipd:defs.bzl", "cipd_ext", dev_dependency = True)
+cipd_ext.repository(
+    name = "rules_fuchsia",
+    ensure_file = "//third_party/fuchsia:rules_fuchsia.ensure",
+)
+cipd_ext.repository(
+    name = "fuchsia_sdk",
+    ensure_file = "//third_party/fuchsia:bazel_sdk.ensure",
+)
+use_repo(cipd_ext, "fuchsia_sdk", "rules_fuchsia")
+
+fuchsia_clang_ext = use_extension("@fuchsia_infra//:extensions.bzl", "fuchsia_clang_ext", dev_dependency = True)
+fuchsia_clang_ext.cipd_ensure(
+    ensure_file = "//third_party/fuchsia:clang.ensure",
+)
+use_repo(fuchsia_clang_ext, "fuchsia_clang")
+
+# Repositories that are plain repo rules (use_repo_rule has no dev_dependency).
+fuchsia_deps = use_extension("//third_party/fuchsia:deps.bzl", "fuchsia_deps", dev_dependency = True)
+use_repo(
+    fuchsia_deps,
+    "cipd_tool",
+    "core_x64_product_bundle",
+    "fuchsia_sdk_toolchain",
+    "host_clang_toolchain",
+)

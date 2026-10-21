@@ -1182,8 +1182,6 @@
     "https://raw.githubusercontent.com/eclipse-score/bazel_registry/refs/heads/main/modules/rules_swift/2.1.1/MODULE.bazel": "not found",
     "https://raw.githubusercontent.com/eclipse-score/bazel_registry/refs/heads/main/modules/rules_swift/2.4.0/MODULE.bazel": "not found",
     "https://raw.githubusercontent.com/eclipse-score/bazel_registry/refs/heads/main/modules/rules_swift/3.1.2/MODULE.bazel": "not found",
-    "https://raw.githubusercontent.com/eclipse-score/bazel_registry/refs/heads/main/modules/score_baselibs/0.2.15/MODULE.bazel": "bfbdf5c252abcfd3d18f115666372e6db5c4fc0d11c4790bb0ea823506c95917",
-    "https://raw.githubusercontent.com/eclipse-score/bazel_registry/refs/heads/main/modules/score_baselibs/0.2.15/source.json": "14e4d10025221b58ff0e6ed7256cac2f48fe7cf5e96a35f7b2581b18af0627f3",
     "https://raw.githubusercontent.com/eclipse-score/bazel_registry/refs/heads/main/modules/score_bazel_cpp_toolchains/1.0.4/MODULE.bazel": "d4e11b450511b94dcfaefe4774da8cb891d0471f8fade9fce54b0e14ac1cea7d",
     "https://raw.githubusercontent.com/eclipse-score/bazel_registry/refs/heads/main/modules/score_bazel_cpp_toolchains/1.0.4/source.json": "4489079086d3cdd1e209cadeac5aac3b48120a0eb0bf855b5e0815cf7a8642b3",
     "https://raw.githubusercontent.com/eclipse-score/bazel_registry/refs/heads/main/modules/score_bazel_platforms/0.0.3/MODULE.bazel": "14c96e378c08705a46abe0799d6236fe3095c342c34f83f8d1b3f6046ce00651",
@@ -1304,6 +1302,70 @@
   },
   "selectedYankedVersions": {},
   "moduleExtensions": {
+    "//third_party/fuchsia:deps.bzl%fuchsia_deps": {
+      "general": {
+        "bzlTransitiveDigest": "dPh0L34KhvTrcEtcJRU1vrj/G8N2jMd5wbvoeN3LDqE=",
+        "usagesDigest": "YlS/fmHyfSyaL1G1FbE0OP3GfWyAsFbER0OquOcOfAY=",
+        "recordedFileInputs": {},
+        "recordedDirentsInputs": {},
+        "envVariables": {},
+        "generatedRepoSpecs": {
+          "cipd_tool": {
+            "repoRuleId": "@@fuchsia_infra+//cipd/private:cipd_tool.bzl%cipd_tool_repository",
+            "attributes": {}
+          },
+          "fuchsia_sdk_toolchain": {
+            "repoRuleId": "@@fuchsia_infra++cipd_ext+rules_fuchsia//fuchsia/workspace:register_fuchsia_sdk_toolchain.bzl%fuchsia_toolchain_decl",
+            "attributes": {
+              "toolchain_path": "@fuchsia_sdk//:fuchsia_toolchain_info"
+            }
+          },
+          "host_clang_toolchain": {
+            "repoRuleId": "@@fuchsia_infra+//infra/private:host_clang_toolchain.bzl%fuchsia_clang_host_toolchain_repo",
+            "attributes": {}
+          },
+          "core_x64_product_bundle": {
+            "repoRuleId": "@@//third_party/fuchsia:product_bundle.bzl%fuchsia_product_bundle_download",
+            "attributes": {
+              "build_path": "builds/8670199271704615345/product_bundles/core.x64",
+              "transfer_sha256": "e4c353a308cf5a2cf70536bce2f82717169b1f9e12c8ab4b764ed27ab7001c3d"
+            }
+          }
+        },
+        "recordedRepoMappingEntries": [
+          [
+            "",
+            "fuchsia_infra",
+            "fuchsia_infra+"
+          ],
+          [
+            "",
+            "rules_fuchsia",
+            "fuchsia_infra++cipd_ext+rules_fuchsia"
+          ],
+          [
+            "fuchsia_infra+",
+            "bazel_tools",
+            "bazel_tools"
+          ],
+          [
+            "fuchsia_infra+",
+            "rules_cc",
+            "rules_cc+"
+          ],
+          [
+            "rules_cc+",
+            "cc_compatibility_proxy",
+            "rules_cc++compatibility_proxy+cc_compatibility_proxy"
+          ],
+          [
+            "rules_cc++compatibility_proxy+cc_compatibility_proxy",
+            "rules_cc",
+            "rules_cc+"
+          ]
+        ]
+      }
+    },
     "@@aspect_rules_esbuild+//esbuild:extensions.bzl%esbuild": {
       "general": {
         "bzlTransitiveDigest": "t+QgUBKxA604z2EQVeBwYnqrIHPNDa7DGwJHZwC3Wfg=",
@@ -1930,6 +1992,136 @@
             "envoy_api+",
             "envoy_api",
             "envoy_api+"
+          ]
+        ]
+      }
+    },
+    "@@fuchsia_infra+//:extensions.bzl%fuchsia_clang_ext": {
+      "general": {
+        "bzlTransitiveDigest": "5jExFbDEbe+Ej0PcZsMfgjO0l3JLGiQiThvkAgeOacw=",
+        "usagesDigest": "PARWqhOmKdFOQwUWKYRko/A876hpI5rAvl/FMrI8tGY=",
+        "recordedFileInputs": {},
+        "recordedDirentsInputs": {},
+        "envVariables": {},
+        "generatedRepoSpecs": {
+          "fuchsia_clang": {
+            "repoRuleId": "@@fuchsia_infra++cipd_ext+rules_fuchsia//fuchsia/workspace:fuchsia_clang_repository.bzl%fuchsia_clang_repository",
+            "attributes": {
+              "cipd_bin": "@@fuchsia_infra++_repo_rules+cipd_tool//:cipd",
+              "cipd_ensure_file": "@@//third_party/fuchsia:clang.ensure",
+              "cipd_tag": "",
+              "sha256": {}
+            }
+          }
+        },
+        "recordedRepoMappingEntries": [
+          [
+            "bazel_tools",
+            "rules_cc",
+            "rules_cc+"
+          ],
+          [
+            "fuchsia_infra+",
+            "rules_fuchsia",
+            "fuchsia_infra++cipd_ext+rules_fuchsia"
+          ],
+          [
+            "fuchsia_infra++cipd_ext+rules_fuchsia",
+            "bazel_skylib",
+            "bazel_skylib+"
+          ],
+          [
+            "fuchsia_infra++cipd_ext+rules_fuchsia",
+            "bazel_tools",
+            "bazel_tools"
+          ],
+          [
+            "fuchsia_infra++cipd_ext+rules_fuchsia",
+            "fuchsia_sdk",
+            "fuchsia_infra++cipd_ext+fuchsia_sdk"
+          ],
+          [
+            "fuchsia_infra++cipd_ext+rules_fuchsia",
+            "rules_cc",
+            "rules_cc+"
+          ],
+          [
+            "fuchsia_infra++cipd_ext+rules_fuchsia",
+            "rules_fuchsia",
+            "fuchsia_infra++cipd_ext+rules_fuchsia"
+          ],
+          [
+            "rules_cc+",
+            "bazel_tools",
+            "bazel_tools"
+          ],
+          [
+            "rules_cc+",
+            "cc_compatibility_proxy",
+            "rules_cc++compatibility_proxy+cc_compatibility_proxy"
+          ],
+          [
+            "rules_cc+",
+            "rules_cc",
+            "rules_cc+"
+          ],
+          [
+            "rules_cc++compatibility_proxy+cc_compatibility_proxy",
+            "rules_cc",
+            "rules_cc+"
+          ]
+        ]
+      }
+    },
+    "@@fuchsia_infra+//cipd:defs.bzl%cipd_ext": {
+      "general": {
+        "bzlTransitiveDigest": "KcfAjvBHDzbR77miG5gpHzdRMypXAzCCgYyvJeQTKuY=",
+        "usagesDigest": "pornBCL72B52G+nW5/Ea0jxYTpOSDxcNOZfKC9hNMN0=",
+        "recordedFileInputs": {},
+        "recordedDirentsInputs": {},
+        "envVariables": {},
+        "generatedRepoSpecs": {
+          "rules_fuchsia": {
+            "repoRuleId": "@@fuchsia_infra+//cipd/private:cipd_repository.bzl%cipd_repository",
+            "attributes": {
+              "ensure_file": "@@//third_party/fuchsia:rules_fuchsia.ensure",
+              "package": "",
+              "tag": "",
+              "exports_files": false,
+              "cipd_bin": "@@fuchsia_infra++_repo_rules+cipd_tool//:cipd"
+            }
+          },
+          "fuchsia_sdk": {
+            "repoRuleId": "@@fuchsia_infra+//cipd/private:cipd_repository.bzl%cipd_repository",
+            "attributes": {
+              "ensure_file": "@@//third_party/fuchsia:bazel_sdk.ensure",
+              "package": "",
+              "tag": "",
+              "exports_files": false,
+              "cipd_bin": "@@fuchsia_infra++_repo_rules+cipd_tool//:cipd"
+            }
+          },
+          "shac": {
+            "repoRuleId": "@@fuchsia_infra+//cipd/private:cipd_repository.bzl%cipd_repository",
+            "attributes": {
+              "ensure_file": "@@fuchsia_infra+//manifests:shac.ensure",
+              "package": "",
+              "tag": "",
+              "exports_files": true,
+              "cipd_bin": "@@fuchsia_infra++_repo_rules+cipd_tool//:cipd"
+            }
+          }
+        },
+        "recordedRepoMappingEntries": [
+          [
+            "fuchsia_infra+",
+            "bazel_tools",
+            "bazel_tools"
+          ],
+          [
+            "fuchsia_infra+",
+            "fuchsia_infra",
+            "fuchsia_infra+"
           ]
         ]
       }

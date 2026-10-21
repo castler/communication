@@ -209,3 +209,15 @@ try-import %workspace%/.bazelrc.ai_checker
 
 # Enable user-defined configs
 try-import %workspace%/user.bazelrc
+
+# Fuchsia targets (FEMU integration tests), e.g. `bazel test --config=fuchsia //quality/integration_testing/test/femu_hello_world:all`.
+# Toolchains are only registered here so that normal builds do not fetch the Fuchsia SDK.
+build:fuchsia --@fuchsia_sdk//flags:fuchsia_api_level=31
+build:fuchsia --extra_toolchains=@fuchsia_sdk_toolchain//:all
+build:fuchsia --extra_toolchains=@fuchsia_clang//:all
+build:fuchsia --extra_toolchains=@host_clang_toolchain//:all
+build:fuchsia --strategy=FuchsiaPmPublish=local
+build:fuchsia --experimental_writable_outputs
+build:fuchsia --experimental_retain_test_configuration_across_testonly
+build:fuchsia --copt=-ffunction-sections
+build:fuchsia --copt=-fdata-sections
