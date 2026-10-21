@@ -17,6 +17,7 @@ load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@score_itf//:defs.bzl", "py_itf_test")
 load("@score_rules_imagefs//rules/qnx:ifs.bzl", "qnx_ifs")
+load("//quality/integration_testing/environments/femu:defs.bzl", "far_files")
 
 visibility(["//..."])
 
@@ -258,5 +259,56 @@ def dual_qemu_integration_test(
         plugins = [
             "//quality/integration_testing/environments/dual_qemu:dual_qemu_plugin",
         ],
+        **kwargs
+    )
+
+def femu_integration_test(
+        name,
+        srcs,
+        packages,
+        product_bundle = "@core_x64_product_bundle//:product_bundle",
+        product_bundle_json = "@core_x64_product_bundle//:product_bundle/product_bundle.json",
+        **kwargs):
+    """Runs an ITF pytest against a Fuchsia emulator (FEMU) with `packages` published.
+
+    The `target` fixture provides `run_test_component("<package>#meta/<name>.cm")`.
+    The SDK and the product bundle are fetched by Bazel, so the test needs no network access.
+    Needs `--config=fuchsia` and /dev/kvm.
+
+    Args:
+        name: test target name.
+        srcs: pytest source files.
+        packages: `fuchsia_package`/`fuchsia_unittest_package` targets to publish.
+        product_bundle: filegroup with all files of the product bundle.
+        product_bundle_json: the `product_bundle.json` file of the product bundle.
+        **kwargs: forwarded to `py_itf_test`.
+    """
+    args = [
+        "--femu-ffx=$(location @fuchsia_sdk//tools:x64/ffx)",
+        "--femu-product-bundle=$(location {})".format(product_bundle_json),
+    ]
+    data = [product_bundle, product_bundle_json, "@fuchsia_sdk//tools:x64/ffx"]
+    for i, package in enumerate(packages):
+        far = "_{}_far_{}".format(name, i)
+        far_files(name = far, package = package, testonly = True, tags = ["manual"])
+        args.append("--femu-package=$(location :{})".format(far))
+        data.append(":" + far)
+
+    _extend_list_in_kwargs(kwargs, "args", args)
+    _extend_list_in_kwargs(kwargs, "data", data)
+
+    # "manual": the Fuchsia toolchains are only available with `--config=fuchsia`.
+    _extend_list_in_kwargs_without_duplicates(
+        kwargs,
+        "tags",
+        ["integration-test", "requires-kvm", "exclusive", "manual"],
+    )
+    if "size" not in kwargs:
+        kwargs["size"] = "enormous"
+
+    py_itf_test(
+        name = name,
+        srcs = srcs,
+        plugins = ["//quality/integration_testing/environments/femu:femu_plugin"],
         **kwargs
     )
