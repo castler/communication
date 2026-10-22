@@ -10,10 +10,12 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  ********************************************************************************/
+#ifdef __Fuchsia__
+#include "score/message_passing/fuchsia/connection_registry.h"
+#endif
 #include "score/message_passing/unix_domain/unix_domain_server.h"
 
 #include "score/message_passing/client_server_communication.h"
-#include "score/message_passing/unix_domain/fuchsia_connection_registry.h"
 #include "score/message_passing/unix_domain/unix_domain_engine.h"
 #include "score/message_passing/unix_domain/unix_domain_socket_address.h"
 

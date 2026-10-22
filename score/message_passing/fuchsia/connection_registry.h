@@ -10,10 +10,8 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  ********************************************************************************/
-#ifndef SCORE_LIB_MESSAGE_PASSING_UNIX_DOMAIN_FUCHSIA_CONNECTION_REGISTRY_H
-#define SCORE_LIB_MESSAGE_PASSING_UNIX_DOMAIN_FUCHSIA_CONNECTION_REGISTRY_H
-
-#ifdef __Fuchsia__
+#ifndef SCORE_LIB_MESSAGE_PASSING_FUCHSIA_CONNECTION_REGISTRY_H
+#define SCORE_LIB_MESSAGE_PASSING_FUCHSIA_CONNECTION_REGISTRY_H
 
 #include <score/expected.hpp>
 
@@ -22,6 +20,7 @@
 #include <cstdint>
 #include <deque>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <string_view>
@@ -29,16 +28,21 @@
 namespace score::message_passing::detail
 {
 
-/// \brief Replacement for the AF_UNIX connection establishment on Fuchsia, which has no AF_UNIX support.
+/// \brief Connection establishment for Fuchsia, which has no AF_UNIX support.
 /// \details Connections are Zircon stream sockets wrapped into file descriptors, so that the poll based engine and
-///          the stream framing protocol can be used unchanged. The registry is the rendezvous point that hands the
-///          server end of a freshly created socket pair to the server listening on the same identifier.
-///          It only connects endpoints within one process. Connecting across components needs the server end
-///          to be handed over through a FIDL protocol; this is the only place that has to be replaced for that.
+///          the stream framing protocol can be used unchanged.
+///          A server registers its identifier here and publishes the score.messagepassing.Connector FIDL protocol
+///          in the outgoing directory of its component. A client connecting to an identifier that is not served
+///          by the same process creates a socket pair and sends one end through the Connector protocol found in
+///          its incoming namespace. FIDL is only involved in establishing the connection.
 class FuchsiaConnectionRegistry
 {
   public:
     static FuchsiaConnectionRegistry& Instance() noexcept;
+
+    ~FuchsiaConnectionRegistry() noexcept;
+    FuchsiaConnectionRegistry(const FuchsiaConnectionRegistry&) = delete;
+    FuchsiaConnectionRegistry& operator=(const FuchsiaConnectionRegistry&) = delete;
 
     /// \return a file descriptor that becomes readable when a connection is pending, to be polled by the server
     score::cpp::expected<std::int32_t, score::os::Error> Listen(std::string_view identifier) noexcept;
@@ -50,7 +54,15 @@ class FuchsiaConnectionRegistry
     /// \return the client end of a new connection, ECONNREFUSED if nobody listens on the identifier
     score::cpp::expected<std::int32_t, score::os::Error> Connect(std::string_view identifier) noexcept;
 
+    /// \brief Queues the server end of a connection that arrived through the Connector protocol
+    /// \return false if nobody listens on the identifier
+    bool Enqueue(std::string_view identifier, std::int32_t server_fd) noexcept;
+
   private:
+    class Service;
+
+    FuchsiaConnectionRegistry() noexcept;
+
     struct Listener
     {
         std::int32_t wake_write_fd;
@@ -60,10 +72,9 @@ class FuchsiaConnectionRegistry
 
     std::mutex mutex_;
     std::map<std::string, Listener, std::less<>> listeners_;
+    std::unique_ptr<Service> service_;
 };
 
 }  // namespace score::message_passing::detail
 
-#endif  // __Fuchsia__
-
-#endif  // SCORE_LIB_MESSAGE_PASSING_UNIX_DOMAIN_FUCHSIA_CONNECTION_REGISTRY_H
+#endif  // SCORE_LIB_MESSAGE_PASSING_FUCHSIA_CONNECTION_REGISTRY_H

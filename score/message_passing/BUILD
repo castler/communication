@@ -136,14 +136,12 @@ unit(
 cc_library(
     name = "message_passing_unix_domain",
     srcs = [
-        "unix_domain/fuchsia_connection_registry.cpp",
         "unix_domain/unix_domain_client_factory.cpp",
         "unix_domain/unix_domain_engine.cpp",
         "unix_domain/unix_domain_server.cpp",
         "unix_domain/unix_domain_server_factory.cpp",
     ],
     hdrs = [
-        "unix_domain/fuchsia_connection_registry.h",
         "unix_domain/unix_domain_client_factory.h",
         "unix_domain/unix_domain_engine.h",
         "unix_domain/unix_domain_server.h",
@@ -167,7 +165,10 @@ cc_library(
         "@score_baselibs//score/os:unistd",
         "@score_baselibs//score/os/utils:signal",
     ] + select({
-        "@platforms//os:fuchsia": ["@fuchsia_sdk//pkg/fdio"],
+        "@platforms//os:fuchsia": [
+            "//score/message_passing/fuchsia:connection_registry",
+            "@fuchsia_sdk//pkg/fdio",
+        ],
         "//conditions:default": [],
     }),
 )

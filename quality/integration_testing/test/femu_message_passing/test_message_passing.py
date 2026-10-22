@@ -16,3 +16,11 @@ def test_message_passing_echo_on_fuchsia(target):
     result = target.run_test_component("message_passing_echo_test#meta/echo_test.cm")
     assert "echo OK" in result.output, result.output
     assert result.returncode == 0, result.output
+
+
+def test_message_passing_echo_across_components_on_fuchsia(target):
+    result = target.run_test_component(
+        "message_passing_cross_component_echo_test#meta/echo_client_test.cm"
+    )
+    assert "cross component echo OK" in result.output, result.output
+    assert result.returncode == 0, result.output

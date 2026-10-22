@@ -1,0 +1,33 @@
+// Copyright (c) 2026 Contributors to the Eclipse Foundation
+//
+// See the NOTICE file(s) distributed with this work for additional
+// information regarding copyright ownership.
+//
+// This program and the accompanying materials are made available under the
+// terms of the Apache License Version 2.0 which is available at
+// https://www.apache.org/licenses/LICENSE-2.0
+//
+// SPDX-License-Identifier: Apache-2.0
+
+library score.messagepassing;
+
+using zx;
+
+const MAX_IDENTIFIER_LENGTH uint32 = 255;
+
+type ConnectError = strict enum : uint32 {
+    /// Nobody listens on the requested identifier.
+    NOT_FOUND = 1;
+};
+
+/// Control plane of the message_passing Fuchsia backend.
+/// A server exposes this protocol; a client hands over one end of a stream socket pair that
+/// then carries the message_passing protocol messages without further FIDL involvement.
+@discoverable
+closed protocol Connector {
+    /// Connects `socket` to the server listening on `identifier`.
+    strict Connect(resource struct {
+        identifier string:MAX_IDENTIFIER_LENGTH;
+        socket zx.Handle:SOCKET;
+    }) -> () error ConnectError;
+};
