@@ -10,9 +10,6 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  ********************************************************************************/
-#ifdef __Fuchsia__
-#include "score/message_passing/fuchsia/connection_registry.h"
-#endif
 #include "score/message_passing/unix_domain/unix_domain_server.h"
 
 #include "score/message_passing/client_server_communication.h"
@@ -30,7 +27,7 @@ namespace
 
 // The socket listening backlog is quite an arbitrary value: if a client gets ECONNREFUSED because it didn't fit
 // into the connection backlog queue, it will try to reconnect after some delay again.
-[[maybe_unused]] constexpr std::int32_t kSocketListenBacklog = 20;
+constexpr std::int32_t kSocketListenBacklog = 20;
 
 }  // namespace
 
@@ -183,15 +180,6 @@ score::cpp::expected_blank<score::os::Error> UnixDomainServer::StartListening(
     sent_callback_ = std::move(sent_callback);
     sent_with_reply_callback_ = std::move(sent_with_reply_callback);
 
-#ifdef __Fuchsia__
-    // no AF_UNIX on Fuchsia: the listening descriptor is only a wake-up for pending connections
-    auto fd_expected = FuchsiaConnectionRegistry::Instance().Listen(identifier_);
-    if (!fd_expected.has_value())
-    {
-        return score::cpp::make_unexpected(fd_expected.error());
-    }
-    server_fd_ = fd_expected.value();
-#else
     UnixDomainSocketAddress addr{identifier_, true};
     auto& socket = engine_->GetOsResources().socket;
 
@@ -217,7 +205,6 @@ score::cpp::expected_blank<score::os::Error> UnixDomainServer::StartListening(
         server_fd_ = -1;
         return score::cpp::make_unexpected(listen_expected.error());
     }
-#endif
 
     listener_endpoint_.owner = this;
     listener_endpoint_.fd = server_fd_;
@@ -245,33 +232,19 @@ void UnixDomainServer::StopListening() noexcept
     {
         engine_->CleanUpOwner(this);
         std::ignore = engine_->GetOsResources().unistd->close(server_fd_);
-#ifdef __Fuchsia__
-        FuchsiaConnectionRegistry::Instance().StopListening(identifier_);
-#endif
         server_fd_ = -1;
     }
 }
 
 void UnixDomainServer::ProcessConnect() noexcept
 {
-#ifdef __Fuchsia__
-    const auto accepted = FuchsiaConnectionRegistry::Instance().Accept(identifier_);
-    if (!accepted.has_value())
-    {
-        return;
-    }
-    const std::int32_t data_fd = accepted.value();
-    // no peer credentials on Fuchsia
-    ClientIdentity identity{0, 0, 0};
-#else
     auto& socket = engine_->GetOsResources().socket;
 
     const std::int32_t data_fd = socket->accept(server_fd_, nullptr, nullptr).value();
-#endif
 #ifdef __QNX__
     // no support for SO_PEERCRED on QNX
     ClientIdentity identity{0, 0, 0};
-#elif !defined(__Fuchsia__)
+#else
     ucred cr{};
     socklen_t cr_len = sizeof(cr);
     auto sockopt_expected = socket->getsockopt(data_fd, SOL_SOCKET, SO_PEERCRED, &cr, &cr_len);

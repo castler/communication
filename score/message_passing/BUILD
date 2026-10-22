@@ -46,6 +46,7 @@ cc_library(
     tags = ["FFI"],
     visibility = ["//visibility:public"],
     deps = select({
+        "@platforms//os:fuchsia": ["//score/message_passing/fuchsia:message_passing_fuchsia"],
         "@platforms//os:qnx": [":message_passing_qnx_dispatch"],
         "//conditions:default": [":message_passing_unix_domain"],
     }),
@@ -149,13 +150,8 @@ cc_library(
         "unix_domain/unix_domain_socket_address.h",
     ],
     features = COMPILER_WARNING_FEATURES,
-    target_compatible_with = select({
-        "@platforms//os:fuchsia": [],
-        "@platforms//os:linux": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
+    target_compatible_with = ["@platforms//os:linux"],
     visibility = [
-        "//score/message_passing:__subpackages__",
         "//score/mw/com/impl:__subpackages__",
     ],
     deps = [
@@ -164,13 +160,7 @@ cc_library(
         "@score_baselibs//score/os:sys_poll",
         "@score_baselibs//score/os:unistd",
         "@score_baselibs//score/os/utils:signal",
-    ] + select({
-        "@platforms//os:fuchsia": [
-            "//score/message_passing/fuchsia:connection_registry",
-            "@fuchsia_sdk//pkg/fdio",
-        ],
-        "//conditions:default": [],
-    }),
+    ],
 )
 
 unit(

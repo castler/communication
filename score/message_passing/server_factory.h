@@ -15,6 +15,8 @@
 
 #ifdef __QNX__
 #include "score/message_passing/qnx_dispatch/qnx_dispatch_server_factory.h"
+#elif defined(__Fuchsia__)
+#include "score/message_passing/fuchsia/fuchsia_server_factory.h"
 #else
 #include "score/message_passing/unix_domain/unix_domain_server_factory.h"
 #endif
@@ -28,6 +30,10 @@ namespace score::message_passing
 #ifdef __QNX__
 using Engine = score::message_passing::QnxDispatchEngine;
 using ServerFactory = score::message_passing::QnxDispatchServerFactory;
+// coverity[autosar_cpp14_a16_0_1_violation]
+#elif defined(__Fuchsia__)
+using Engine = score::message_passing::FuchsiaEngine;
+using ServerFactory = score::message_passing::FuchsiaServerFactory;
 // coverity[autosar_cpp14_a16_0_1_violation]
 #else
 using Engine = score::message_passing::UnixDomainEngine;

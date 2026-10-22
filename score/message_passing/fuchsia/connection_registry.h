@@ -29,8 +29,8 @@ namespace score::message_passing::detail
 {
 
 /// \brief Connection establishment for Fuchsia, which has no AF_UNIX support.
-/// \details Connections are Zircon stream sockets wrapped into file descriptors, so that the poll based engine and
-///          the stream framing protocol can be used unchanged.
+/// \details Connections are Zircon stream sockets wrapped into file descriptors, which the FuchsiaEngine polls and
+///          frames like any other stream.
 ///          A server registers its identifier here and publishes the score.messagepassing.Connector FIDL protocol
 ///          in the outgoing directory of its component. A client connecting to an identifier that is not served
 ///          by the same process creates a socket pair and sends one end through the Connector protocol found in

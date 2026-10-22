@@ -58,6 +58,35 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "message_passing_fuchsia",
+    srcs = [
+        "fuchsia_client_factory.cpp",
+        "fuchsia_engine.cpp",
+        "fuchsia_server.cpp",
+        "fuchsia_server_factory.cpp",
+    ],
+    hdrs = [
+        "fuchsia_client_factory.h",
+        "fuchsia_engine.h",
+        "fuchsia_server.h",
+        "fuchsia_server_factory.h",
+    ],
+    features = COMPILER_WARNING_FEATURES,
+    tags = ["manual"],
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = [
+        "//score/message_passing:__pkg__",
+        "//score/mw/com/impl:__subpackages__",
+    ],
+    deps = [
+        ":connection_registry",
+        "//score/message_passing:message_passing_common",
+        "@score_baselibs//score/os:sys_poll",
+        "@score_baselibs//score/os:unistd",
+    ],
+)
+
 # Server and client in separate components, connected through the Connector FIDL protocol.
 fuchsia_cc_binary(
     name = "echo_server",
