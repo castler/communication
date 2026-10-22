@@ -12,13 +12,73 @@
  ********************************************************************************/
 #include "score/message_passing/unix_domain/unix_domain_engine.h"
 
+#include "score/message_passing/unix_domain/fuchsia_connection_registry.h"
 #include "score/message_passing/unix_domain/unix_domain_socket_address.h"
 
+#include <array>
 #include <future>
 #include <tuple>
 
+#include <unistd.h>
+
 namespace score::message_passing
 {
+
+#ifdef __Fuchsia__
+namespace
+{
+
+// Zircon socket descriptors support read()/write() but not sendmsg()/recvmsg()
+score::cpp::expected_blank<score::os::Error> WriteAll(const std::int32_t fd,
+                                                      const std::uint8_t* data,
+                                                      std::size_t size) noexcept
+{
+    while (size > 0U)
+    {
+        const auto written = ::write(fd, data, size);
+        if (written < 0)
+        {
+            if (errno == EINTR)
+            {
+                continue;
+            }
+            return score::cpp::make_unexpected(score::os::Error::createFromErrno(errno));
+        }
+        data += written;
+        size -= static_cast<std::size_t>(written);
+    }
+    return {};
+}
+
+// \return the number of bytes read, which is less than size only if the peer has disconnected
+score::cpp::expected<std::size_t, score::os::Error> ReadAll(const std::int32_t fd,
+                                                            std::uint8_t* data,
+                                                            const std::size_t size) noexcept
+{
+    std::size_t done = 0U;
+    while (done < size)
+    {
+        const auto count = ::read(fd, data + done, size - done);
+        if (count < 0)
+        {
+            if (errno == EINTR)
+            {
+                continue;
+            }
+            return score::cpp::make_unexpected(score::os::Error::createFromErrno(errno));
+        }
+        if (count == 0)
+        {
+            break;
+        }
+        done += static_cast<std::size_t>(count);
+    }
+    return done;
+}
+
+}  // namespace
+#endif
+
 
 UnixDomainEngine::UnixDomainEngine(score::cpp::pmr::memory_resource* memory_resource, LoggingCallback logger) noexcept
     : memory_resource_{memory_resource},
@@ -30,6 +90,11 @@ UnixDomainEngine::UnixDomainEngine(score::cpp::pmr::memory_resource* memory_reso
       posix_receive_buffer_{memory_resource}
 {
     std::ignore = os_resources_.unistd->pipe(pipe_fds_.data());
+#ifdef __Fuchsia__
+    // poll() on Fuchsia reports POLLNVAL for negative descriptors instead of ignoring them, which would make
+    // the poll loop spin. The write end of the wake-up pipe never becomes ready, so it parks the unused entries.
+    unused_poll_fd_ = pipe_fds_[1];
+#endif
 
     // Normally, during the application lifecycle initialization, LifeCycleManager blocks the SIGTERM on the main
     // thread and creates a separate thread that catches all the SIGTERM signals coming to the process. The other
@@ -68,6 +133,10 @@ UnixDomainEngine::~UnixDomainEngine() noexcept
 score::cpp::expected<std::int32_t, score::os::Error> UnixDomainEngine::TryOpenClientConnection(
     std::string_view identifier) noexcept
 {
+#ifdef __Fuchsia__
+    // no AF_UNIX on Fuchsia
+    return detail::FuchsiaConnectionRegistry::Instance().Connect(identifier);
+#else
     const auto fd_expected = os_resources_.socket->socket(score::os::Socket::Domain::kUnix, SOCK_STREAM, 0);
     if (!fd_expected.has_value())
     {
@@ -84,6 +153,7 @@ score::cpp::expected<std::int32_t, score::os::Error> UnixDomainEngine::TryOpenCl
         return score::cpp::make_unexpected(connect_expected.error());
     }
     return client_fd;
+#endif
 }
 
 void UnixDomainEngine::CloseClientConnection(std::int32_t client_fd) noexcept
@@ -112,13 +182,11 @@ void UnixDomainEngine::RegisterPosixEndpoint(PosixEndpointEntry& endpoint) noexc
         // NOLINTNEXTLINE(hicpp-signed-bitwise): POLL* are non-negative POSIX constants and pollfd::events is signed
         events |= POLLOUT;
     }
-    const auto found = std::find_if(poll_fds_.begin(), poll_fds_.end(), [](pollfd& poll) noexcept {
-        return poll.fd < 0;
-    });
-    if (found != poll_fds_.end())
+    const auto found = std::find(poll_endpoints_.begin(), poll_endpoints_.end(), nullptr);
+    if (found != poll_endpoints_.end())
     {
-        *found = {endpoint.fd, events, 0};
-        const auto i = static_cast<std::size_t>(std::distance(poll_fds_.begin(), found));
+        const auto i = static_cast<std::size_t>(std::distance(poll_endpoints_.begin(), found));
+        poll_fds_[i] = {endpoint.fd, events, 0};
         poll_endpoints_[i] = &endpoint;
     }
     else
@@ -146,7 +214,8 @@ void UnixDomainEngine::UnpollEndpoint(const std::size_t index) noexcept
     PosixEndpointEntry& endpoint = *poll_endpoints_[index];
     std::ignore = posix_endpoint_list_.erase(posix_endpoint_list_.iterator_to(endpoint));
     poll_endpoints_[index] = nullptr;
-    poll_fds_[index].fd = -1;
+    poll_fds_[index].fd = unused_poll_fd_;
+    poll_fds_[index].events = 0;
     poll_fds_[index].revents = 0;
     if (!endpoint.disconnect.empty())
     {
@@ -194,6 +263,16 @@ score::cpp::expected_blank<score::os::Error> UnixDomainEngine::SendProtocolMessa
     std::uint8_t code,
     const score::cpp::span<const std::uint8_t> message) noexcept
 {
+#ifdef __Fuchsia__
+    const auto size = static_cast<std::uint16_t>(message.size());
+    score::cpp::pmr::vector<std::uint8_t> frame{memory_resource_};
+    frame.reserve(sizeof(code) + sizeof(size) + message.size());
+    frame.push_back(code);
+    frame.push_back(static_cast<std::uint8_t>(size & 0xFFU));
+    frame.push_back(static_cast<std::uint8_t>(size >> 8U));
+    frame.insert(frame.end(), message.begin(), message.end());
+    return WriteAll(fd, frame.data(), frame.size());
+#else
     struct msghdr msg{};
     constexpr auto kVectorCount = 3UL;
     auto size = static_cast<std::uint16_t>(message.size());
@@ -217,12 +296,46 @@ score::cpp::expected_blank<score::os::Error> UnixDomainEngine::SendProtocolMessa
         return {};
     }
     return score::cpp::make_unexpected(result_expected.error());
+#endif
 }
 
 score::cpp::expected<score::cpp::span<const std::uint8_t>, score::os::Error> UnixDomainEngine::ReceiveProtocolMessage(
     const std::int32_t fd,
     std::uint8_t& code) noexcept
 {
+#ifdef __Fuchsia__
+    std::array<std::uint8_t, sizeof(code) + sizeof(std::uint16_t)> header{};
+    const auto header_expected = ReadAll(fd, header.data(), header.size());
+    if (!header_expected.has_value())
+    {
+        return score::cpp::make_unexpected(header_expected.error());
+    }
+    if (header_expected.value() != header.size())
+    {
+        // other side disconnected
+        return score::cpp::make_unexpected(score::os::Error::createFromErrno(EPIPE));
+    }
+    code = header[0];
+    const std::size_t message_size = static_cast<std::size_t>(header[1]) | (static_cast<std::size_t>(header[2]) << 8U);
+    if (message_size == 0U)
+    {
+        return {};
+    }
+    if (message_size > posix_receive_buffer_.size())
+    {
+        return score::cpp::make_unexpected(score::os::Error::createFromErrno(EMSGSIZE));
+    }
+    const auto payload_expected = ReadAll(fd, posix_receive_buffer_.data(), message_size);
+    if (!payload_expected.has_value())
+    {
+        return score::cpp::make_unexpected(payload_expected.error());
+    }
+    if (payload_expected.value() != message_size)
+    {
+        return score::cpp::make_unexpected(score::os::Error::createFromErrno(EIO));
+    }
+    return score::cpp::span<const std::uint8_t>{posix_receive_buffer_.data(), message_size};
+#else
     struct msghdr msg{};
     constexpr auto kVectorCount = 2UL;
     std::uint16_t size{};
@@ -281,6 +394,7 @@ score::cpp::expected<score::cpp::span<const std::uint8_t>, score::os::Error> Uni
         return score::cpp::make_unexpected(score::os::Error::createFromErrno(EIO));
     }
     return score::cpp::span<const std::uint8_t>{posix_receive_buffer_.data(), size};
+#endif
 }
 
 void UnixDomainEngine::SendPipeEvent(PipeEvent pipe_event) noexcept
@@ -306,7 +420,7 @@ void UnixDomainEngine::ProcessCleanup(const void* const owner) noexcept
 {
     for (std::size_t i = 0; i < poll_fds_.size(); ++i)
     {
-        if (poll_fds_[i].fd == -1)
+        if (poll_endpoints_[i] == nullptr)
         {
             continue;
         }
@@ -337,7 +451,8 @@ void UnixDomainEngine::RunOnThread() noexcept
         {
             for (std::size_t i = 0; i < poll_fds_.size(); ++i)
             {
-                if (poll_fds_[i].revents != 0)
+                // some platforms report POLLNVAL for the unregistered (negative) descriptors
+                if ((poll_fds_[i].revents != 0) && (poll_endpoints_[i] != nullptr))
                 {
                     PosixEndpointEntry& endpoint = *poll_endpoints_[i];
                     endpoint.input();

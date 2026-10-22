@@ -18,6 +18,7 @@
 #include <score/callback.hpp>
 #include <score/memory.hpp>
 
+#include <sys/types.h>
 #include <variant>
 
 namespace score::message_passing
