@@ -1,0 +1,100 @@
+diff --git a/score/language/futurecpp/include/score/private/thread/pthread_attr.hpp b/score/language/futurecpp/include/score/private/thread/pthread_attr.hpp
+index a35f53e146..736adf9998 100644
+--- a/score/language/futurecpp/include/score/private/thread/pthread_attr.hpp
++++ b/score/language/futurecpp/include/score/private/thread/pthread_attr.hpp
+@@ -76,6 +76,11 @@ public:
+ 
+     void set_priority(const std::int32_t priority)
+     {
++#if defined(__Fuchsia__)
++        // Fuchsia schedules threads through profiles, POSIX scheduling attributes are not available
++        static_cast<void>(priority);
++        throw std::system_error{ENOTSUP, std::system_category(), "set_priority"};
++#else
+         // sched_param::sched_priority is defined as an `int`
+         // https://pubs.opengroup.org/onlinepubs/009604299/basedefs/sched.h.html
+         // so make sure it matches with the fixed size type `std::int32_t`
+@@ -111,6 +116,7 @@ public:
+         {
+             throw std::system_error{status, std::system_category(), "pthread_attr_setschedparam"};
+         }
++#endif
+     }
+ 
+     ::pthread_attr_t& native_handle() { return *&native_handle_; }
+diff --git a/score/language/futurecpp/include/score/private/thread/thread_name_hint.hpp b/score/language/futurecpp/include/score/private/thread/thread_name_hint.hpp
+index 3b0293a721..4e80e984af 100644
+--- a/score/language/futurecpp/include/score/private/thread/thread_name_hint.hpp
++++ b/score/language/futurecpp/include/score/private/thread/thread_name_hint.hpp
+@@ -65,7 +65,7 @@ public:
+ #elif defined(__EMSCRIPTEN__)
+         // https://github.com/emscripten-core/emscripten/blob/main/system/lib/libc/musl/src/thread/pthread_setname_np.c
+         return 16U;
+-#elif defined(__linux__)
++#elif defined(__linux__) || defined(__Fuchsia__)
+         // https://man7.org/linux/man-pages/man3/pthread_setname_np.3.html
+         return 16U;
+ #else
+diff --git a/score/os/errno.cpp b/score/os/errno.cpp
+index af8238e18b..2a1c75411a 100644
+--- a/score/os/errno.cpp
++++ b/score/os/errno.cpp
+@@ -144,7 +144,7 @@ score::os::Error::Code convertGlobErrorToCode(const std::int32_t glob_error) noe
+ // Rationale: Pre-processor commands are used to allow different implementations for linux/ __x86_64__ and QNX to exist
+ // in the same file. It also prevents compiler errors in linux/__x86_64__ code when compiling for QNX and vice versa.
+ // coverity[autosar_cpp14_a16_0_1_violation]
+-#ifdef __linux__
++#if defined(__linux__) || defined(__Fuchsia__)
+         // LCOV_EXCL_START: Linux specific code, scope of codecoverage is only for qnx code
+         // coverity[autosar_cpp14_m6_4_5_violation] see Note 1
+         case GLOB_ABORTED:
+diff --git a/score/os/socket_impl.cpp b/score/os/socket_impl.cpp
+index a2c7446e73..ea1ef4ddb3 100644
+--- a/score/os/socket_impl.cpp
++++ b/score/os/socket_impl.cpp
+@@ -11,6 +11,7 @@
+  * SPDX-License-Identifier: Apache-2.0
+  ********************************************************************************/
+ #include "score/os/socket_impl.h"
++#include <exception>
+ #include <type_traits>
+ 
+ namespace score
+diff --git a/score/os/sys_poll.h b/score/os/sys_poll.h
+index 2af94a0a96..be66270dc8 100644
+--- a/score/os/sys_poll.h
++++ b/score/os/sys_poll.h
+@@ -21,7 +21,7 @@
+ 
+ #include <cstdint>
+ 
+-#include <sys/poll.h>
++#include <poll.h>
+ 
+ namespace score
+ {
+diff --git a/score/os/unistd.cpp b/score/os/unistd.cpp
+index d506825751..dff215cb17 100644
+--- a/score/os/unistd.cpp
++++ b/score/os/unistd.cpp
+@@ -17,6 +17,9 @@
+ #elif defined(__linux__)
+ #include <sys/syscall.h>
+ #include <unistd.h>
++#elif defined(__Fuchsia__)
++#include <pthread.h>
++#include <cstdint>
+ #endif  // __QNX__
+ 
+ score::cpp::expected_blank<score::os::Error> score::os::internal::UnistdImpl::close(
+@@ -212,6 +215,10 @@ std::int64_t score::os::internal::UnistdImpl::gettid() const noexcept
+     // https://man7.org/linux/man-pages/man2/gettid.2.html#VERSIONS
+     return ::syscall(SYS_gettid);
+ // coverity[autosar_cpp14_a16_0_1_violation], see above rationale
++#elif defined(__Fuchsia__)
++    // Fuchsia has no gettid(), the pthread handle is a stable per-thread identifier
++    return static_cast<std::int64_t>(reinterpret_cast<std::uintptr_t>(::pthread_self()));
++// coverity[autosar_cpp14_a16_0_1_violation], see above rationale
+ #endif  // __QNX__
+ }
+ 

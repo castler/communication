@@ -38,7 +38,10 @@ git_override(
     # Patch baselibs with a QNX8 workaround for poll
     # until a fix is provided by the QNX SDP
     # See https://github.com/eclipse-score/bazel_cpp_toolchains/issues/68
-    patches = ["//third_party/score_baselibs:restore_qnx8_poll_workaround.patch"],
+    patches = [
+        "//third_party/score_baselibs:restore_qnx8_poll_workaround.patch",
+        "//third_party/score_baselibs:fuchsia_support.patch",
+    ],
     remote = "https://github.com/eclipse-score/baselibs.git",
 )
 

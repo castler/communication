@@ -221,3 +221,8 @@ build:fuchsia --experimental_writable_outputs
 build:fuchsia --experimental_retain_test_configuration_across_testonly
 build:fuchsia --copt=-ffunction-sections
 build:fuchsia --copt=-fdata-sections
+# baselibs throws and has extra semicolons, the Fuchsia clang toolchain defaults to -fno-exceptions -Wextra-semi.
+build:fuchsia --copt=-fexceptions
+build:fuchsia --cxxopt=-fexceptions
+build:fuchsia --linkopt=-fexceptions
+build:fuchsia --copt=-Wno-extra-semi
