@@ -44,7 +44,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
     steps:
       - uses: actions/checkout@v6.0.2
       - name: Setup QNX and QEMU environment
@@ -62,7 +62,7 @@ jobs:
       - name: Boot stress
         run: |
           mkdir -p "$RUNNER_TEMP/logs"
-          python3 .github/scripts/qnx_boot_stress.py "$RUNNER_TEMP/ifs/init_ifs" 1500 4 "$RUNNER_TEMP/logs"
+          python3 .github/scripts/qnx_boot_stress.py "$RUNNER_TEMP/ifs/init_ifs" 6000 4 "$RUNNER_TEMP/logs"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
