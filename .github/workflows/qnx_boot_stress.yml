@@ -1,0 +1,46 @@
+name: QNX boot stress (investigation)
+
+on:
+  push:
+    branches: [ci/qnx-boot-stress]
+  workflow_dispatch:
+
+jobs:
+  boot-stress:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        par: [1, 4]
+        shard: [1, 2]
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - name: Setup QNX and QEMU environment
+        uses: ./.github/actions/00_infrastructure/setup_qnx_environment
+        with:
+          qnx-license: ${{ secrets.SCORE_QNX_LICENSE }}
+      - uses: ./.github/actions/00_infrastructure/prepare_bazel_environment
+        with:
+          disk-cache: ""
+          cache-mode: disabled
+      - name: Build QNX IFS
+        env:
+          SCORE_QNX_USER: ${{ secrets.SCORE_QNX_USER }}
+          SCORE_QNX_PASSWORD: ${{ secrets.SCORE_QNX_PASSWORD }}
+        run: |
+          bazel build --config=ci --config=qnx_x86_64 //score/mw/com/test/subscribe_handler/integration_test:init_ifs_subscribe_handler
+          echo "IFS=$(bazel cquery --config=ci --config=qnx_x86_64 --output=files //score/mw/com/test/subscribe_handler/integration_test:init_ifs_subscribe_handler 2>/dev/null | head -1)" >> "$GITHUB_ENV"
+      - name: Host info
+        run: |
+          lscpu | head -30
+          qemu-system-x86_64 --version
+      - name: Boot stress
+        run: |
+          mkdir -p "$RUNNER_TEMP/logs"
+          python3 .github/scripts/qnx_boot_stress.py "$IFS" 1500 ${{ matrix.par }} "$RUNNER_TEMP/logs"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: logs-par${{ matrix.par }}-shard${{ matrix.shard }}
+          path: ${{ runner.temp }}/logs
+          if-no-files-found: ignore
