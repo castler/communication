@@ -29,7 +29,10 @@ jobs:
           SCORE_QNX_PASSWORD: ${{ secrets.SCORE_QNX_PASSWORD }}
         run: |
           bazel build --config=ci --config=qnx_x86_64 //score/mw/com/test/subscribe_handler/integration_test:_init_ifs_subscribe_handler
-          echo "IFS=$(bazel cquery --config=ci --config=qnx_x86_64 --output=files //score/mw/com/test/subscribe_handler/integration_test:_init_ifs_subscribe_handler 2>/dev/null | head -1)" >> "$GITHUB_ENV"
+          IFS_PATH="$(bazel cquery --config=ci --config=qnx_x86_64 --output=files //score/mw/com/test/subscribe_handler/integration_test:_init_ifs_subscribe_handler 2>/dev/null | grep -a 'init_ifs' | head -1 | tr -d '[:space:]')"
+          IFS_PATH="$(readlink -f "$IFS_PATH" || true)"
+          test -f "$IFS_PATH" || { echo "IFS not found: '$IFS_PATH'"; find -L bazel-bin -name '*init_ifs_subscribe_handler*' | head; exit 1; }
+          echo "IMG_PATH=$IFS_PATH" >> "$GITHUB_ENV"
       - name: Host info
         run: |
           lscpu | head -30
@@ -37,7 +40,7 @@ jobs:
       - name: Boot stress
         run: |
           mkdir -p "$RUNNER_TEMP/logs"
-          python3 .github/scripts/qnx_boot_stress.py "$IFS" 1500 ${{ matrix.par }} "$RUNNER_TEMP/logs"
+          python3 .github/scripts/qnx_boot_stress.py "$IMG_PATH" 1500 ${{ matrix.par }} "$RUNNER_TEMP/logs"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
