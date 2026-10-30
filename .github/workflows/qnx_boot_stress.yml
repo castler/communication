@@ -38,15 +38,20 @@ jobs:
           name: ifs
           path: ${{ runner.temp }}/ifs/init_ifs
 
-  boot-stress:
+  itf-boot-stress:
     needs: build-ifs
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
     steps:
       - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v6.0.2
+        with:
+          repository: castler/itf
+          ref: qemu-guest-panic-retry
+          path: itf
       - name: Setup QNX and QEMU environment
         uses: ./.github/actions/00_infrastructure/setup_qnx_environment
         with:
@@ -59,13 +64,18 @@ jobs:
         run: |
           lscpu | head -30
           qemu-system-x86_64 --version
-      - name: Boot stress
+          git -C itf log --oneline -1
+      - name: Install ITF dependencies
+        run: pip install --break-system-packages paramiko pydantic pytest
+      - name: Boot stress through ITF (up to 3 boot attempts)
         run: |
           mkdir -p "$RUNNER_TEMP/logs"
-          python3 .github/scripts/qnx_boot_stress.py "$RUNNER_TEMP/ifs/init_ifs" 6000 4 "$RUNNER_TEMP/logs"
+          python3 .github/scripts/qnx_itf_boot_stress.py "$GITHUB_WORKSPACE/itf" "$RUNNER_TEMP/ifs/init_ifs" \
+            quality/integration_testing/environments/qnx8_qemu/qemu_config.json 1500 4 3 "$RUNNER_TEMP/logs" \
+            2>&1 | grep -a -E "^\[|^FINAL"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: logs-shard${{ matrix.shard }}
+          name: itf-logs-shard${{ matrix.shard }}
           path: ${{ runner.temp }}/logs
           if-no-files-found: ignore
