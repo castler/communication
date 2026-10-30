@@ -28,8 +28,8 @@ jobs:
           SCORE_QNX_USER: ${{ secrets.SCORE_QNX_USER }}
           SCORE_QNX_PASSWORD: ${{ secrets.SCORE_QNX_PASSWORD }}
         run: |
-          bazel build --config=ci --config=qnx_x86_64 //score/mw/com/test/subscribe_handler/integration_test:init_ifs_subscribe_handler
-          echo "IFS=$(bazel cquery --config=ci --config=qnx_x86_64 --output=files //score/mw/com/test/subscribe_handler/integration_test:init_ifs_subscribe_handler 2>/dev/null | head -1)" >> "$GITHUB_ENV"
+          bazel build --config=ci --config=qnx_x86_64 //score/mw/com/test/subscribe_handler/integration_test:_init_ifs_subscribe_handler
+          echo "IFS=$(bazel cquery --config=ci --config=qnx_x86_64 --output=files //score/mw/com/test/subscribe_handler/integration_test:_init_ifs_subscribe_handler 2>/dev/null | head -1)" >> "$GITHUB_ENV"
       - name: Host info
         run: |
           lscpu | head -30
