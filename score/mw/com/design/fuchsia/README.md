@@ -408,6 +408,7 @@ Three levels of typing for the *FIDL side*. The shared-memory payload types rema
 |---|---|---|---|
 | **A. Generic protocol** (recommended start) | One protocol (`Endpoint`) for all services; the service is data (`ServiceInstanceId`, layout). | One FIDL library; no generator. | CML capabilities are untyped w.r.t. service type unless a naming convention is used. |
 | **B. Generic protocol + typed marker capability** | As A, plus an empty protocol per service interface used only for CML routing. | Typed routing and review at low cost. | Needs a small generator or hand-written markers. |
+| **D. ECU-model-first** (recommended target, see 6.9/6.10) | `inc_ecu_model` (Franca/protobuf + FDEPL) is the source of truth; generators emit C++ types, mw::com interfaces, config, the typed FIDL marker (as in B) and the realm CML. | Single source of truth on all OSes; reuses existing parsers and the `DatatypeGenerator`; the model already holds the provider/consumer graph. | Incubator maturity; new generators needed. |
 | **C. Fully typed per-service FIDL (FIDL-first)** | `.fidl` per service interface is the source of truth; a generator over the `fidlc` JSON IR emits mw::com C++ types, FIDL, CML and layout constants. Payloads restricted to fixed-layout, trivially copyable types. | One source of truth; strongest checking. | Needs a generator; FIDL events (messages) vs mw::com events (shared slots) is a semantic mismatch carried by attributes; Linux/QNX need a non-FIDL C++ backend; migration of existing interfaces. |
 
 FIDL-generated *wire* C++ types for primitive-only structs may be directly usable as payloads on Fuchsia, but
@@ -427,6 +428,171 @@ Fuchsia SDK and FIDL does not guarantee trivially-copyable layouts of its genera
   available** in CML on the pinned SDK (experiment A.2). Measured scale: no limit hit up to 10,000 offers, and
   steady-state connect cost does not depend on the number of offers (experiment A.3). Details in
   [Appendix A](#a-experiment-results).
+
+### 6.9 The example service: how `WheelSpeed` is defined
+
+The examples in this document use one service, `WheelSpeed`. This section defines it completely, from the
+binding-independent design down to what each layer sees. Everything here is a **design sketch** (not built), except
+that the C++ shape and the JSON configuration shape follow what exists today
+(`score/mw/com/example/com-api-example/`, `etc/mw_com_config.json`).
+
+**Step 1: design-time interface (binding independent).** Owned by the interface author; no OS, no shared memory.
+
+| Element | Kind | Content |
+|---|---|---|
+| `score.vehicle.WheelSpeed` v1.0 | interface | namespace `score.vehicle` |
+| `WheelSpeedSample` | struct | `front_left`, `front_right`, `rear_left`, `rear_right`: `float32` (rad/s); `timestamp_ns`: `uint64`; `valid`: `bool` |
+| `Quality` | enum | `kOk`, `kDegraded`, `kInvalid` |
+| `speed` | broadcast (event) | outputs: `sample: WheelSpeedSample` |
+| `calibration` | attribute (field) | `float32`, getter + setter, subscribable |
+| `Reset` | method | no inputs, output `Quality`, error codes enum |
+
+Constraint carried over from the data plane (section 6.2): everything that travels through an *event* must be
+fixed-layout and trivially copyable (no strings, vectors or maps), because it is `memcpy`-ed into a shared slot.
+
+**Step 2: deployment.** A deployment binds the interface to the `MW::COM` binding and provides the per-member
+numbers that LoLa needs today in `mw_com_config.json`.
+
+| Deployment property | Value | Today's JSON key |
+|---|---|---|
+| `service_id` | `6433` | `serviceTypes[].bindings[].serviceId` |
+| event id `speed` | `1` | `events[].eventId` |
+| instance id | `1` | `instances[].instanceId` |
+| `asil-level` | `QM` | `asil-level` |
+| `numberOfSampleSlots` (speed) | `30` | `events[].numberOfSampleSlots` |
+| `maxSubscribers` (speed) | `3` | `events[].maxSubscribers` |
+| provider app / consumer apps | `4001` / `[4002, 4003]` | `allowedProvider`, `allowedConsumer` |
+
+Fuchsia-specific additions (all optional and defaulted; ignored by Linux/QNX):
+
+| Property | Meaning |
+|---|---|
+| `fuchsia.capability_prefix` | base name for generated capability names (default: derived from the interface name) |
+| `fuchsia.provider_component` | URL of the component that hosts the skeleton (for offer sources) |
+| `fuchsia.consumer_components` | map `application id → component moniker/URL` (for offer targets) |
+
+Note that on Fuchsia `allowedConsumer` is **compiled into the realm** (section 6.4) rather than checked against a
+runtime uid; the same data therefore drives both the runtime check on Linux/QNX and the generated CML on Fuchsia.
+
+**Step 3: what each layer receives.**
+
+| Layer | Artifact | Content for `WheelSpeed` |
+|---|---|---|
+| C++ types | `score/vehicle/WheelSpeedSample.h`, `Quality.h` | Plain structs/enums (already produced by the existing datatype generator of `inc_ecu_model`, section 6.10) |
+| mw::com interface | `wheelspeed_gen.h` | The class template used today by `vehicle_gen.h`: `WheelSpeedInterface<Trait>` with `Event<WheelSpeedSample> speed`, `Field<float> calibration`, `Method<Quality()> Reset`; aliases `WheelSpeedProxy` / `WheelSpeedSkeleton` |
+| LoLa configuration | `mw_com_config.json` | `serviceTypes` / `serviceInstances` entries (same schema as today) |
+| FIDL | `score.mw.com.wheelspeed.fidl` | A marker protocol `WheelSpeed` that extends the generic `Endpoint` (option B, section 6.7); the event payload is **not** in FIDL, it lives in the VMO |
+| Component framework | `wheelspeed.realm.cml` fragment | Capability `score.mw.com.WheelSpeed.for_app_4002`, offers `skeleton → app_4002` (section 7.1) |
+| Layout constants | `wheelspeed_layout.h` | `sizeof` of the slot, slot count, resulting VMO size (also used to size the data and control VMO in `Attach`) |
+
+Generated FIDL for the typed marker (sketch):
+
+```fidl
+library score.mw.com.wheelspeed;
+
+using score.mw.com;
+
+// Routing marker only: gives CML a typed capability per interface. Behaviour comes from Endpoint.
+@discoverable
+closed protocol WheelSpeed {
+    compose score.mw.com.Endpoint;
+};
+```
+
+The mw::com C++ interface and configuration are *unchanged for applications* (section 7.4); the new artifacts are
+the FIDL marker, the realm fragment and the layout constants.
+
+### 6.10 Generators and `inc_ecu_model`
+
+The `eclipse-score` organisation already has an incubator, **`inc_ecu_model`** ("an IDL independent data model
+representing the interfaces between the different components inside the stack of an automotive ECU"), plus parsers
+and a code-generation framework. It is the natural first tier for the IDL question of section 6.7: instead of making
+FIDL the source of truth (option C), the source of truth is the **ECU model**, and FIDL becomes one *output*.
+(`inc_score_codegen` is, at the time of writing, an empty repository with a one-line description.)
+
+**What exists today in `inc_ecu_model` (read from the repository, shallow clone of `main`).**
+
+| Area | Content |
+|---|---|
+| Model (`score/ecu_model/`, pydantic) | `ModelElement`/`ModelRegistry` (UUID registry, pickle serialisation). Data types: primitives, struct, enum, union, typedef, array, map, external. Communication: `InterfaceDefinition` (broadcasts, attributes, methods, version, namespace), `ServiceInterface` (a *deployment* of an interface with `service_id` and per-member `*_deployment_properties`), `ProvidedServicePort`/`RequiredServicePort` (with `instance_id`), `MessagePort`/`MessageChannel`, `CommunicationBinding` (`ProtocolKind`: `ARA_COM`, `ARA_DIAG`, `MW_COM`, `MW_DIAG`; `NetworkKind`: `SOMEIP`, `IPC`). Architecture: `Ecu` → `Application` → `Activity` (ASIL, version, input/output message ports), `Chain`. |
+| Parsers (`score/parsers/`) | Franca IDL + FDEPL (deployment specs for architecture, IPC, SOME/IP, Ethernet), protobuf, and a `load_and_merge` runner that merges parser outputs into one registry pickle. |
+| Generators (`score/generators/`) | `generator_runner.py` loads the merged pickle and calls registered generators (today only `DatatypeGenerator`: Jinja2 templates emit one C++ header per data type). Bazel: `score_ecu_model_artifacts` runs the runner into a directory and `cc_score_ecu_model_library` exposes it as a header-only `cc_library`. |
+| Not there yet | Generation of mw::com interface classes, `mw_com_config.json`, or anything platform-specific; diagnostics modelling and "integrate all parsers" are open issues. The README/Architecture sections are still "TBD". The `ServiceInterface` validator requires that *every* declared member has deployment properties. |
+
+**How the `WheelSpeed` model would look** (Python, matching the existing classes; illustrative):
+
+```python
+speed_sample = StructDataType(name="WheelSpeedSample", namespace="score.vehicle", source_kind=..., fields=[...])
+iface = InterfaceDefinition(
+    name="WheelSpeed", namespace="score.vehicle", version=Version(major=1, minor=0),
+    broadcasts={"speed": Broadcast(name="speed", outputs=[DataTypeField(name="sample", data_type=speed_sample)])},
+    attributes={"calibration": Attribute(name="calibration", data_type=PrimitiveDataType.FLOAT32)},
+    methods={"Reset": Method(name="Reset", outputs=[...], error_return_codes=...)},
+)
+svc = ServiceInterface(
+    name="WheelSpeed", namespace="score.vehicle", design_element=iface, service_id=6433,
+    broadcast_deployment_properties={"speed": {"event_id": 1, "slots": 30, "max_subscribers": 3}},
+    attribute_deployment_properties={"calibration": {...}},
+    method_deployment_properties={"Reset": {...}},
+)
+```
+
+In practice the same content would be authored in Franca (`.fidl` + `.fdepl`, existing parser) or protobuf for the data
+types, and the architecture (which application provides/requires which port on which ECU) in the model's `Ecu` /
+`Application` objects. Instances and the provider/consumer relation come from `ProvidedServicePort` /
+`RequiredServicePort`: **the model already contains exactly the graph that the realm generator needs** (who offers
+what to whom).
+
+**Fit with this design.**
+
+| Need on Fuchsia | Where it comes from in the ECU model | Gap |
+|---|---|---|
+| Payload types as C++ | `DatatypeGenerator` | None for primitives/structs/enums. Must add a *trivially-copyable/fixed-layout* validation pass for types used in events. |
+| mw::com interface class (`WheelSpeedInterface<Trait>`) | `InterfaceDefinition` | New generator (Jinja template modelled on today's `vehicle_gen.h`). Not Fuchsia-specific; useful on every OS. |
+| `mw_com_config.json` (types and instances) | `ServiceInterface` + ports + `Application.deployment_properties` | New generator. Needs slot/subscriber properties (could be an FDEPL spec for `MW::COM`, analogous to the existing IPC/SOME/IP specs). |
+| FIDL marker per interface | `InterfaceDefinition` name/namespace | New, trivial generator. |
+| Realm CML (offers per consumer and instance) | `Application.provided/required_service_ports` | New generator; needs the app-to-component mapping (deployment properties) and a `NetworkKind` for Fuchsia (or a deployment property instead of a new enum value). |
+| Layout constants (sizes) | struct type + `numberOfSampleSlots` | New generator (C++ `constexpr`), must agree with LoLa's layout computation; better to have LoLa expose a constexpr size function and have the generator only call it. |
+| Consistency checks | whole model | New validators (below). |
+
+**Proposed generators (all registered in `GENERATOR_FACTORIES`, sharing one model load).**
+
+| # | Generator | Input (model elements) | Output | Fuchsia-only? |
+|---|---|---|---|---|
+| G1 | `DatatypeGenerator` (exists) | data types | C++ headers | no |
+| G2 | `MwComInterfaceGenerator` | `InterfaceDefinition`, `ServiceInterface` | `*_gen.h` (proxy/skeleton aliases) | no |
+| G3 | `MwComConfigGenerator` | `ServiceInterface`, ports, applications | `mw_com_config.json` per application | no |
+| G4 | `FidlMarkerGenerator` | `InterfaceDefinition` | `*.fidl` (typed routing marker) | yes |
+| G5 | `RealmGenerator` | `Ecu`, `Application`, ports, deployment properties | `*.realm.cml` (sorted, stable) | yes |
+| G6 | `LayoutGenerator` | structs + slot counts | `*_layout.h` | yes (initially) |
+| V1 | validators | whole model | build failure | no |
+
+Validators (V1) worth having from day one: every `RequiredServicePort` has a matching provider on the ECU
+(otherwise the consumer would see `PEER_CLOSED`, appendix A.1); `allowedConsumer` in the generated config equals the set of
+applications that require the port (config and realm cannot diverge); event payloads are fixed-layout; application
+ids are unique (required for transaction-log rollback, risk 6); every member has deployment properties (already
+enforced).
+
+**Bazel wiring (sketch).** One model target feeds all generators, and platform selection happens at the consuming side:
+
+```starlark
+load_and_merge(name = "ecu_model", parsers = [":wheelspeed_franca", ":ecu_architecture"], out = "model.pkl")
+
+score_ecu_model_artifacts(name = "generated", model = ":ecu_model.pkl")      # runs G1..G6
+cc_score_ecu_model_library(name = "wheelspeed_cc", artifacts = ":generated")  # headers for apps
+
+fuchsia_package(name = "wheelspeed_provider", ..., resources = [":generated"])   # cml, config
+```
+
+Since `score_ecu_model_artifacts` exposes a single output directory, platform outputs (G4–G6) should live in
+sub-directories (`fuchsia/…`) and be consumed through filegroups, so that Linux and QNX builds never depend on them.
+
+**Relationship to option C of section 6.7.** The ECU-model route achieves the goals of the FIDL-first idea (one
+source of truth, generated C++/FIDL/CML/config) without making FIDL the IDL for all OSes, and it reuses the Franca/FDEPL
+tooling that the project already maintains. It also answers the earlier question "why not use the types generated by
+`fidlc`?": the C++ payload types come from the ECU model on all platforms, so there is a single type system.
+The cost is that the ECU model is an incubator (several parts are "TBD" or open), so G2/G3 depend on its progress;
+a pragmatic start is to keep the hand-written `vehicle_gen.h`-style interface and begin with G4/G5 only.
 
 ---
 
@@ -622,7 +788,8 @@ Legend: **U** unchanged · **A** needs an abstraction/refactoring (benefits Linu
 | `bindings/lola/{event_data_control,event_slot_status,slot_collector,…}`, subscription state machine, local views, transaction log data structures | **U** | Atomics in shared memory; unaffected. |
 | `impl/*_binding.h`, `impl/plumbing/*`, `BindingType` | **U (options A/B) / A (option C)** | With the generic-protocol recommendation no new `BindingType` is needed: Fuchsia is a *platform* variant of the LoLa binding. A separate binding type would only be needed if the data plane stopped being LoLa. |
 | `impl/configuration/` (`allowed_consumer`, `allowed_provider`, `strict_permissions`, shm sizes) | **C + A** | Redefine meaning of consumer entries as *application ids*; define `strict_permissions` on Fuchsia; add deployment fields for realm generation. Parsing largely unchanged. |
-| Realm/CML generation (new tool) | **N** | Generate capabilities, offers and discovery routes from configuration; build-time consistency test. |
+| Realm/CML generation (new tool) | **N** | Generate capabilities, offers and discovery routes from the ECU model (`inc_ecu_model`, G5 in 6.10) or, until it is usable, from `mw_com_config.json`; build-time consistency test. |
+| Interface/config generation (G2/G3, optional) | **N** | Generate `*_gen.h` and `mw_com_config.json` from the ECU model; independent of Fuchsia. |
 | Broker component | **N (phase 6)** | Holds VMOs for partial restart. |
 | `bindings/lola/BUILD`, `score/memory/shared/BUILD` | **A** | `select()` on `@platforms//os:fuchsia` for the Fuchsia seam implementations; Fuchsia packages (`fuchsia_package`). |
 | Tests | **A + N** | Many LoLa component tests are Linux-only; need Fuchsia ITF variants or backend-neutral tests. Add liveness/identity/shm-provider unit tests with mocks. New FEMU integration tests per seam. |
@@ -654,7 +821,7 @@ edges where LoLa meets the OS.
 | **2** | Shared-memory provider seam: VMO-backed `SharedMemoryResource`; `Attach` protocol; skeleton/proxy use attach-style acquisition on all platforms | 1 | Existing shm/LoLa tests on Linux; new FEMU test: write in skeleton, read in proxy |
 | **3** | Discovery seam: FIDL discovery behind `IServiceDiscoveryClient` | 2 | Discovery FEMU tests; Linux crawler tests unchanged |
 | **4** | Liveness/partial-restart seam: eventpair liveness, generation; recreate-on-restart fallback | 2, 3 | Crash/restart FEMU tests (kill skeleton / proxy) |
-| **5** | Realm generator + consistency test; subrealm structure | 1 | Build test; scale test |
+| **5** | Realm generator (G5) + consistency validators, as a generator in `inc_ecu_model` (or standalone over `mw_com_config.json` first); typed FIDL marker (G4); subrealm structure | 1 | Build test; scale test |
 | **6** | Broker for VMO retention (partial restart parity) | 4 | Skeleton restart test with slot rollback |
 | **7** | Fuchsia CI job; backend-neutral gtest suite; safety documentation | all | CI green on FEMU |
 
@@ -672,6 +839,7 @@ Phases 1–4 are the critical path for a working "hello LoLa" on Fuchsia.
 | 4 | **Routing cost at scale** | Measured: fine up to 10,000 offers (A.3). Remaining: compiled CML grows to MBs (100 apps × 100 offers: 2.7 MB root + 3.1 MB provider manifest). | Subrealms; generator; keep one run per release as regression. |
 | 11 | **Unrouted `use` is detected late** | Connect succeeds, first call fails with `PEER_CLOSED`; no start failure (A.1). | Treat as "not offered"; add a startup self-check in the realm test. |
 | 12 | **No instance filtering in CML** | One service capability exposes all instances to every consumer (A.2). | Per-consumer protocol capabilities (this design) or one provider component per instance. Dynamic offers via `Realm.CreateChild` untested. |
+| 13 | **`inc_ecu_model` maturity** | Incubator; docs "TBD", no mw::com or Fuchsia generators, no `NetworkKind` for Fuchsia, parsers not fully integrated. | Start with G4/G5 over `mw_com_config.json`; move into the model as it stabilises; contribute upstream. |
 | 5 | **`strict_permissions` meaning** | Needs a decision with safety/requirements owners. | Proposal in 6.4. |
 | 6 | **Stable application ids** | Transaction-log rollback relies on them; must be unique and stable across restarts. | Make a configuration requirement; validate at attach. |
 | 7 | **Single FIDL async loop thread in the registry** | Throughput and failure isolation of the `Connector` service. | Measure; keep control traffic small. |
