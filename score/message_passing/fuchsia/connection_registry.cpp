@@ -61,10 +61,10 @@ class FuchsiaConnectionRegistry::Service final : public fidl::Server<Connector>
     ~Service() noexcept override
     {
         std::promise<void> destroyed;
-        if (async::PostTask(loop_.dispatcher(), [this, &destroyed]() {
-                outgoing_.reset();
-                destroyed.set_value();
-            }) == ZX_OK)
+        if (thread_started_ && (async::PostTask(loop_.dispatcher(), [this, &destroyed]() {
+                                    outgoing_.reset();
+                                    destroyed.set_value();
+                                }) == ZX_OK))
         {
             destroyed.get_future().wait();
         }
@@ -77,6 +77,7 @@ class FuchsiaConnectionRegistry::Service final : public fidl::Server<Connector>
         {
             return false;
         }
+        thread_started_ = true;
         // OutgoingDirectory is thread-unsafe and must be created, used and destroyed on the dispatcher thread
         std::promise<bool> served;
         auto served_future = served.get_future();
@@ -91,8 +92,9 @@ class FuchsiaConnectionRegistry::Service final : public fidl::Server<Connector>
                 return;
             }
             // Not available if the process was not started with an outgoing directory request, e.g. in a unit
-            // test runner. Connections within the same process do not need the service.
-            served.set_value(outgoing_->ServeFromStartupInfo().is_ok());
+            // test runner. Connections within the same process do not need the service, so this is not a failure.
+            std::ignore = outgoing_->ServeFromStartupInfo();
+            served.set_value(true);
         });
         return (posted == ZX_OK) && served_future.get();
     }
@@ -117,11 +119,15 @@ class FuchsiaConnectionRegistry::Service final : public fidl::Server<Connector>
   private:
     FuchsiaConnectionRegistry& registry_;
     async::Loop loop_;
+    bool thread_started_{false};
     std::optional<component::OutgoingDirectory> outgoing_;
     fidl::ServerBindingGroup<Connector> bindings_;
 };
 
-FuchsiaConnectionRegistry::FuchsiaConnectionRegistry() noexcept = default;
+FuchsiaConnectionRegistry::FuchsiaConnectionRegistry(ServiceStarter service_starter) noexcept
+    : service_starter_{std::move(service_starter)}
+{
+}
 FuchsiaConnectionRegistry::~FuchsiaConnectionRegistry() noexcept = default;
 
 FuchsiaConnectionRegistry& FuchsiaConnectionRegistry::Instance() noexcept
@@ -144,15 +150,19 @@ score::cpp::expected<std::int32_t, score::os::Error> FuchsiaConnectionRegistry::
     {
         return score::cpp::make_unexpected(score::os::Error::createFromErrno(errno));
     }
-    listeners_.emplace(std::string{identifier}, Listener{wake_fds[1], wake_fds[0], {}});
     if (service_ == nullptr)
     {
         auto service = std::make_unique<Service>(*this);
-        if (service->Start())
+        const bool started = service_starter_ ? service_starter_() : service->Start();
+        if (!started)
         {
-            service_ = std::move(service);
+            std::ignore = ::close(wake_fds[0]);
+            std::ignore = ::close(wake_fds[1]);
+            return score::cpp::make_unexpected(score::os::Error::createFromErrno(EIO));
         }
+        service_ = std::move(service);
     }
+    listeners_.emplace(std::string{identifier}, Listener{wake_fds[1], wake_fds[0], {}});
     return wake_fds[0];
 }
 

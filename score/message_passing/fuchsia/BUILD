@@ -169,3 +169,22 @@ fuchsia_unittest_package(
     unit_tests = [":echo_test"],
     visibility = ["//quality/integration_testing:__subpackages__"],
 )
+
+# Failure injection test of the connection registry.
+fuchsia_cc_test(
+    name = "connection_registry_test",
+    srcs = ["connection_registry_test.cpp"],
+    tags = ["manual"],
+    deps = [
+        ":connection_registry",
+        "@fuchsia_sdk//pkg/syslog",
+    ],
+)
+
+fuchsia_unittest_package(
+    name = "connection_registry_test_pkg",
+    package_name = "message_passing_connection_registry_test",
+    tags = ["manual"],
+    unit_tests = [":connection_registry_test"],
+    visibility = ["//quality/integration_testing:__subpackages__"],
+)

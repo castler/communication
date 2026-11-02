@@ -19,6 +19,7 @@
 
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -38,13 +39,19 @@ namespace score::message_passing::detail
 class FuchsiaConnectionRegistry
 {
   public:
+    /// \brief Replaces starting of the Connector service, to inject failures in tests
+    using ServiceStarter = std::function<bool()>;
+
     static FuchsiaConnectionRegistry& Instance() noexcept;
+
+    explicit FuchsiaConnectionRegistry(ServiceStarter service_starter = {}) noexcept;
 
     ~FuchsiaConnectionRegistry() noexcept;
     FuchsiaConnectionRegistry(const FuchsiaConnectionRegistry&) = delete;
     FuchsiaConnectionRegistry& operator=(const FuchsiaConnectionRegistry&) = delete;
 
-    /// \return a file descriptor that becomes readable when a connection is pending, to be polled by the server
+    /// \return a file descriptor that becomes readable when a connection is pending, to be polled by the server;
+    ///         an error, without leaving a listener behind, if the Connector service cannot be started
     score::cpp::expected<std::int32_t, score::os::Error> Listen(std::string_view identifier) noexcept;
     void StopListening(std::string_view identifier) noexcept;
 
@@ -61,8 +68,6 @@ class FuchsiaConnectionRegistry
   private:
     class Service;
 
-    FuchsiaConnectionRegistry() noexcept;
-
     struct Listener
     {
         std::int32_t wake_write_fd;
@@ -73,6 +78,7 @@ class FuchsiaConnectionRegistry
     std::mutex mutex_;
     std::map<std::string, Listener, std::less<>> listeners_;
     std::unique_ptr<Service> service_;
+    ServiceStarter service_starter_;
 };
 
 }  // namespace score::message_passing::detail

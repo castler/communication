@@ -18,6 +18,14 @@ def test_message_passing_echo_on_fuchsia(target):
     assert result.returncode == 0, result.output
 
 
+def test_connection_registry_start_failure_on_fuchsia(target):
+    result = target.run_test_component(
+        "message_passing_connection_registry_test#meta/connection_registry_test.cm"
+    )
+    assert "registry start failure OK" in result.output, result.output
+    assert result.returncode == 0, result.output
+
+
 def test_message_passing_echo_across_components_on_fuchsia(target):
     result = target.run_test_component(
         "message_passing_cross_component_echo_test#meta/echo_client_test.cm"

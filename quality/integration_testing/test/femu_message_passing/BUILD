@@ -17,6 +17,7 @@ femu_integration_test(
     name = "message_passing_itf_test",
     srcs = ["test_message_passing.py"],
     packages = [
+        "//score/message_passing/fuchsia:connection_registry_test_pkg",
         "//score/message_passing/fuchsia:cross_component_echo_test_pkg",
         "//score/message_passing/fuchsia:echo_test_pkg",
     ],
