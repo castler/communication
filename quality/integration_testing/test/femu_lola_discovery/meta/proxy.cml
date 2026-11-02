@@ -1,0 +1,24 @@
+{
+    include: [ "syslog/client.shard.cml" ],
+
+    program: {
+        runner: "elf",
+        binary: "bin/agent_main",
+        args: [ "proxy" ],
+        forward_stderr_to: "log",
+        forward_stdout_to: "log",
+    },
+
+    capabilities: [
+        { protocol: "score.mw.com.test.lola.Agent" },
+    ],
+    use: [
+        { protocol: "score.mw.com.ServiceDiscovery" },
+    ],
+    expose: [
+        {
+            protocol: "score.mw.com.test.lola.Agent",
+            from: "self",
+        },
+    ],
+}

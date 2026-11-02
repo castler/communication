@@ -1,0 +1,61 @@
+// Copyright (c) 2026 Contributors to the Eclipse Foundation
+//
+// See the NOTICE file(s) distributed with this work for additional
+// information regarding copyright ownership.
+//
+// This program and the accompanying materials are made available under the
+// terms of the Apache License Version 2.0 which is available at
+// https://www.apache.org/licenses/LICENSE-2.0
+//
+// SPDX-License-Identifier: Apache-2.0
+
+// Test only: remote control of the skeleton and proxy agents that drive the real LoLa discovery client. The same
+// protocol is implemented by both roles; calls of the other role fail the test (ok == false / empty).
+library score.mw.com.test.lola;
+
+@discoverable
+closed protocol Agent {
+    // Skeleton role: OfferService / StopOfferService of the instance at the LoLa discovery client.
+    strict Offer(struct {
+        instance uint16;
+    }) -> (struct {
+        ok bool;
+    });
+    strict StopOffer(struct {
+        instance uint16;
+    }) -> (struct {
+        ok bool;
+    });
+    /// Offers a service id the discovery component is not configured for; ok is expected to be false.
+    strict OfferForeign() -> (struct {
+        ok bool;
+    });
+    /// Replies, then the process dies without any cleanup.
+    strict Crash() -> ();
+
+    // Proxy role.
+    /// StartFindService for any instance of the service; returns what the synchronous handler call delivered.
+    strict StartFind() -> (struct {
+        calls uint32;
+        instances vector<uint16>:64;
+    });
+    strict StopFind() -> (struct {
+        calls uint32;
+    });
+    strict FindOnce() -> (struct {
+        ok bool;
+        instances vector<uint16>:64;
+    });
+    /// Waits until the handler was called at least min_calls times (or timeout), returns the last delivered set.
+    strict WaitCalls(struct {
+        min_calls uint32;
+        timeout_ms uint32;
+    }) -> (struct {
+        reached bool;
+        calls uint32;
+        instances vector<uint16>:64;
+    });
+    strict Calls() -> (struct {
+        calls uint32;
+    });
+};

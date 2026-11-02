@@ -168,7 +168,13 @@ cc_library(
         "//score/memory/shared:offset_ptr",
         "@score_baselibs//score/mw/log",
         "@score_baselibs//score/os:unistd",
-    ],
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "//score/mw/com/impl/bindings/lola/fuchsia:fidl_discovery_transport",
+            "//score/mw/com/impl/bindings/lola/fuchsia:fuchsia_service_discovery_client",
+        ],
+        "//conditions:default": [],
+    }),
     tags = ["FFI"],
     visibility = ["//score/mw/com/impl/plumbing:__pkg__"],
     deps = [

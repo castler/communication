@@ -17,7 +17,9 @@
 #include <lib/fidl/cpp/wire/channel.h>
 
 #include <algorithm>
+#include <functional>
 #include <map>
+#include <memory>
 #include <optional>
 #include <tuple>
 #include <utility>
@@ -40,7 +42,7 @@ OfferKey MakeKey(const score_mw_com::ServiceInstanceId& id, const score_mw_com::
 
 }  // namespace
 
-class DiscoveryService::Impl
+class DiscoveryService::Impl : public std::enable_shared_from_this<Impl>
 {
   public:
     struct Offer
@@ -167,9 +169,9 @@ class DiscoveryService::Impl
 
         void StartFind(StartFindRequest& request, StartFindCompleter::Sync&) override
         {
-            fidl::BindServer(impl_.dispatcher_,
-                             std::move(request.search()),
-                             std::make_unique<SearchConnection>(impl_, consumer_, request.filter()));
+            impl_.Bind<score_mw_com::Search>(std::move(request.search()),
+                                             std::make_unique<SearchConnection>(impl_, consumer_, request.filter()),
+                                             [](auto*) {});
         }
 
       private:
@@ -178,6 +180,39 @@ class DiscoveryService::Impl
     };
 
     explicit Impl(async_dispatcher_t* dispatcher) : dispatcher_{dispatcher} {}
+
+    // The binding owns `connection`; `on_unbound` runs before it is destroyed. The service keeps a closer per
+    // connection so that destroying it closes all channels.
+    template <typename Protocol, typename Connection, typename OnUnbound>
+    void Bind(fidl::ServerEnd<Protocol> server_end, std::unique_ptr<Connection> connection, OnUnbound on_unbound)
+    {
+        if (closed_)
+        {
+            return;
+        }
+        const void* key = connection.get();
+        auto ref = fidl::BindServer(
+            dispatcher_,
+            std::move(server_end),
+            std::move(connection),
+            [self = shared_from_this(), key, on_unbound = std::move(on_unbound)](
+                Connection* bound, fidl::UnbindInfo, fidl::ServerEnd<Protocol>) {
+                on_unbound(bound);
+                self->closers_.erase(key);
+            });
+        closers_[key] = [ref]() mutable { ref.Close(ZX_ERR_PEER_CLOSED); };
+    }
+
+    void CloseAll()
+    {
+        closed_ = true;
+        auto closers = std::move(closers_);
+        closers_.clear();
+        for (auto& entry : closers)
+        {
+            entry.second();
+        }
+    }
 
     std::vector<score_mw_com::OfferedInstance> Snapshot(const score_mw_com::InstanceFilter& filter,
                                                         const Participant& consumer) const
@@ -222,32 +257,34 @@ class DiscoveryService::Impl
     }
 
     async_dispatcher_t* dispatcher_;
+    bool closed_{false};
+    std::map<const void*, std::function<void()>> closers_;
     std::map<OfferKey, Offer> offers_;
     std::set<SearchConnection*> searches_;
 };
 
-DiscoveryService::DiscoveryService(async_dispatcher_t* dispatcher) : impl_{std::make_unique<Impl>(dispatcher)} {}
+DiscoveryService::DiscoveryService(async_dispatcher_t* dispatcher) : impl_{std::make_shared<Impl>(dispatcher)} {}
 
-DiscoveryService::~DiscoveryService() = default;
+DiscoveryService::~DiscoveryService()
+{
+    impl_->CloseAll();
+}
 
 auto DiscoveryService::RegistryHandler(Participant skeleton) -> fidl::ProtocolHandler<score_mw_com::ServiceRegistry>
 {
-    return [impl = impl_.get(), skeleton = std::move(skeleton)](fidl::ServerEnd<score_mw_com::ServiceRegistry> server_end) {
-        fidl::BindServer(impl->dispatcher_,
-                         std::move(server_end),
-                         std::make_unique<Impl::RegistryConnection>(*impl, skeleton),
-                         [](Impl::RegistryConnection* connection,
-                            fidl::UnbindInfo,
-                            fidl::ServerEnd<score_mw_com::ServiceRegistry>) { connection->Closed(); });
+    return [impl = impl_, skeleton = std::move(skeleton)](fidl::ServerEnd<score_mw_com::ServiceRegistry> server_end) {
+        impl->Bind<score_mw_com::ServiceRegistry>(
+            std::move(server_end),
+            std::make_unique<Impl::RegistryConnection>(*impl, skeleton),
+            [](Impl::RegistryConnection* connection) { connection->Closed(); });
     };
 }
 
 auto DiscoveryService::DiscoveryHandler(Participant consumer) -> fidl::ProtocolHandler<score_mw_com::ServiceDiscovery>
 {
-    return [impl = impl_.get(), consumer = std::move(consumer)](fidl::ServerEnd<score_mw_com::ServiceDiscovery> server_end) {
-        fidl::BindServer(impl->dispatcher_,
-                         std::move(server_end),
-                         std::make_unique<Impl::DiscoveryConnection>(*impl, consumer));
+    return [impl = impl_, consumer = std::move(consumer)](fidl::ServerEnd<score_mw_com::ServiceDiscovery> server_end) {
+        impl->Bind<score_mw_com::ServiceDiscovery>(
+            std::move(server_end), std::make_unique<Impl::DiscoveryConnection>(*impl, consumer), [](auto*) {});
     };
 }
 

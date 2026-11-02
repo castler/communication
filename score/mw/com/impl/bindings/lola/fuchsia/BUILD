@@ -12,6 +12,7 @@
 # *******************************************************************************
 
 load("@rules_fuchsia//fuchsia:defs.bzl", "fuchsia_fidl_library")
+load("//quality/unit_testing:unit_testing.bzl", "cc_unit_test")
 load("//score/mw:common_features.bzl", "COMPILER_WARNING_FEATURES")
 
 # Attach and discovery of LoLa on Fuchsia, design/fuchsia/README.md section 6.3. Only built with --config=fuchsia.
@@ -136,5 +137,99 @@ cc_library(
         "@fuchsia_sdk//pkg/async-cpp",
         "@fuchsia_sdk//pkg/zx",
         "@score_baselibs//score/mw/log",
+    ],
+)
+
+# LoLa service discovery on Fuchsia (design/fuchsia/README.md section 6.3). The client core is platform neutral and
+# unit tested on the host against a fake transport; only the FIDL transport is Fuchsia specific.
+
+cc_library(
+    name = "discovery_transport",
+    hdrs = ["discovery_transport.h"],
+    features = COMPILER_WARNING_FEATURES,
+    visibility = ["//quality/integration_testing/test:__subpackages__"],
+)
+
+cc_library(
+    name = "fuchsia_service_discovery_client",
+    srcs = ["fuchsia_service_discovery_client.cpp"],
+    hdrs = ["fuchsia_service_discovery_client.h"],
+    features = COMPILER_WARNING_FEATURES,
+    visibility = [
+        "//score/mw/com/impl/bindings/lola:__pkg__",
+        "//quality/integration_testing/test:__subpackages__",
+    ],
+    deps = [
+        ":discovery_transport",
+        "//score/mw/com/impl:enriched_instance_identifier",
+        "//score/mw/com/impl:error",
+        "//score/mw/com/impl:find_service_handle",
+        "//score/mw/com/impl:handle_type",
+        "//score/mw/com/impl:i_service_discovery_client",
+        "//score/mw/com/impl:instance_identifier",
+        "//score/mw/com/impl/configuration",
+        "@score_baselibs//score/language/futurecpp",
+        "@score_baselibs//score/mw/log",
+        "@score_baselibs//score/result",
+    ],
+)
+
+cc_library(
+    name = "fidl_discovery_transport",
+    srcs = ["fidl_discovery_transport.cpp"],
+    hdrs = ["fidl_discovery_transport.h"],
+    features = COMPILER_WARNING_FEATURES,
+    tags = ["manual"],
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = [
+        "//score/mw/com/impl/bindings/lola:__pkg__",
+        "//quality/integration_testing/test:__subpackages__",
+    ],
+    deps = [
+        ":discovery_transport",
+        ":score_mw_com_fidl_cpp",
+        "@fuchsia_sdk//pkg/async-cpp",
+        "@fuchsia_sdk//pkg/async-loop-cpp",
+        "@fuchsia_sdk//pkg/async-loop-default",
+        "@fuchsia_sdk//pkg/component_incoming_cpp",
+        "@fuchsia_sdk//pkg/zx",
+        "@score_baselibs//score/language/futurecpp",
+        "@score_baselibs//score/mw/log",
+    ],
+)
+
+cc_unit_test(
+    name = "fuchsia_service_discovery_client_test",
+    testonly = True,
+    srcs = [
+        "fake_discovery_transport.h",
+        "fuchsia_service_discovery_client_test.cpp",
+    ],
+    features = COMPILER_WARNING_FEATURES,
+    deps = [
+        ":discovery_transport",
+        ":fuchsia_service_discovery_client",
+        "//score/mw/com/impl:error",
+        "//score/mw/com/impl:handle_type",
+        "//score/mw/com/impl:instance_specifier",
+        "//score/mw/com/impl/configuration",
+        "//score/mw/com/impl/configuration/test:configuration_store",
+    ],
+)
+
+# Test support: builds LoLa instance identifiers without a configuration file for the FEMU discovery tests.
+cc_library(
+    name = "discovery_test_support",
+    srcs = ["discovery_test_support.cpp"],
+    hdrs = ["discovery_test_support.h"],
+    features = COMPILER_WARNING_FEATURES,
+    tags = ["manual"],
+    visibility = ["//quality/integration_testing/test:__subpackages__"],
+    deps = [
+        "//score/mw/com/impl:enriched_instance_identifier",
+        "//score/mw/com/impl:handle_type",
+        "//score/mw/com/impl:instance_identifier",
+        "//score/mw/com/impl:instance_specifier",
+        "//score/mw/com/impl/configuration",
     ],
 )
