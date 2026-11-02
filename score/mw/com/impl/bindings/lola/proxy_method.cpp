@@ -10,6 +10,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  ********************************************************************************/
+#include "score/message_passing/identity_types.h"
 #include "score/mw/com/impl/bindings/lola/proxy_method.h"
 
 #include "score/mw/com/impl/binding_type.h"
@@ -94,7 +95,7 @@ score::Result<void> ProxyMethod::DoCall(std::size_t queue_position)
     }
     auto& lola_message_passing = lola_runtime_.GetLolaMessaging();
     return lola_message_passing.CallMethod(
-        asil_level_, proxy_method_instance_identifier_, queue_position, proxy_.GetSourcePid());
+        asil_level_, proxy_method_instance_identifier_, queue_position, message_passing::NodeIdFromPid(proxy_.GetSourcePid()));
 }
 
 TypeErasedCallQueue::TypeErasedElementInfo ProxyMethod::GetTypeErasedElementInfo() const

@@ -140,7 +140,7 @@ TEST_F(MessagePassingServiceTest, RegisterEventNotificationDispatchesToAsilQMIns
     const ElementFqId event_id{2U, 4U, 3U, ServiceElementType::EVENT};
     const auto callback = std::make_shared<ScopedEventReceiveHandler>();
     const std::weak_ptr<ScopedEventReceiveHandler> weak_callback = callback;
-    constexpr pid_t pid{5};
+    constexpr message_passing::NodeId pid{message_passing::NodeIdFromPid(5)};
     constexpr IMessagePassingService::HandlerRegistrationNoType handler_no{3};
 
     // Expecting a call to RegisterEventNotification of ASIL-QM mock instance
@@ -164,7 +164,7 @@ TEST_F(MessagePassingServiceTest, RegisterEventNotificationDispatchesToAsilBInst
     const ElementFqId event_id{2U, 4U, 3U, ServiceElementType::EVENT};
     const auto callback = std::make_shared<ScopedEventReceiveHandler>();
     const std::weak_ptr<ScopedEventReceiveHandler> weak_callback = callback;
-    constexpr pid_t pid{5};
+    constexpr message_passing::NodeId pid{message_passing::NodeIdFromPid(5)};
     constexpr IMessagePassingService::HandlerRegistrationNoType handler_no{3};
 
     // Expecting a call to RegisterEventNotification of ASIL-B mock instance
@@ -189,7 +189,7 @@ TEST_F(MessagePassingServiceDeathTest, RegisterEventNotificationAbortsWithInvali
     const ElementFqId event_id{2U, 4U, 3U, ServiceElementType::EVENT};
     const auto callback = std::make_shared<ScopedEventReceiveHandler>();
     const std::weak_ptr<ScopedEventReceiveHandler> weak_callback = callback;
-    constexpr pid_t pid{5};
+    constexpr message_passing::NodeId pid{message_passing::NodeIdFromPid(5)};
 
     // When calling RegisterEventNotification with an invalid ASIL level THEN it terminates
     WithAsilBAndQmInstance();
@@ -201,7 +201,7 @@ TEST_F(MessagePassingServiceTest, ReregisterEventNotificationDispatchesToAsilQMI
 {
     // Given some input parameters to the tested function call
     const ElementFqId event_id{2U, 4U, 3U, ServiceElementType::EVENT};
-    constexpr pid_t pid{5};
+    constexpr message_passing::NodeId pid{message_passing::NodeIdFromPid(5)};
 
     // Expecting a call to RegisterEventNotification of ASIL-QM mock instance
     EXPECT_CALL(*asil_qm_message_passing_service_instance_mock_, ReregisterEventNotification(event_id, pid)).Times(1);
@@ -217,7 +217,7 @@ TEST_F(MessagePassingServiceTest, ReregisterEventNotificationDispatchesToAsilBIn
 {
     // Given some input parameters to the tested function call
     const ElementFqId event_id{2U, 4U, 3U, ServiceElementType::EVENT};
-    constexpr pid_t pid{5};
+    constexpr message_passing::NodeId pid{message_passing::NodeIdFromPid(5)};
 
     // Expecting a call to RegisterEventNotification of ASIL-B mock instance
     EXPECT_CALL(*asil_qm_message_passing_service_instance_mock_, ReregisterEventNotification(_, _)).Times(0);
@@ -233,7 +233,7 @@ TEST_F(MessagePassingServiceDeathTest, ReregisterEventNotificationAbortsWithInva
 {
     // Given some input parameters to the tested function call
     const ElementFqId event_id{2U, 4U, 3U, ServiceElementType::EVENT};
-    constexpr pid_t pid{5};
+    constexpr message_passing::NodeId pid{message_passing::NodeIdFromPid(5)};
 
     // When calling ReregisterEventNotification with an invalid ASIL level THEN it terminates
     WithAsilBAndQmInstance();
@@ -246,7 +246,7 @@ TEST_F(MessagePassingServiceTest, UnregisterEventNotificationDispatchesToAsilQMI
     // Given some input parameters to the tested function call
     const ElementFqId event_id{2U, 4U, 3U, ServiceElementType::EVENT};
     constexpr IMessagePassingService::HandlerRegistrationNoType handler_no{3};
-    constexpr pid_t pid{5};
+    constexpr message_passing::NodeId pid{message_passing::NodeIdFromPid(5)};
 
     // Expecting a call to RegisterEventNotification of ASIL-QM mock instance
     EXPECT_CALL(*asil_qm_message_passing_service_instance_mock_, UnregisterEventNotification(event_id, handler_no, pid))
@@ -264,7 +264,7 @@ TEST_F(MessagePassingServiceTest, UnregisterEventNotificationDispatchesToAsilBIn
     // Given some input parameters to the tested function call
     const ElementFqId event_id{2U, 4U, 3U, ServiceElementType::EVENT};
     constexpr IMessagePassingService::HandlerRegistrationNoType handler_no{3};
-    constexpr pid_t pid{5};
+    constexpr message_passing::NodeId pid{message_passing::NodeIdFromPid(5)};
 
     // Expecting a call to RegisterEventNotification of ASIL-B mock instance
     EXPECT_CALL(*asil_qm_message_passing_service_instance_mock_, UnregisterEventNotification(_, _, _)).Times(0);
@@ -282,7 +282,7 @@ TEST_F(MessagePassingServiceDeathTest, UnregisterEventNotificationAbortsWithInva
     // Given some input parameters to the tested function call
     const ElementFqId event_id{2U, 4U, 3U, ServiceElementType::EVENT};
     constexpr IMessagePassingService::HandlerRegistrationNoType handler_no{3};
-    constexpr pid_t pid{5};
+    constexpr message_passing::NodeId pid{message_passing::NodeIdFromPid(5)};
 
     // When calling UnregisterEventNotification with an invalid ASIL level THEN it terminates
     WithAsilBAndQmInstance();
@@ -293,8 +293,8 @@ TEST_F(MessagePassingServiceDeathTest, UnregisterEventNotificationAbortsWithInva
 TEST_F(MessagePassingServiceTest, NotifyOutdatedNodeIdDispatchesToAsilQMInstance)
 {
     // Given some input parameters to the tested function call
-    constexpr pid_t pid{5};
-    constexpr pid_t old_pid{4};
+    constexpr message_passing::NodeId pid{message_passing::NodeIdFromPid(5)};
+    constexpr message_passing::NodeId old_pid{message_passing::NodeIdFromPid(4)};
 
     // Expecting a call to RegisterEventNotification of ASIL-QM mock instance
     EXPECT_CALL(*asil_qm_message_passing_service_instance_mock_, NotifyOutdatedNodeId(pid, old_pid)).Times(1);
@@ -309,8 +309,8 @@ TEST_F(MessagePassingServiceTest, NotifyOutdatedNodeIdDispatchesToAsilQMInstance
 TEST_F(MessagePassingServiceTest, NotifyOutdatedNodeIdDispatchesToAsilBInstance)
 {
     // Given some input parameters to the tested function call
-    constexpr pid_t pid{5};
-    constexpr pid_t old_pid{4};
+    constexpr message_passing::NodeId pid{message_passing::NodeIdFromPid(5)};
+    constexpr message_passing::NodeId old_pid{message_passing::NodeIdFromPid(4)};
 
     // Expecting a call to RegisterEventNotification of ASIL-B mock instance
     EXPECT_CALL(*asil_qm_message_passing_service_instance_mock_, NotifyOutdatedNodeId(_, _)).Times(0);
@@ -325,8 +325,8 @@ TEST_F(MessagePassingServiceTest, NotifyOutdatedNodeIdDispatchesToAsilBInstance)
 TEST_F(MessagePassingServiceDeathTest, NotifyOutdatedNodeIdAbortsWithInvalidAsilLevel)
 {
     // Given some input parameters to the tested function call
-    constexpr pid_t pid{5};
-    constexpr pid_t old_pid{4};
+    constexpr message_passing::NodeId pid{message_passing::NodeIdFromPid(5)};
+    constexpr message_passing::NodeId old_pid{message_passing::NodeIdFromPid(4)};
 
     // When calling NotifyOutdatedNodeId with an invalid ASIL level THEN it terminates
     WithAsilBAndQmInstance();
@@ -420,8 +420,8 @@ class MessagePassingServiceQMDelegationTest : public MessagePassingServiceTest
     const ProxyMethodInstanceIdentifier kProxyMethodInstanceId{kProxyInstanceId,
                                                                UniqueMethodIdentifier{LolaMethodId{55U}}};
     const SkeletonInstanceIdentifier kSkeletonInstanceId{LolaServiceId{12U}, LolaServiceInstanceId::InstanceId{22U}};
-    const pid_t kTargetNodeId{7};
-    const uid_t kAllowedUid{42U};
+    const message_passing::NodeId kTargetNodeId{message_passing::NodeIdFromPid(7)};
+    const message_passing::PrincipalId kAllowedUid{message_passing::PrincipalIdFromUid(42U)};
     const std::size_t kQueuePosition{2U};
 
   private:

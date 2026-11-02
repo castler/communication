@@ -192,6 +192,7 @@ cc_library(
     features = COMPILER_WARNING_FEATURES,
     tags = ["FFI"],
     deps = [
+        "//score/message_passing:common_headers",
         "//score/mw/com/impl/bindings/lola:element_fq_id",
         "@score_baselibs//score/language/futurecpp",
     ],

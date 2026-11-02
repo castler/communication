@@ -10,6 +10,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  ********************************************************************************/
+#include "score/message_passing/identity_types.h"
 #include "score/mw/com/impl/bindings/lola/transaction_log_rollback_executor.h"
 
 #include "score/mw/com/impl/binding_type.h"
@@ -86,7 +87,9 @@ void TransactionLogRollbackExecutor::PrepareRollback(lola::IRuntime& lola_runtim
     {
         // we found an old/outdated PID for our UID in the shared-memory of the service-instance. Notify provider, that
         // this pid is outdated.
-        lola_runtime.GetLolaMessaging().NotifyOutdatedNodeId(asil_level_, previous_pid.value(), provider_pid_);
+        lola_runtime.GetLolaMessaging().NotifyOutdatedNodeId(asil_level_,
+                                                                  message_passing::NodeIdFromPid(previous_pid.value()),
+                                                                  message_passing::NodeIdFromPid(provider_pid_));
     }
 
     // Mark all TransactionLogs for each event that correspond to transaction_log_id as needing to be rolled back.

@@ -40,7 +40,11 @@ class CopyNodeIdentiersFixture : public ::testing::Test
     CopyNodeIdentiersFixture& WithANodeIdMapContainingPids(const ElementFqId element_fq_id_map_key,
                                                            std::vector<pid_t> pids)
     {
-        std::set<pid_t> pid_set{pids.begin(), pids.end()};
+        std::set<message_passing::NodeId> pid_set{};
+        for (const auto pid : pids)
+        {
+            pid_set.insert(message_passing::NodeIdFromPid(pid));
+        }
         node_id_map_.insert({element_fq_id_map_key, std::move(pid_set)});
         return *this;
     }
@@ -50,7 +54,7 @@ class CopyNodeIdentiersFixture : public ::testing::Test
         std::uint32_t number_of_valid_node_ids{0U};
         for (const auto node_id : node_id_tmp_buffer_)
         {
-            if (node_id != 0U)
+            if (node_id.Raw() != 0U)
             {
                 number_of_valid_node_ids += 1U;
             }
@@ -70,8 +74,8 @@ class CopyNodeIdentiersFixture : public ::testing::Test
         {
             const auto actual_pid = node_id_tmp_buffer_[i];
             const auto expected_pid = expected_pids[i];
-            EXPECT_EQ(actual_pid, expected_pid);
-            if (actual_pid != expected_pid)
+            EXPECT_EQ(actual_pid, message_passing::NodeIdFromPid(expected_pid));
+            if (actual_pid != message_passing::NodeIdFromPid(expected_pid))
             {
                 return false;
             }
@@ -79,7 +83,7 @@ class CopyNodeIdentiersFixture : public ::testing::Test
         return true;
     }
 
-    using MapType = std::unordered_map<ElementFqId, std::set<pid_t>>;
+    using MapType = std::unordered_map<ElementFqId, std::set<message_passing::NodeId>>;
     MapType node_id_map_{};
     NodeIdTmpBufferType node_id_tmp_buffer_{};
     std::shared_mutex map_mutex_{};
@@ -94,7 +98,7 @@ TEST_F(CopyNodeIdentiersEmptyMapFixture, CopyingNodesReturnsNoFutherIdsAvailable
 
     // When copying node identifiers
     const auto [num_of_nodeids_copied, further_ids_available] =
-        CopyNodeIdentifiers<MapType>(kDummyElementFqId, node_id_map_, map_mutex_, node_id_tmp_buffer_, kPidNotInMap);
+        CopyNodeIdentifiers<MapType>(kDummyElementFqId, node_id_map_, map_mutex_, node_id_tmp_buffer_, message_passing::NodeIdFromPid(kPidNotInMap));
 
     // Then no further ids are available
     EXPECT_FALSE(further_ids_available);
@@ -108,7 +112,7 @@ TEST_F(CopyNodeIdentiersEmptyMapFixture, CopyingNodesCopiesNoIds)
 
     // When copying node identifiers
     const auto [num_of_nodeids_copied, further_ids_available] =
-        CopyNodeIdentifiers<MapType>(kDummyElementFqId, node_id_map_, map_mutex_, node_id_tmp_buffer_, kPidNotInMap);
+        CopyNodeIdentifiers<MapType>(kDummyElementFqId, node_id_map_, map_mutex_, node_id_tmp_buffer_, message_passing::NodeIdFromPid(kPidNotInMap));
 
     // Then no node ids are copied to the buffer
     EXPECT_EQ(num_of_nodeids_copied, 0U);
@@ -124,7 +128,7 @@ TEST_F(CopyNodeIdentiersMapWithLessNodesThanMaxBufferSizeFixture, CopyingNodesRe
 
     // When copying the node identifiers from the map
     const auto [num_of_nodeids_copied, further_ids_available] =
-        CopyNodeIdentifiers<MapType>(kDummyElementFqId, node_id_map_, map_mutex_, node_id_tmp_buffer_, node_ids[0]);
+        CopyNodeIdentifiers<MapType>(kDummyElementFqId, node_id_map_, map_mutex_, node_id_tmp_buffer_, message_passing::NodeIdFromPid(node_ids[0]));
 
     // Then no further ids are available
     EXPECT_FALSE(further_ids_available);
@@ -138,7 +142,7 @@ TEST_F(CopyNodeIdentiersMapWithLessNodesThanMaxBufferSizeFixture, CopyingNodesCo
 
     // When copying the node identifiers from the map
     const auto [num_of_nodeids_copied, further_ids_available] =
-        CopyNodeIdentifiers<MapType>(kDummyElementFqId, node_id_map_, map_mutex_, node_id_tmp_buffer_, node_ids[0]);
+        CopyNodeIdentifiers<MapType>(kDummyElementFqId, node_id_map_, map_mutex_, node_id_tmp_buffer_, message_passing::NodeIdFromPid(node_ids[0]));
 
     // Then all node ids are copied to the buffer
     const std::vector<pid_t> expected_copied_ids{1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
@@ -156,7 +160,7 @@ TEST_F(CopyNodeIdentiersMapWithLessNodesThanMaxBufferSizeFixture,
     // When copying the node identifiers from the map starting from the second pid in the map
     const auto second_pid = node_ids[1];
     const auto [num_of_nodeids_copied, further_ids_available] =
-        CopyNodeIdentifiers<MapType>(kDummyElementFqId, node_id_map_, map_mutex_, node_id_tmp_buffer_, second_pid);
+        CopyNodeIdentifiers<MapType>(kDummyElementFqId, node_id_map_, map_mutex_, node_id_tmp_buffer_, message_passing::NodeIdFromPid(second_pid));
 
     // Then no further ids are available
     EXPECT_FALSE(further_ids_available);
@@ -172,7 +176,7 @@ TEST_F(CopyNodeIdentiersMapWithLessNodesThanMaxBufferSizeFixture,
     // When copying the node identifiers from the map starting from the second pid in the map
     const auto second_pid = node_ids[1];
     const auto [num_of_nodeids_copied, further_ids_available] =
-        CopyNodeIdentifiers<MapType>(kDummyElementFqId, node_id_map_, map_mutex_, node_id_tmp_buffer_, second_pid);
+        CopyNodeIdentifiers<MapType>(kDummyElementFqId, node_id_map_, map_mutex_, node_id_tmp_buffer_, message_passing::NodeIdFromPid(second_pid));
 
     // Then all node ids starting from the second id are copied to the buffer
     const std::vector<pid_t> expected_copied_ids{2, 3, 4, 5, 6, 7, 8, 9, 10};
@@ -189,7 +193,7 @@ TEST_F(CopyNodeIdentiersMapWithLessNodesThanMaxBufferSizeFixture,
 
     // When copying the node identifiers from the map starting from a pid that is not in the map
     const auto [num_of_nodeids_copied, further_ids_available] =
-        CopyNodeIdentifiers<MapType>(kDummyElementFqId, node_id_map_, map_mutex_, node_id_tmp_buffer_, kPidNotInMap);
+        CopyNodeIdentifiers<MapType>(kDummyElementFqId, node_id_map_, map_mutex_, node_id_tmp_buffer_, message_passing::NodeIdFromPid(kPidNotInMap));
 
     // Then no further ids are available
     EXPECT_FALSE(further_ids_available);
@@ -203,7 +207,7 @@ TEST_F(CopyNodeIdentiersMapWithLessNodesThanMaxBufferSizeFixture, CopyingNodesSt
 
     // When copying the node identifiers from the map starting from a pid that is not in the map
     const auto [num_of_nodeids_copied, further_ids_available] =
-        CopyNodeIdentifiers<MapType>(kDummyElementFqId, node_id_map_, map_mutex_, node_id_tmp_buffer_, kPidNotInMap);
+        CopyNodeIdentifiers<MapType>(kDummyElementFqId, node_id_map_, map_mutex_, node_id_tmp_buffer_, message_passing::NodeIdFromPid(kPidNotInMap));
 
     // Then no node ids are copied to the buffer
     EXPECT_EQ(num_of_nodeids_copied, 0U);
@@ -218,7 +222,7 @@ TEST_F(CopyNodeIdentiersMapWithLessNodesThanMaxBufferSizeFixture, CopyingNodesFo
 
     // When copying the node identifiers for an ElementFqId that's not in the map
     const auto [num_of_nodeids_copied, further_ids_available] =
-        CopyNodeIdentifiers<MapType>(kElementFqIdNotInMap, node_id_map_, map_mutex_, node_id_tmp_buffer_, node_ids[0]);
+        CopyNodeIdentifiers<MapType>(kElementFqIdNotInMap, node_id_map_, map_mutex_, node_id_tmp_buffer_, message_passing::NodeIdFromPid(node_ids[0]));
 
     // Then no node ids are copied to the buffer
     EXPECT_EQ(num_of_nodeids_copied, 0U);
@@ -235,7 +239,7 @@ TEST_F(CopyNodeIdentiersMapWithNodesEqualToMaxBufferSizeFixture, CopyingNodesRet
 
     // When copying the node identifiers from the map
     const auto [num_of_nodeids_copied, further_ids_available] =
-        CopyNodeIdentifiers<MapType>(kDummyElementFqId, node_id_map_, map_mutex_, node_id_tmp_buffer_, node_ids[0]);
+        CopyNodeIdentifiers<MapType>(kDummyElementFqId, node_id_map_, map_mutex_, node_id_tmp_buffer_, message_passing::NodeIdFromPid(node_ids[0]));
 
     // Then no further ids are available
     EXPECT_FALSE(further_ids_available);
@@ -250,7 +254,7 @@ TEST_F(CopyNodeIdentiersMapWithNodesEqualToMaxBufferSizeFixture, CopyingNodesCop
 
     // When copying the node identifiers from the map
     const auto [num_of_nodeids_copied, further_ids_available] =
-        CopyNodeIdentifiers<MapType>(kDummyElementFqId, node_id_map_, map_mutex_, node_id_tmp_buffer_, node_ids[0]);
+        CopyNodeIdentifiers<MapType>(kDummyElementFqId, node_id_map_, map_mutex_, node_id_tmp_buffer_, message_passing::NodeIdFromPid(node_ids[0]));
 
     // Then all the ids are copied to the buffer
     const std::vector<pid_t> expected_copied_ids{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20};
@@ -268,7 +272,7 @@ TEST_F(CopyNodeIdentiersMapWithMoreNodesThanMaxBufferSizeFixture, CopyingNodesRe
 
     // When copying the node identifiers from the map
     const auto [num_of_nodeids_copied, further_ids_available] =
-        CopyNodeIdentifiers<MapType>(kDummyElementFqId, node_id_map_, map_mutex_, node_id_tmp_buffer_, node_ids[0]);
+        CopyNodeIdentifiers<MapType>(kDummyElementFqId, node_id_map_, map_mutex_, node_id_tmp_buffer_, message_passing::NodeIdFromPid(node_ids[0]));
 
     // Then further ids are available
     EXPECT_TRUE(further_ids_available);
@@ -283,7 +287,7 @@ TEST_F(CopyNodeIdentiersMapWithMoreNodesThanMaxBufferSizeFixture, CopyingNodesCo
 
     // When copying the node identifiers from the map
     const auto [num_of_nodeids_copied, further_ids_available] =
-        CopyNodeIdentifiers<MapType>(kDummyElementFqId, node_id_map_, map_mutex_, node_id_tmp_buffer_, node_ids[0]);
+        CopyNodeIdentifiers<MapType>(kDummyElementFqId, node_id_map_, map_mutex_, node_id_tmp_buffer_, message_passing::NodeIdFromPid(node_ids[0]));
 
     // Then the first <max buffer size> ids are copied to the buffer
     const std::vector<pid_t> expected_copied_ids{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20};
@@ -302,7 +306,7 @@ TEST_F(CopyNodeIdentiersMapWithMoreNodesThanMaxBufferSizeFixture,
     // When copying the node identifiers from the map
     const auto second_pid = node_ids[1];
     const auto [num_of_nodeids_copied, further_ids_available] =
-        CopyNodeIdentifiers<MapType>(kDummyElementFqId, node_id_map_, map_mutex_, node_id_tmp_buffer_, second_pid);
+        CopyNodeIdentifiers<MapType>(kDummyElementFqId, node_id_map_, map_mutex_, node_id_tmp_buffer_, message_passing::NodeIdFromPid(second_pid));
 
     // Then the first <max buffer size> ids starting from the second pid are copied to the buffer
     const std::vector<pid_t> expected_copied_ids{2,  3,  4,  5,  6,  7,  8,  9,  10, 11,

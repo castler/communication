@@ -10,6 +10,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  ********************************************************************************/
+#include "score/message_passing/identity_types.h"
 #include "score/mw/com/impl/bindings/lola/transaction_log_rollback_executor.h"
 
 #include "score/mw/com/impl/bindings/lola/application_id_pid_mapping.h"
@@ -212,7 +213,7 @@ TEST_F(TransactionLogRollbackExecutorRollbackLogsFixture, WillNotifyProviderOutd
 
     // expect, that the provider will get notified about the old/previous pid being outdated
     EXPECT_CALL(message_passing_service_mock_,
-                NotifyOutdatedNodeId(kDummyQualityType, kDummyOldConsumerPid, kDummyProviderPid));
+                NotifyOutdatedNodeId(kDummyQualityType, message_passing::NodeIdFromPid(kDummyOldConsumerPid), message_passing::NodeIdFromPid(kDummyProviderPid)));
 
     // when RollbackTransactionLogs() is called.
     auto result = unit_->RollbackTransactionLogs();

@@ -10,6 +10,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  ********************************************************************************/
+#include "score/message_passing/identity_types.h"
 #include "score/mw/com/impl/bindings/lola/subscription_helpers.h"
 
 #include "score/mw/com/impl/bindings/lola/i_runtime.h"
@@ -30,7 +31,7 @@ void EventReceiveHandlerManager::Register(std::weak_ptr<ScopedEventReceiveHandle
     Unregister();
     auto& lola_runtime = GetBindingRuntime<lola::IRuntime>(BindingType::kLoLa);
     registration_number_ = lola_runtime.GetLolaMessaging().RegisterEventNotification(
-        asil_level_, element_fq_id_, std::move(handler), event_source_pid_);
+        asil_level_, element_fq_id_, std::move(handler), message_passing::NodeIdFromPid(event_source_pid_));
 }
 
 void EventReceiveHandlerManager::Reregister(
@@ -43,7 +44,7 @@ void EventReceiveHandlerManager::Reregister(
     else if (registration_number_.has_value())
     {
         auto& lola_runtime = GetBindingRuntime<lola::IRuntime>(BindingType::kLoLa);
-        lola_runtime.GetLolaMessaging().ReregisterEventNotification(asil_level_, element_fq_id_, event_source_pid_);
+        lola_runtime.GetLolaMessaging().ReregisterEventNotification(asil_level_, element_fq_id_, message_passing::NodeIdFromPid(event_source_pid_));
     }
 }
 
@@ -53,7 +54,7 @@ void EventReceiveHandlerManager::Unregister()
     {
         auto& lola_runtime = GetBindingRuntime<lola::IRuntime>(BindingType::kLoLa);
         lola_runtime.GetLolaMessaging().UnregisterEventNotification(
-            asil_level_, element_fq_id_, registration_number_.value(), event_source_pid_);
+            asil_level_, element_fq_id_, registration_number_.value(), message_passing::NodeIdFromPid(event_source_pid_));
         registration_number_ = std::nullopt;
     }
 }

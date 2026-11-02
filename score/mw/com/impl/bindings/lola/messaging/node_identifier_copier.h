@@ -15,6 +15,8 @@
 
 #include "score/mw/com/impl/bindings/lola/element_fq_id.h"
 
+#include "score/message_passing/identity_types.h"
+
 #include <score/assert.hpp>
 
 #include <array>
@@ -23,20 +25,20 @@
 namespace score::mw::com::impl::lola
 {
 
-using NodeIdTmpBufferType = std::array<pid_t, 20>;
+using NodeIdTmpBufferType = std::array<score::message_passing::NodeId, 20>;
 
 /// \brief Copies node identifiers (pid) contained within (container) values of a map into a given buffer under
 ///        read-lock
 /// \details
 /// \tparam MapType Type of the Map. It is implicitly expected, that the key of MapType is of type ElementFqId and
 ///         the mapped_type is a std::set (or at least some forward iterable container type, which supports
-///         lower_bound()), which contains values, which directly or indirectly contain a node identifier (pid_t)
+///         lower_bound()), which contains values, which directly or indirectly contain a node identifier (NodeId)
 ///
 /// \param event_id fully qualified event id for lookup in _src_map_
 /// \param src_map map, where key_type = ElementFqId and mapped_type is some forward iterable container
 /// \param src_map_mutex mutex to be used to lock the map during copying.
 /// \param dest_buffer buffer, where to copy the node identifiers
-/// \param start start identifier (pid_t) where to start search with.
+/// \param start start identifier (NodeId) where to start search with.
 ///
 /// \return pair containing number of node identifiers, which have been copied and a bool, whether further ids could
 ///         have been copied, if buffer would have been larger.
@@ -51,7 +53,7 @@ std::pair<std::uint32_t, bool> CopyNodeIdentifiers(ElementFqId event_id,
                                                    MapType& src_map,
                                                    std::shared_mutex& src_map_mutex,
                                                    NodeIdTmpBufferType& dest_buffer,
-                                                   pid_t start) noexcept
+                                                   score::message_passing::NodeId start) noexcept
 {
     std::uint32_t num_nodeids_copied{0U};
     bool further_ids_avail{false};
@@ -71,7 +73,7 @@ std::pair<std::uint32_t, bool> CopyNodeIdentifiers(ElementFqId event_id,
                     dest_buffer.size() > 0U, "HandlerBase::CopyNodeIdentifiers destination buffer has size zero!");
                 // Suppress "AUTOSAR C++14 M5-0-3" rule findings. This rule states: "A cvalue expression shall
                 // not be implicitly converted to a different underlying type"
-                // That return `pid_t` type as a result. Tolerated implicit conversion as underlying types are the
+                // That return `NodeId` type as a result. Tolerated implicit conversion as underlying types are the
                 // same coverity
                 // coverity[autosar_cpp14_m5_0_3_violation]
                 dest_buffer.at(num_nodeids_copied) = *iter;

@@ -111,7 +111,7 @@ int main()
     {
         std::lock_guard<std::mutex> guard{identities_mutex};
         // the first client uses the default consumer id 0 of the shared engine
-        if (principals != std::set<ClientIdentity::PrincipalId>{0U, 11U, 22U} || nodes.size() != 3U)
+        if (principals != std::set<ClientIdentity::PrincipalId>{ClientIdentity::PrincipalId{0U}, ClientIdentity::PrincipalId{11U}, ClientIdentity::PrincipalId{22U}} || nodes.size() != 3U)
         {
             std::cout << "unexpected identities: principals=" << principals.size() << " nodes=" << nodes.size()
                       << std::endl;

@@ -10,6 +10,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  ********************************************************************************/
+#include "score/message_passing/identity_types.h"
 #include "score/mw/com/impl/bindings/lola/skeleton.h"
 
 #include "score/memory/shared/managed_memory_resource.h"
@@ -628,9 +629,12 @@ auto Skeleton::RegisterMethodHandlers(const QualityType asil_level,
         IMessagePassingService::ServiceMethodSubscribedHandler{
             on_service_method_subscribed_handler_scope_,
             [this, asil_level](const ProxyInstanceIdentifier proxy_instance_identifier,
-                               const uid_t proxy_uid,
-                               const pid_t proxy_pid) -> Result<void> {
-                return OnServiceMethodsSubscribed(proxy_instance_identifier, proxy_uid, asil_level, proxy_pid);
+                               const IMessagePassingService::PrincipalId proxy_principal,
+                               const IMessagePassingService::NodeId proxy_node) -> Result<void> {
+                return OnServiceMethodsSubscribed(proxy_instance_identifier,
+                                                  message_passing::PrincipalIdToUid(proxy_principal),
+                                                  asil_level,
+                                                  message_passing::NodeIdToPid(proxy_node));
             }},
         allowed_consumers);
     if (!subscription_result.has_value())
@@ -813,17 +817,22 @@ IMessagePassingService::AllowedConsumerUids Skeleton::GetAllowedConsumers(const 
         {
             score::mw::log::LogDebug("lola") << "Quality type:" << ToString(asil_level)
                                              << "does not exist in allowed_consumer list in configuration!";
-            return std::set<uid_t>{};
+            return IMessagePassingService::AllowedConsumerUids{std::set<IMessagePassingService::PrincipalId>{}};
         }
         else
         {
-            return std::optional<std::set<uid_t>>{};
+            return IMessagePassingService::AllowedConsumerUids{};
         }
     }
 
     // Check if the proxy_uid is in the allowed consumer list for the specified quality
     const auto& allowed_consumer_vector = allowed_consumer_list_it->second;
-    return std::set<uid_t>{allowed_consumer_vector.begin(), allowed_consumer_vector.end()};
+    std::set<IMessagePassingService::PrincipalId> principals{};
+    for (const auto uid : allowed_consumer_vector)
+    {
+        principals.insert(message_passing::PrincipalIdFromUid(uid));
+    }
+    return IMessagePassingService::AllowedConsumerUids{std::move(principals)};
 }
 
 MethodData& Skeleton::GetMethodData(const memory::shared::ManagedMemoryResource& resource)

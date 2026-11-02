@@ -10,6 +10,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  ********************************************************************************/
+#include "score/message_passing/identity_types.h"
 #include "score/mw/com/impl/bindings/lola/test/proxy_event_test_resources.h"
 
 #include "score/memory/shared/memory_resource_registry.h"
@@ -188,7 +189,7 @@ std::future<std::shared_ptr<ScopedEventReceiveHandler>> LolaProxyEventResources:
     auto local_handler_future = local_handler_promise->get_future();
 
     EXPECT_CALL(*mock_service_,
-                RegisterEventNotification(QualityType::kASIL_QM, element_fq_id_, ::testing::_, pid_to_use))
+                RegisterEventNotification(QualityType::kASIL_QM, element_fq_id_, ::testing::_, message_passing::NodeIdFromPid(pid_to_use)))
         .WillOnce(::testing::Invoke(
             ::testing::WithArg<2>([local_handler_promise](std::weak_ptr<ScopedEventReceiveHandler> handler_weak_ptr)
                                       -> IMessagePassingService::HandlerRegistrationNoType {
@@ -205,7 +206,7 @@ std::future<std::shared_ptr<ScopedEventReceiveHandler>> LolaProxyEventResources:
 void LolaProxyEventResources::ExpectReregisterEventNotification(std::optional<pid_t> pid)
 {
     const auto pid_to_use = pid.has_value() ? pid.value() : kDummyPid;
-    EXPECT_CALL(*mock_service_, ReregisterEventNotification(QualityType::kASIL_QM, element_fq_id_, pid_to_use))
+    EXPECT_CALL(*mock_service_, ReregisterEventNotification(QualityType::kASIL_QM, element_fq_id_, message_passing::NodeIdFromPid(pid_to_use)))
         .RetiresOnSaturation();
 }
 
@@ -213,7 +214,7 @@ void LolaProxyEventResources::ExpectUnregisterEventNotification(std::optional<pi
 {
     const auto pid_to_use = pid.has_value() ? pid.value() : kDummyPid;
     EXPECT_CALL(*mock_service_,
-                UnregisterEventNotification(QualityType::kASIL_QM, element_fq_id_, ::testing::_, pid_to_use));
+                UnregisterEventNotification(QualityType::kASIL_QM, element_fq_id_, ::testing::_, message_passing::NodeIdFromPid(pid_to_use)));
 }
 
 SlotIndexType LolaProxyEventResources::PutData(const std::uint32_t value,

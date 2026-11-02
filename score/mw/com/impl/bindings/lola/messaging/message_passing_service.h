@@ -84,13 +84,13 @@ class MessagePassingService final : public IMessagePassingService
     HandlerRegistrationNoType RegisterEventNotification(const QualityType asil_level,
                                                         const ElementFqId event_id,
                                                         std::weak_ptr<ScopedEventReceiveHandler> callback,
-                                                        const pid_t target_node_id) noexcept override;
+                                                        const NodeId target_node_id) noexcept override;
 
     /// \brief Re-registers an event update notifications for event _event_id_ in case target_node_id is a remote pid.
     /// \details see IMessagePassingService::ReregisterEventNotification
     void ReregisterEventNotification(const QualityType asil_level,
                                      const ElementFqId event_id,
-                                     const pid_t target_node_id) noexcept override;
+                                     const NodeId target_node_id) noexcept override;
 
     /// \brief Unregister an event update notification callback, which has been registered with
     ///        RegisterEventNotification()
@@ -98,7 +98,7 @@ class MessagePassingService final : public IMessagePassingService
     void UnregisterEventNotification(const QualityType asil_level,
                                      const ElementFqId event_id,
                                      const HandlerRegistrationNoType registration_no,
-                                     const pid_t target_node_id) noexcept override;
+                                     const NodeId target_node_id) noexcept override;
 
     /// \brief Register a handler on Skeleton side which will be called when SubscribeServiceMethod is called by a
     /// Proxy.
@@ -123,13 +123,13 @@ class MessagePassingService final : public IMessagePassingService
         const QualityType asil_level,
         ProxyMethodInstanceIdentifier proxy_method_instance_identifier,
         MethodCallHandler method_call_callback,
-        uid_t allowed_proxy_uid) override;
+        PrincipalId allowed_proxy_uid) override;
 
     /// \brief Notifies target node about outdated_node_id being an old/outdated node id, not being used anymore.
     /// \details see IMessagePassingService::NotifyOutdatedNodeId
     void NotifyOutdatedNodeId(const QualityType asil_level,
-                              const pid_t outdated_node_id,
-                              const pid_t target_node_id) noexcept override;
+                              const NodeId outdated_node_id,
+                              const NodeId target_node_id) noexcept override;
 
     /// \brief Registers a callback for event notification existence changes.
     /// \details See IMessagePassingService::RegisterEventNotificationExistenceChangedCallback for detailed
@@ -151,7 +151,7 @@ class MessagePassingService final : public IMessagePassingService
     Result<void> SubscribeServiceMethod(const QualityType asil_level,
                                         const SkeletonInstanceIdentifier& skeleton_instance_identifier,
                                         const ProxyInstanceIdentifier& proxy_instance_identifier,
-                                        const pid_t target_node_id) override;
+                                        const NodeId target_node_id) override;
 
     /// \brief Best-effort call made by a Proxy on destruction to notify the Skeleton that the proxy is being
     /// destroyed.
@@ -159,7 +159,7 @@ class MessagePassingService final : public IMessagePassingService
     Result<void> UnsubscribeServiceMethod(const QualityType asil_level,
                                           const SkeletonInstanceIdentifier& skeleton_instance_identifier,
                                           const ProxyInstanceIdentifier& proxy_instance_identifier,
-                                          const pid_t target_node_id) override;
+                                          const NodeId target_node_id) override;
 
     /// \brief Blocking call which is called on Proxy side to trigger the Skeleton to process a method call. The
     /// callback registered with RegisterOnServiceMethodSubscribed will be called on the Skeleton side and a response
@@ -168,7 +168,7 @@ class MessagePassingService final : public IMessagePassingService
     Result<void> CallMethod(const QualityType asil_level,
                             const ProxyMethodInstanceIdentifier& proxy_method_instance_identifier,
                             std::size_t queue_position,
-                            const pid_t target_node_id) override;
+                            const NodeId target_node_id) override;
 
   private:
     using Engine = score::message_passing::Engine;

@@ -10,6 +10,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  ********************************************************************************/
+#include "score/message_passing/identity_types.h"
 #include "score/mw/com/impl/bindings/lola/skeleton_method.h"
 
 #include "score/mw/com/impl/binding_type.h"
@@ -100,7 +101,8 @@ Result<void> SkeletonMethod::OnProxyMethodSubscribeFinished(
     auto& lola_runtime = GetBindingRuntime<lola::IRuntime>(BindingType::kLoLa);
     auto& lola_message_passing = lola_runtime.GetLolaMessaging();
     auto registration_result = lola_message_passing.RegisterMethodCallHandler(
-        asil_level, proxy_method_instance_identifier, std::move(method_call_callback), allowed_proxy_uid);
+        asil_level, proxy_method_instance_identifier, std::move(method_call_callback),
+        message_passing::PrincipalIdFromUid(allowed_proxy_uid));
     if (!(registration_result.has_value()))
     {
         return MakeUnexpected<void>(registration_result.error());

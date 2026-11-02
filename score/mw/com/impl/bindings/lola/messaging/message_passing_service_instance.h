@@ -51,6 +51,9 @@ class MessagePassingServiceInstanceAttorney;
 class MessagePassingServiceInstance : public IMessagePassingServiceInstance
 {
   public:
+    using NodeId = IMessagePassingService::NodeId;
+    using PrincipalId = IMessagePassingService::PrincipalId;
+
     // required exclusively for testing purposes
     // coverity[autosar_cpp14_a11_3_1_violation]
     friend class MessagePassingServiceInstanceAttorney;
@@ -73,13 +76,13 @@ class MessagePassingServiceInstance : public IMessagePassingServiceInstance
     IMessagePassingService::HandlerRegistrationNoType RegisterEventNotification(
         const ElementFqId event_id,
         std::weak_ptr<ScopedEventReceiveHandler> callback,
-        const pid_t target_node_id) noexcept override;
+        const NodeId target_node_id) noexcept override;
 
-    void ReregisterEventNotification(const ElementFqId event_id, const pid_t target_node_id) noexcept override;
+    void ReregisterEventNotification(const ElementFqId event_id, const NodeId target_node_id) noexcept override;
 
     void UnregisterEventNotification(const ElementFqId event_id,
                                      const IMessagePassingService::HandlerRegistrationNoType registration_no,
-                                     const pid_t target_node_id) noexcept override;
+                                     const NodeId target_node_id) noexcept override;
 
     Result<void> RegisterOnServiceMethodSubscribedHandler(
         const SkeletonInstanceIdentifier skeleton_instance_identifier,
@@ -92,7 +95,7 @@ class MessagePassingServiceInstance : public IMessagePassingServiceInstance
 
     Result<void> RegisterMethodCallHandler(const ProxyMethodInstanceIdentifier proxy_method_instance_identifier,
                                            IMessagePassingService::MethodCallHandler method_call_callback,
-                                           const uid_t allowed_proxy_uid) override;
+                                           const PrincipalId allowed_proxy_uid) override;
 
     void UnregisterOnServiceMethodSubscribedHandler(
         const SkeletonInstanceIdentifier skeleton_instance_identifier) override;
@@ -102,7 +105,7 @@ class MessagePassingServiceInstance : public IMessagePassingServiceInstance
 
     void UnregisterMethodCallHandler(const ProxyMethodInstanceIdentifier proxy_method_instance_identifier) override;
 
-    void NotifyOutdatedNodeId(const pid_t outdated_node_id, const pid_t target_node_id) noexcept override;
+    void NotifyOutdatedNodeId(const NodeId outdated_node_id, const NodeId target_node_id) noexcept override;
 
     /// \brief Registers a callback for event notification existence changes.
     /// \details This callback is invoked when the existence of event notification registrations changes:
@@ -125,15 +128,15 @@ class MessagePassingServiceInstance : public IMessagePassingServiceInstance
 
     Result<void> SubscribeServiceMethod(const SkeletonInstanceIdentifier& skeleton_instance_identifier,
                                         const ProxyInstanceIdentifier& proxy_instance_identifier,
-                                        const pid_t target_node_id) override;
+                                        const NodeId target_node_id) override;
 
     Result<void> UnsubscribeServiceMethod(const SkeletonInstanceIdentifier& skeleton_instance_identifier,
                                           const ProxyInstanceIdentifier& proxy_instance_identifier,
-                                          const pid_t target_node_id) override;
+                                          const NodeId target_node_id) override;
 
     Result<void> CallMethod(const ProxyMethodInstanceIdentifier& proxy_method_instance_identifier,
                             const std::size_t queue_position,
-                            const pid_t target_node_id) override;
+                            const NodeId target_node_id) override;
 
   private:
     enum class MessageType : std::uint8_t
@@ -165,9 +168,7 @@ class MessagePassingServiceInstance : public IMessagePassingServiceInstance
     /// \brief Counter for registered event receive notifications for the given (target) node.
     struct NodeCounter
     {
-        // While true that pid_t is not a fixed width integer it is required by the POSIX standard here.
-        // coverity[autosar_cpp14_a9_6_1_violation]
-        pid_t node_id;
+        NodeId node_id;
         std::uint16_t counter;
     };
 
@@ -181,45 +182,45 @@ class MessagePassingServiceInstance : public IMessagePassingServiceInstance
 
     // TODO: PMR
     using EventUpdateNotifierMapType = std::unordered_map<ElementFqId, std::vector<RegisteredNotificationHandler>>;
-    using EventUpdateNodeIdMapType = std::unordered_map<ElementFqId, std::set<pid_t>>;
+    using EventUpdateNodeIdMapType = std::unordered_map<ElementFqId, std::set<NodeId>>;
     using EventUpdateRegistrationCountMapType = std::unordered_map<ElementFqId, NodeCounter>;
 
     using SubscribeServiceMethodMapType = std::unordered_map<
         SkeletonInstanceIdentifier,
         std::pair<IMessagePassingService::ServiceMethodSubscribedHandler, IMessagePassingService::AllowedConsumerUids>>;
     using CallMethodMapType =
-        std::unordered_map<ProxyMethodInstanceIdentifier, std::pair<IMessagePassingService::MethodCallHandler, uid_t>>;
+        std::unordered_map<ProxyMethodInstanceIdentifier, std::pair<IMessagePassingService::MethodCallHandler, PrincipalId>>;
 
     /// \brief tmp buffer for copying ids under lock.
     /// \todo Make its size configurable?
-    using NodeIdTmpBufferType = std::array<pid_t, NodeIdTmpBufferSize>;
+    using NodeIdTmpBufferType = std::array<NodeId, NodeIdTmpBufferSize>;
 
     message_passing::MessageCallback CreateSendMessageWithReplyCallback();
 
-    void MessageCallback(const pid_t sender_pid, const score::cpp::span<const std::uint8_t> message) noexcept;
+    void MessageCallback(const NodeId sender_node_id, const score::cpp::span<const std::uint8_t> message) noexcept;
     score::Result<void> MessageCallbackWithReply(const score::message_passing::ClientIdentity& sender,
                                                  const score::cpp::span<const std::uint8_t> message);
-    void HandleNotifyEventMsg(const score::cpp::span<const std::uint8_t> payload, const pid_t sender_node_id) noexcept;
+    void HandleNotifyEventMsg(const score::cpp::span<const std::uint8_t> payload, const NodeId sender_node_id) noexcept;
     void HandleRegisterNotificationMsg(const score::cpp::span<const std::uint8_t> payload,
-                                       const pid_t sender_node_id) noexcept;
+                                       const NodeId sender_node_id) noexcept;
     void HandleUnregisterNotificationMsg(const score::cpp::span<const std::uint8_t> payload,
-                                         const pid_t sender_node_id) noexcept;
+                                         const NodeId sender_node_id) noexcept;
     void HandleOutdatedNodeIdMsg(const score::cpp::span<const std::uint8_t> payload,
-                                 const pid_t sender_node_id) noexcept;
+                                 const NodeId sender_node_id) noexcept;
     score::Result<void> HandleSubscribeServiceMethodMsg(const score::cpp::span<const std::uint8_t> payload,
                                                         const score::message_passing::ClientIdentity& sender);
     score::Result<void> HandleUnsubscribeServiceMethodMsg(const score::cpp::span<const std::uint8_t> payload,
-                                                          const pid_t sender_node_id);
+                                                          const NodeId sender_node_id);
     score::Result<void> HandleCallMethodMsg(const score::cpp::span<const std::uint8_t> payload,
                                             const score::message_passing::ClientIdentity& sender);
 
     std::uint32_t NotifyEventLocally(const ElementFqId event_id) noexcept;
     void NotifyEventRemote(const ElementFqId event_id) noexcept;
-    void RegisterEventNotificationRemote(const ElementFqId event_id, const pid_t target_node_id) noexcept;
+    void RegisterEventNotificationRemote(const ElementFqId event_id, const NodeId target_node_id) noexcept;
     void UnregisterEventNotificationRemote(const ElementFqId event_id,
                                            const IMessagePassingService::HandlerRegistrationNoType registration_no,
-                                           const pid_t target_node_id) noexcept;
-    void SendRegisterEventNotificationMessage(const ElementFqId event_id, const pid_t target_node_id) noexcept;
+                                           const NodeId target_node_id) noexcept;
+    void SendRegisterEventNotificationMessage(const ElementFqId event_id, const NodeId target_node_id) noexcept;
 
     score::Result<void> CallSubscribeServiceMethodLocally(
         const SkeletonInstanceIdentifier& skeleton_instance_identifier,
@@ -236,15 +237,15 @@ class MessagePassingServiceInstance : public IMessagePassingServiceInstance
 
     Result<void> CallSubscribeServiceMethodRemotely(const SkeletonInstanceIdentifier& skeleton_instance_identifier,
                                                     const ProxyInstanceIdentifier& proxy_instance_identifier,
-                                                    const pid_t target_node_id);
+                                                    const NodeId target_node_id);
 
     Result<void> CallUnsubscribeServiceMethodRemotely(const SkeletonInstanceIdentifier& skeleton_instance_identifier,
                                                       const ProxyInstanceIdentifier& proxy_instance_identifier,
-                                                      const pid_t target_node_id);
+                                                      const NodeId target_node_id);
 
     Result<void> CallServiceMethodRemotely(const ProxyMethodInstanceIdentifier& proxy_method_instance_identifier,
                                            const std::size_t queue_position,
-                                           const pid_t target_node_id);
+                                           const NodeId target_node_id);
 
     /// \brief Function to convert ClientQualityType to a QualityType
     ///
@@ -261,13 +262,13 @@ class MessagePassingServiceInstance : public IMessagePassingServiceInstance
     /// and
     ///         the mapped_type is a std::set (or at least some forward iterable container type, which supports
     ///         lower_bound()), which contains values, which directly or indirectly contain a node identifier
-    ///         (pid_t)
+    ///         (NodeId)
     ///
     /// \param event_id fully qualified event id for lookup in _src_map_
     /// \param src_map map, where key_type = ElementFqId and mapped_type is some forward iterable container
     /// \param src_map_mutex mutex to be used to lock the map during copying.
     /// \param dest_buffer buffer, where to copy the node identifiers
-    /// \param start start identifier (pid_t) where to start search with.
+    /// \param start start identifier (NodeId) where to start search with.
     ///
     /// \return pair containing number of node identifiers, which have been copied and a bool, whether further ids
     /// could
@@ -284,7 +285,7 @@ class MessagePassingServiceInstance : public IMessagePassingServiceInstance
                                                               MapType& src_map,
                                                               std::shared_mutex& src_map_mutex,
                                                               NodeIdTmpBufferType& dest_buffer,
-                                                              pid_t start) noexcept
+                                                              NodeId start) noexcept
     {
         std::uint32_t num_nodeids_copied{0U};
         bool further_ids_avail{false};
@@ -302,7 +303,7 @@ class MessagePassingServiceInstance : public IMessagePassingServiceInstance
                 {
                     // Suppress "AUTOSAR C++14 M5-0-3" rule findings. This rule states: "A cvalue expression shall
                     // not be implicitly converted to a different underlying type"
-                    // That return `pid_t` type as a result. Tolerated implicit conversion as underlying types are
+                    // That return `NodeId` type as a result. Tolerated implicit conversion as underlying types are
                     // the same
                     // coverity[autosar_cpp14_m5_0_3_violation : FALSE]
                     dest_buffer.at(num_nodeids_copied) = *iter;
@@ -388,7 +389,7 @@ class MessagePassingServiceInstance : public IMessagePassingServiceInstance
     ///          and will not execute, preventing race conditions during destruction
     score::safecpp::Scope<> message_callback_scope_;  // scope should always be the last attribute.
 
-    pid_t self_pid_;
+    NodeId self_node_;
     // identity used when skeleton and proxy live in the same process; the gid is not relevant for any check
     score::message_passing::ClientIdentity self_identity_;
 };

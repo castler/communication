@@ -11,6 +11,7 @@
  * SPDX-License-Identifier: Apache-2.0
  ********************************************************************************/
 
+#include "score/message_passing/identity_types.h"
 #include "score/mw/com/impl/bindings/lola/proxy_event.h"
 #include "score/mw/com/impl/bindings/lola/test/proxy_event_fixture.h"
 #include "score/mw/com/impl/bindings/lola/test/proxy_event_test_resources.h"
@@ -42,7 +43,7 @@ class LolaProxyEventSubscriptionScopeFixture : public LolaProxyEventFixture
 
         EXPECT_CALL(event_handler_, Call());
 
-        EXPECT_CALL(*mock_service_, RegisterEventNotification(QualityType::kASIL_QM, element_fq_id_, _, kDummyPid))
+        EXPECT_CALL(*mock_service_, RegisterEventNotification(QualityType::kASIL_QM, element_fq_id_, _, message_passing::NodeIdFromPid(kDummyPid)))
             .WillOnce(
                 ::testing::Invoke([&](auto, auto, std::weak_ptr<ScopedEventReceiveHandler> handler_weak_ptr, auto) {
                     auto handler_shared_ptr = handler_weak_ptr.lock();
@@ -54,7 +55,7 @@ class LolaProxyEventSubscriptionScopeFixture : public LolaProxyEventFixture
                     return my_handler_no;
                 }));
         EXPECT_CALL(*mock_service_,
-                    UnregisterEventNotification(QualityType::kASIL_QM, element_fq_id_, my_handler_no, kDummyPid));
+                    UnregisterEventNotification(QualityType::kASIL_QM, element_fq_id_, my_handler_no, message_passing::NodeIdFromPid(kDummyPid)));
     }
 
     ::testing::MockFunction<void()> event_handler_{};
@@ -99,7 +100,7 @@ TEST_F(LolaProxyEventSubscriptionScopeFixture,
 
     // Expecting that a receive handler will be registered with the pid that was written to shared memory by the
     // skeleton
-    EXPECT_CALL(*this->mock_service_, RegisterEventNotification(QualityType::kASIL_QM, element_fq_id_, _, kDummyPid));
+    EXPECT_CALL(*this->mock_service_, RegisterEventNotification(QualityType::kASIL_QM, element_fq_id_, _, message_passing::NodeIdFromPid(kDummyPid)));
 
     // Given a subscribed ProxyEvent
     this->GivenAProxyEvent(this->element_fq_id_, this->event_name_);
@@ -183,12 +184,12 @@ TEST_F(LolaProxyEventSubscriptionScopeFixture, UnsubscribingWillUnregisterEventH
     bool handler_unregistered{false};
 
     // Expecting that a receive handler will be registered
-    EXPECT_CALL(*this->mock_service_, RegisterEventNotification(QualityType::kASIL_QM, element_fq_id_, _, kDummyPid))
+    EXPECT_CALL(*this->mock_service_, RegisterEventNotification(QualityType::kASIL_QM, element_fq_id_, _, message_passing::NodeIdFromPid(kDummyPid)))
         .WillOnce(::testing::Return(my_handler_no));
 
     // and the same receive handler will be unregistered
     EXPECT_CALL(*this->mock_service_,
-                UnregisterEventNotification(QualityType::kASIL_QM, element_fq_id_, my_handler_no, kDummyPid))
+                UnregisterEventNotification(QualityType::kASIL_QM, element_fq_id_, my_handler_no, message_passing::NodeIdFromPid(kDummyPid)))
         .WillOnce(::testing::InvokeWithoutArgs([&handler_unregistered]() {
             handler_unregistered = true;
         }));

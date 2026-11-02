@@ -66,6 +66,7 @@ cc_library(
         "i_server_connection.h",
         "i_server_factory.h",
         "i_shared_resource_engine.h",
+        "identity_types.h",
         "server_types.h",
         "service_protocol_config.h",
         "timed_command_queue_entry.h",
