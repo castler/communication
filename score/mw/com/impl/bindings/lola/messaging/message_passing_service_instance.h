@@ -24,6 +24,7 @@
 #include "score/message_passing/i_client_factory.h"
 #include "score/message_passing/i_server.h"
 #include "score/message_passing/i_server_factory.h"
+#include "score/message_passing/server_types.h"
 
 // TODO: PMR
 #include "score/concurrency/thread_pool.h"
@@ -196,8 +197,7 @@ class MessagePassingServiceInstance : public IMessagePassingServiceInstance
     message_passing::MessageCallback CreateSendMessageWithReplyCallback();
 
     void MessageCallback(const pid_t sender_pid, const score::cpp::span<const std::uint8_t> message) noexcept;
-    score::Result<void> MessageCallbackWithReply(const uid_t sender_uid,
-                                                 const pid_t sender_pid,
+    score::Result<void> MessageCallbackWithReply(const score::message_passing::ClientIdentity& sender,
                                                  const score::cpp::span<const std::uint8_t> message);
     void HandleNotifyEventMsg(const score::cpp::span<const std::uint8_t> payload, const pid_t sender_node_id) noexcept;
     void HandleRegisterNotificationMsg(const score::cpp::span<const std::uint8_t> payload,
@@ -207,11 +207,11 @@ class MessagePassingServiceInstance : public IMessagePassingServiceInstance
     void HandleOutdatedNodeIdMsg(const score::cpp::span<const std::uint8_t> payload,
                                  const pid_t sender_node_id) noexcept;
     score::Result<void> HandleSubscribeServiceMethodMsg(const score::cpp::span<const std::uint8_t> payload,
-                                                        const uid_t sender_uid,
-                                                        const pid_t sender_node_id);
+                                                        const score::message_passing::ClientIdentity& sender);
     score::Result<void> HandleUnsubscribeServiceMethodMsg(const score::cpp::span<const std::uint8_t> payload,
                                                           const pid_t sender_node_id);
-    score::Result<void> HandleCallMethodMsg(const score::cpp::span<const std::uint8_t> payload, const uid_t sender_uid);
+    score::Result<void> HandleCallMethodMsg(const score::cpp::span<const std::uint8_t> payload,
+                                            const score::message_passing::ClientIdentity& sender);
 
     std::uint32_t NotifyEventLocally(const ElementFqId event_id) noexcept;
     void NotifyEventRemote(const ElementFqId event_id) noexcept;
@@ -224,8 +224,7 @@ class MessagePassingServiceInstance : public IMessagePassingServiceInstance
     score::Result<void> CallSubscribeServiceMethodLocally(
         const SkeletonInstanceIdentifier& skeleton_instance_identifier,
         const ProxyInstanceIdentifier& proxy_instance_identifier,
-        const uid_t proxy_uid,
-        const pid_t proxy_pid);
+        const score::message_passing::ClientIdentity& proxy);
 
     score::Result<void> CallUnsubscribeServiceMethodLocally(
         const SkeletonInstanceIdentifier& skeleton_instance_identifier,
@@ -233,7 +232,7 @@ class MessagePassingServiceInstance : public IMessagePassingServiceInstance
 
     score::Result<void> CallServiceMethodLocally(const ProxyMethodInstanceIdentifier& proxy_method_instance_identifier,
                                                  const std::size_t queue_position,
-                                                 const uid_t proxy_uid);
+                                                 const score::message_passing::ClientIdentity& proxy);
 
     Result<void> CallSubscribeServiceMethodRemotely(const SkeletonInstanceIdentifier& skeleton_instance_identifier,
                                                     const ProxyInstanceIdentifier& proxy_instance_identifier,
@@ -390,7 +389,8 @@ class MessagePassingServiceInstance : public IMessagePassingServiceInstance
     score::safecpp::Scope<> message_callback_scope_;  // scope should always be the last attribute.
 
     pid_t self_pid_;
-    uid_t self_uid_;
+    // identity used when skeleton and proxy live in the same process; the gid is not relevant for any check
+    score::message_passing::ClientIdentity self_identity_;
 };
 
 }  // namespace score::mw::com::impl::lola

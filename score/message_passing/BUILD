@@ -20,6 +20,7 @@ test_suite(
     name = "unit_tests",
     tests = [
         ":client_connection_test",
+        ":client_identity_test",
         # Enable once the dependable_element can deal with QNX only unit tests
         #":qnx_dispatch_test",
         ":qnx_resource_path_test",
@@ -271,6 +272,17 @@ cc_unit_test(
     deps = [
         ":message_passing_common",
         ":mock",
+    ],
+)
+
+cc_unit_test(
+    name = "client_identity_test",
+    srcs = [
+        "client_identity_test.cpp",
+    ],
+    features = COMPILER_WARNING_FEATURES,
+    deps = [
+        ":common_headers",
     ],
 )
 

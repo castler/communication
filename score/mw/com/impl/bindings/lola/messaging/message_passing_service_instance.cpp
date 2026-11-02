@@ -234,7 +234,8 @@ MessagePassingServiceInstance::MessagePassingServiceInstance(
       executor_{local_event_executor},
       message_callback_scope_{},
       self_pid_{os::Unistd::instance().getpid()},
-      self_uid_{os::Unistd::instance().getuid()}
+      self_identity_{score::message_passing::ClientIdentity::FromCredentials(
+          self_pid_, os::Unistd::instance().getuid(), 0)}
 {
     // TODO: PMR
 
@@ -244,7 +245,7 @@ MessagePassingServiceInstance::MessagePassingServiceInstance(
     server_ = server_factory.Create(protocol_config, server_config);
 
     auto connect_callback = [](score::message_passing::IServerConnection& connection) noexcept -> std::uintptr_t {
-        const pid_t client_pid = connection.GetClientIdentity().pid;
+        const pid_t client_pid = connection.GetClientIdentity().GetNodeId();
         return static_cast<std::uintptr_t>(client_pid);
     };
     auto disconnect_callback = [](score::message_passing::IServerConnection& /*connection*/) noexcept {
@@ -306,11 +307,11 @@ MessagePassingServiceInstance::MessagePassingServiceInstance(
 message_passing::MessageCallback MessagePassingServiceInstance::CreateSendMessageWithReplyCallback()
 {
     auto message_callback_with_reply_scoped_function = std::make_shared<score::safecpp::MoveOnlyScopedFunction<
-        score::Result<void>(uid_t, pid_t, score::cpp::span<const std::uint8_t>)>>(
+        score::Result<void>(score::message_passing::ClientIdentity, score::cpp::span<const std::uint8_t>)>>(
         message_callback_scope_,
-        [this](
-            uid_t sender_uid, pid_t sender_pid, score::cpp::span<const std::uint8_t> message) -> score::Result<void> {
-            return this->MessageCallbackWithReply(sender_uid, sender_pid, message);
+        [this](score::message_passing::ClientIdentity sender,
+               score::cpp::span<const std::uint8_t> message) -> score::Result<void> {
+            return this->MessageCallbackWithReply(sender, message);
         });
 
     // Note. When received_send_message_with_reply_callback returns an error, the message passing connection with the
@@ -322,14 +323,13 @@ message_passing::MessageCallback MessagePassingServiceInstance::CreateSendMessag
             score::message_passing::IServerConnection& connection,
             score::cpp::span<const std::uint8_t> message) -> score::cpp::expected_blank<score::os::Error> {
         const auto client_identity = connection.GetClientIdentity();
-        const pid_t client_pid = client_identity.pid;
-        const auto client_uid = client_identity.uid;
+        const pid_t client_pid = client_identity.GetNodeId();
 
         SCORE_LANGUAGE_FUTURECPP_PRECONDITION_PRD_MESSAGE(
             message_callback_with_reply_scoped_function != nullptr,
             "Message callback with reply callable was not properly constructed");
         auto function_invocation_result =
-            std::invoke(*message_callback_with_reply_scoped_function, client_uid, client_pid, message);
+            std::invoke(*message_callback_with_reply_scoped_function, client_identity, message);
         if (!(function_invocation_result.has_value()))
         {
             score::mw::log::LogError("lola")
@@ -414,10 +414,10 @@ void MessagePassingServiceInstance::MessageCallback(const pid_t sender_pid,
 }
 
 score::Result<void> MessagePassingServiceInstance::MessageCallbackWithReply(
-    const uid_t sender_uid,
-    const pid_t sender_pid,
+    const score::message_passing::ClientIdentity& sender,
     const score::cpp::span<const std::uint8_t> message)
 {
+    const pid_t sender_pid = sender.GetNodeId();
     if (message.empty())
     {
         score::mw::log::LogError("lola") << "MessagePassingService: Empty message received from " << sender_pid;
@@ -430,7 +430,7 @@ score::Result<void> MessagePassingServiceInstance::MessageCallbackWithReply(
         // Deviation of MISRA RULE-7-0-5: codeql::misra_deviation_next_line(switch-enum-underlying-type-discriminant)
         case score::cpp::to_underlying(MessageWithReplyType::kSubscribeServiceMethod):
         {
-            return HandleSubscribeServiceMethodMsg(payload, sender_uid, sender_pid);
+            return HandleSubscribeServiceMethodMsg(payload, sender);
         }
         // Deviation of MISRA RULE-7-0-5: codeql::misra_deviation_next_line(switch-enum-underlying-type-discriminant)
         case score::cpp::to_underlying(MessageWithReplyType::kUnsubscribeServiceMethod):
@@ -440,7 +440,7 @@ score::Result<void> MessagePassingServiceInstance::MessageCallbackWithReply(
         // Deviation of MISRA RULE-7-0-5: codeql::misra_deviation_next_line(switch-enum-underlying-type-discriminant)
         case score::cpp::to_underlying(MessageWithReplyType::kCallMethod):
         {
-            return HandleCallMethodMsg(payload, sender_uid);
+            return HandleCallMethodMsg(payload, sender);
         }
         default:
         {
@@ -617,8 +617,7 @@ void MessagePassingServiceInstance::HandleOutdatedNodeIdMsg(const score::cpp::sp
 
 score::Result<void> MessagePassingServiceInstance::HandleSubscribeServiceMethodMsg(
     const score::cpp::span<const std::uint8_t> payload,
-    const uid_t sender_uid,
-    const pid_t sender_node_id)
+    const score::message_passing::ClientIdentity& sender)
 {
     SubscribeServiceMethodUnserializedPayload unserialized_payload{};
     if (!DeserializeFromPayload(payload, unserialized_payload))
@@ -628,8 +627,7 @@ score::Result<void> MessagePassingServiceInstance::HandleSubscribeServiceMethodM
 
     return CallSubscribeServiceMethodLocally(unserialized_payload.skeleton_instance_identifier,
                                              unserialized_payload.proxy_instance_identifier,
-                                             sender_uid,
-                                             sender_node_id);
+                                             sender);
 }
 
 score::Result<void> MessagePassingServiceInstance::HandleUnsubscribeServiceMethodMsg(
@@ -648,7 +646,7 @@ score::Result<void> MessagePassingServiceInstance::HandleUnsubscribeServiceMetho
 
 score::Result<void> MessagePassingServiceInstance::HandleCallMethodMsg(
     const score::cpp::span<const std::uint8_t> payload,
-    const uid_t sender_uid)
+    const score::message_passing::ClientIdentity& sender)
 {
     // TODO: make proper serialization
     MethodCallUnserializedPayload unserialized_payload{};
@@ -658,14 +656,13 @@ score::Result<void> MessagePassingServiceInstance::HandleCallMethodMsg(
     }
 
     return CallServiceMethodLocally(
-        unserialized_payload.proxy_method_instance_identifier, unserialized_payload.queue_position, sender_uid);
+        unserialized_payload.proxy_method_instance_identifier, unserialized_payload.queue_position, sender);
 }
 
 score::Result<void> MessagePassingServiceInstance::CallSubscribeServiceMethodLocally(
     const SkeletonInstanceIdentifier& skeleton_instance_identifier,
     const ProxyInstanceIdentifier& proxy_instance_identifier,
-    const uid_t proxy_uid,
-    const pid_t proxy_pid)
+    const score::message_passing::ClientIdentity& proxy)
 {
     // A copy of the handler is made under lock and called outside the lock to allow calling multiple handlers at once
     // and to also allow registering a new method call handler for the same ProxyInstanceIdentifier while an old
@@ -684,14 +681,14 @@ score::Result<void> MessagePassingServiceInstance::CallSubscribeServiceMethodLoc
     auto [method_subscribed_handler_copy, allowed_proxy_uids] = method_subscribed_handler_it->second;
     read_lock.unlock();
 
-    if ((allowed_proxy_uids.has_value()) && (allowed_proxy_uids->count(proxy_uid) == 0U))
+    if (!proxy.IsAllowed(allowed_proxy_uids))
     {
         mw::log::LogError("lola") << "Could not invoke subscribe service method handler because uid of proxy calling "
                                      "subscribe is not in allowed_consumers list.";
         return MakeUnexpected(MethodErrc::kUnknownProxy);
     }
     const auto invocation_result =
-        std::invoke(method_subscribed_handler_copy, proxy_instance_identifier, proxy_uid, proxy_pid);
+        std::invoke(method_subscribed_handler_copy, proxy_instance_identifier, proxy.GetPrincipalId(), proxy.GetNodeId());
     if (!(invocation_result.has_value()))
     {
         mw::log::LogError("lola")
@@ -735,7 +732,7 @@ score::Result<void> MessagePassingServiceInstance::CallUnsubscribeServiceMethodL
 score::Result<void> MessagePassingServiceInstance::CallServiceMethodLocally(
     const ProxyMethodInstanceIdentifier& proxy_method_instance_identifier,
     const std::size_t queue_position,
-    const uid_t proxy_uid)
+    const score::message_passing::ClientIdentity& proxy)
 {
     // A copy of the handler is made under lock and called outside the lock to allow calling multiple handlers at once
     // and to also allow registering a new method call handler for the same ProxyInstanceIdentifier while an old
@@ -756,7 +753,7 @@ score::Result<void> MessagePassingServiceInstance::CallServiceMethodLocally(
     auto [method_call_handler_copy, allowed_proxy_uid] = method_call_handler_it->second;
     read_lock.unlock();
 
-    if (allowed_proxy_uid != proxy_uid)
+    if (!proxy.IsAllowed(allowed_proxy_uid))
     {
         mw::log::LogError("lola") << "Could not invoke method call handler because uid of proxy calling method is "
                                      "not the same one that registered the handler.";
@@ -1556,7 +1553,7 @@ Result<void> MessagePassingServiceInstance::SubscribeServiceMethod(
     if (are_skeleton_and_proxy_in_same_process)
     {
         const auto result = CallSubscribeServiceMethodLocally(
-            skeleton_instance_identifier, proxy_instance_identifier, self_uid_, target_node_id);
+            skeleton_instance_identifier, proxy_instance_identifier, self_identity_);
         if (!(result.has_value()))
         {
             return MakeUnexpected(ComErrc::kBindingFailure);
@@ -1611,7 +1608,7 @@ Result<void> MessagePassingServiceInstance::CallMethod(
     const auto are_skeleton_and_proxy_in_same_process = (target_node_id == self_pid_);
     if (are_skeleton_and_proxy_in_same_process)
     {
-        const auto result = CallServiceMethodLocally(proxy_method_instance_identifier, queue_position, self_uid_);
+        const auto result = CallServiceMethodLocally(proxy_method_instance_identifier, queue_position, self_identity_);
         if (!(result.has_value()))
         {
             return MakeUnexpected(ComErrc::kBindingFailure);
