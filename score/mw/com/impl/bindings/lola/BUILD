@@ -82,6 +82,37 @@ cc_library(
 )
 
 cc_library(
+    name = "i_incarnation_authority",
+    hdrs = ["i_incarnation_authority.h"],
+    features = COMPILER_WARNING_FEATURES,
+    tags = ["FFI"],
+    visibility = ["//score/mw/com/impl:__subpackages__"],
+    deps = [":incarnation"],
+)
+
+cc_library(
+    name = "pid_incarnation_authority",
+    srcs = ["pid_incarnation_authority.cpp"],
+    hdrs = ["pid_incarnation_authority.h"],
+    features = COMPILER_WARNING_FEATURES,
+    tags = ["FFI"],
+    visibility = ["//score/mw/com/impl:__subpackages__"],
+    deps = [":i_incarnation_authority"],
+)
+
+cc_library(
+    name = "incarnation_authority_mock",
+    testonly = True,
+    hdrs = ["incarnation_authority_mock.h"],
+    features = COMPILER_WARNING_FEATURES,
+    visibility = ["//score/mw/com/impl:__subpackages__"],
+    deps = [
+        ":i_incarnation_authority",
+        "@googletest//:gtest",
+    ],
+)
+
+cc_library(
     name = "i_runtime",
     srcs = ["i_runtime.cpp"],
     hdrs = ["i_runtime.h"],
@@ -89,6 +120,7 @@ cc_library(
     tags = ["FFI"],
     visibility = ["//score/mw/com/impl/plumbing:__pkg__"],
     deps = [
+        ":i_incarnation_authority",
         ":rollback_synchronization",
         "//score/mw/com/impl:runtime_interfaces",
         "//score/mw/com/impl/bindings/lola/messaging",
@@ -141,6 +173,7 @@ cc_library(
     visibility = ["//score/mw/com/impl/plumbing:__pkg__"],
     deps = [
         ":i_runtime",
+        ":pid_incarnation_authority",
         "//score/mw/com/impl/bindings/lola/messaging",
         "//score/mw/com/impl/bindings/lola/service_discovery/client:service_discovery_client",
         "//score/mw/com/impl/bindings/lola/tracing:tracing_runtime",
@@ -171,6 +204,7 @@ cc_library(
     visibility = ["//score/mw/com/impl:__subpackages__"],
     deps = [
         ":i_runtime",
+        ":incarnation_authority_mock",
         "@googletest//:gtest",
     ],
 )
@@ -1289,6 +1323,17 @@ cc_unit_test(
         "@score_baselibs//score/analysis/tracing/generic_trace_library:implementation",
         "@score_baselibs//score/concurrency:long_running_threads_container",
         "@score_baselibs//score/os/mocklib:unistd_mock",
+    ],
+)
+
+cc_unit_test(
+    name = "pid_incarnation_authority_test",
+    srcs = [
+        "pid_incarnation_authority_test.cpp",
+    ],
+    features = COMPILER_WARNING_FEATURES,
+    deps = [
+        ":pid_incarnation_authority",
     ],
 )
 

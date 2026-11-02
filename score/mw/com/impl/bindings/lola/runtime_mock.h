@@ -44,6 +44,8 @@ class RuntimeMock : public IRuntime
     MOCK_METHOD(RollbackSynchronization&, GetRollbackSynchronization, (), (ref(&), noexcept, override));
     // coverity[autosar_cpp14_m3_9_1_violation]
     MOCK_METHOD(pid_t, GetPid, (), (const, noexcept, override));
+    MOCK_METHOD(IncarnationId, GetIncarnation, (), (const, noexcept, override));
+    MOCK_METHOD(const IIncarnationAuthority&, GetIncarnationAuthority, (), (const, noexcept, override));
     // coverity[autosar_cpp14_m3_9_1_violation]
     MOCK_METHOD(GlobalConfiguration::ApplicationId, GetApplicationId, (), (const, noexcept, override));
 };

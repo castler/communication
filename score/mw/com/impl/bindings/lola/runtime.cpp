@@ -74,6 +74,7 @@ Runtime::Runtime(const Configuration& config,
       tracing_runtime_{std::move(lola_tracing_runtime)},
       rollback_data_{},
       pid_{os::Unistd::instance().getpid()},
+      incarnation_authority_{pid_},
       application_id_{DetermineApplicationIdentifier(config)}
 {
     // At this stage we know/can decide, whether we are an ASIL-B or ASIL-QM application. OffsetPtr bounds-checking
@@ -157,6 +158,16 @@ RollbackSynchronization& Runtime::GetRollbackSynchronization() & noexcept
 pid_t Runtime::GetPid() const noexcept
 {
     return pid_;
+}
+
+IncarnationId Runtime::GetIncarnation() const noexcept
+{
+    return incarnation_authority_.Self();
+}
+
+const IIncarnationAuthority& Runtime::GetIncarnationAuthority() const noexcept
+{
+    return incarnation_authority_;
 }
 
 GlobalConfiguration::ApplicationId Runtime::GetApplicationId() const noexcept

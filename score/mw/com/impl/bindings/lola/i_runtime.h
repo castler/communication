@@ -13,6 +13,7 @@
 #ifndef SCORE_MW_COM_IMPL_BINDINGS_LOLA_I_RUNTIME_H
 #define SCORE_MW_COM_IMPL_BINDINGS_LOLA_I_RUNTIME_H
 
+#include "score/mw/com/impl/bindings/lola/i_incarnation_authority.h"
 #include "score/mw/com/impl/bindings/lola/messaging/i_message_passing_service.h"
 #include "score/mw/com/impl/bindings/lola/rollback_synchronization.h"
 #include "score/mw/com/impl/configuration/global_configuration.h"
@@ -46,6 +47,12 @@ class IRuntime : public impl::IBindingRuntime
 
     /// \brief We need our PID in several locations/frequently. So the runtime shall provide/cache it.
     virtual pid_t GetPid() const noexcept = 0;
+
+    /// \brief Incarnation of this process. Linux/QNX: derived from the pid. Prefer over GetPid() in new code.
+    virtual IncarnationId GetIncarnation() const noexcept = 0;
+
+    /// \brief Platform specific incarnation authority.
+    virtual const IIncarnationAuthority& GetIncarnationAuthority() const noexcept = 0;
 
     /// \brief We need our Application ID in several locations/frequently. So the runtime shall provide/cache it.
     virtual GlobalConfiguration::ApplicationId GetApplicationId() const noexcept = 0;

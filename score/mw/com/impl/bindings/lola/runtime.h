@@ -15,6 +15,7 @@
 
 #include "score/mw/com/impl/bindings/lola/i_runtime.h"
 #include "score/mw/com/impl/bindings/lola/messaging/message_passing_service.h"
+#include "score/mw/com/impl/bindings/lola/pid_incarnation_authority.h"
 #include "score/mw/com/impl/bindings/lola/rollback_synchronization.h"
 #include "score/mw/com/impl/bindings/lola/service_discovery/client/service_discovery_client.h"
 #include "score/mw/com/impl/bindings/lola/tracing/tracing_runtime.h"
@@ -82,6 +83,10 @@ class Runtime final : public IRuntime
 
     pid_t GetPid() const noexcept override;
 
+    IncarnationId GetIncarnation() const noexcept override;
+
+    const IIncarnationAuthority& GetIncarnationAuthority() const noexcept override;
+
     GlobalConfiguration::ApplicationId GetApplicationId() const noexcept override;
 
   private:
@@ -94,6 +99,7 @@ class Runtime final : public IRuntime
     RollbackSynchronization rollback_data_;
 
     pid_t pid_;
+    PidIncarnationAuthority incarnation_authority_;
     std::uint32_t application_id_;
 
     std::uint32_t DetermineApplicationIdentifier(const Configuration& config) const;
