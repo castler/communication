@@ -17,7 +17,9 @@
 
 #include <gtest/gtest.h>
 
+#include <set>
 #include <thread>
+#include <vector>
 
 namespace score::mw::com::impl::lola
 {
@@ -192,7 +194,7 @@ TEST(ApplicationIdPidMapping, EntryInUpdatingStateOfOtherApplicationIdIsNotTaken
     mapping_entries.at(0).pid_ = 100;
 
     EXPECT_FALSE(lola::detail::RegisterPid(mapping_entries.begin(), mapping_entries.end(), 2U, 200).has_value());
-    EXPECT_EQ(mapping_entries.at(0).pid_, 100);
+    EXPECT_EQ(mapping_entries.at(0).pid_.load(), 100);
 }
 
 TEST(ApplicationIdPidMapping, ConcurrentAccess)
@@ -231,6 +233,50 @@ TEST(ApplicationIdPidMapping, ConcurrentAccess)
     t1.join();
     t2.join();
     t3.join();
+}
+
+TEST(ApplicationIdPidMapping, ConcurrentTakeoversOfSameApplicationIdHandBackEveryPreviousPidExactlyOnce)
+{
+    constexpr int kThreads{8};
+    constexpr int kTakeoversPerThread{2000};
+    constexpr std::uint32_t kApplicationId{42U};
+    ApplicationIdPidMapping<Allocator> unit{kMaxNumberOfMappings, Allocator()};
+    constexpr pid_t kInitialPid{1};
+    ASSERT_EQ(unit.RegisterPid(kApplicationId, kInitialPid).value(), kInitialPid);
+
+    // Given several takers racing for the same application id, each registering only unique pids ...
+    std::vector<std::vector<pid_t>> previous_pids(kThreads);
+    std::vector<std::thread> threads;
+    for (int thread_index = 0; thread_index < kThreads; ++thread_index)
+    {
+        threads.emplace_back([&unit, &previous_pids, thread_index]() {
+            for (int i = 0; i < kTakeoversPerThread; ++i)
+            {
+                const pid_t pid = 100 + thread_index * kTakeoversPerThread + i;
+                previous_pids[static_cast<std::size_t>(thread_index)].push_back(
+                    unit.RegisterPid(kApplicationId, pid).value());
+            }
+        });
+    }
+    for (auto& thread : threads)
+    {
+        thread.join();
+    }
+
+    // expect that every registered pid (including the initial one) was handed back to exactly one taker, except the
+    // final owner, i.e. no taker lost or duplicated a previous value.
+    std::set<pid_t> returned{};
+    std::size_t number_of_returned{0U};
+    for (const auto& per_thread : previous_pids)
+    {
+        returned.insert(per_thread.begin(), per_thread.end());
+        number_of_returned += per_thread.size();
+    }
+    EXPECT_EQ(returned.size(), number_of_returned);
+    EXPECT_EQ(number_of_returned, static_cast<std::size_t>(kThreads * kTakeoversPerThread));
+    const pid_t final_owner = unit.RegisterPid(kApplicationId, 7).value();
+    EXPECT_EQ(returned.count(final_owner), 0U);
+    EXPECT_EQ(returned.count(kInitialPid), 1U);
 }
 
 TEST(DetailRegisterPidEmpty, NoNullPointerDereferenceInCaseOfEmptyMappingEntriesArray)

@@ -57,9 +57,9 @@ std::optional<pid_t> TryUpdatePidForExistingId(
         {
             // application ID already exists. It is "owned" by us, so we can directly update pid, without atomic state
             // changes ...
-            pid_t old_pid = it->pid_;
-            it->pid_ = pid;
-            return old_pid;
+            // The exchange is a single atomic step: of several concurrent takers exactly one observes each previous
+            // value, none can lose or tear it.
+            return it->pid_.exchange(pid, std::memory_order_acq_rel);
         }
         else if ((entry_status == ApplicationIdPidMappingEntry::MappingEntryStatus::kUpdating) &&
                  (entry_applicationid == application_id))
@@ -70,7 +70,7 @@ std::optional<pid_t> TryUpdatePidForExistingId(
             score::mw::log::LogWarn("lola")
                 << "ApplicationIdPidMapping: Found mapping entry for own application ID in state kUpdating. Maybe we "
                    "crashed before!? Now taking over entry and updating with current PID.";
-            it->pid_ = pid;
+            it->pid_.store(pid, std::memory_order_release);
             it->SetStatusAndApplicationIdAtomic(ApplicationIdPidMappingEntry::MappingEntryStatus::kUsed,
                                                 application_id);
             return pid;
@@ -129,7 +129,7 @@ std::optional<pid_t> RegisterPid(score::containers::DynamicArray<ApplicationIdPi
                 if (AtomicIndirectorType<ApplicationIdPidMappingEntry::key_type>::compare_exchange_weak(
                         it->key_application_id_status_, current_entry_key, new_entry_key, std::memory_order_acq_rel))
                 {
-                    it->pid_ = pid;
+                    it->pid_.store(pid, std::memory_order_release);
                     it->SetStatusAndApplicationIdAtomic(ApplicationIdPidMappingEntry::MappingEntryStatus::kUsed,
                                                         application_id);
                     return pid;
