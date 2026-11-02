@@ -52,12 +52,14 @@ TransactionLogRollbackExecutor::TransactionLogRollbackExecutor(
     const SkeletonInstanceIdentifier skeleton_instance_identifier,
     const QualityType asil_level,
     pid_t provider_pid,
-    const TransactionLogId transaction_log_id) noexcept
+    const TransactionLogId transaction_log_id,
+    const RollbackAmbiguityPolicy ambiguity_policy) noexcept
     : service_data_control_{service_data_control},
       asil_level_{asil_level},
       provider_pid_{provider_pid},
       transaction_log_id_{transaction_log_id},
-      skeleton_instance_identifier_{skeleton_instance_identifier}
+      skeleton_instance_identifier_{skeleton_instance_identifier},
+      ambiguity_policy_{ambiguity_policy}
 {
 }
 
@@ -129,7 +131,8 @@ Result<void> TransactionLogRollbackExecutor::RollbackTransactionLogs() noexcept
             },
             [&event_control](const TransactionLog::MaxSampleCountType subscription_max_sample_count) noexcept {
                 event_control.subscription_control.Unsubscribe(subscription_max_sample_count);
-            });
+            },
+            ambiguity_policy_);
         if (!rollback_result.has_value())
         {
             return rollback_result;

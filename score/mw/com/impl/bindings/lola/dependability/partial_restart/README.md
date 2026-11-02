@@ -92,6 +92,14 @@ If a proxy event instance crashes/dies after acquiring an index/`TransactionLog`
 `TransactionLogSet::RollbackProxyTransactions()`. This will either fail, in case there are only "broken" transaction
 logs for the given `TransactionLogId`, or it will reset the index/`TransactionLog` again to `kInvalidTransactionLogId`.
 
+A "broken" transaction log is one which was interrupted inside a slot increment/decrement or inside Subscribe/Unsubscribe
+(also when the interruption happened during an earlier rollback): the log does not record whether the guarded operation
+took effect. With the default `RollbackAmbiguityPolicy::kFail` such a log is left untouched and every rollback fails with
+`kCouldNotRestartProxy`, i.e. the log is stuck. With `RollbackAmbiguityPolicy::kQuarantine` the rollback neither repeats
+nor undoes the interrupted operation, drops its record and finishes the rest of the log. In the worst case one slot
+reference (or subscription) stays accounted to the dead proxy; this only reduces capacity (a slot with a non-zero reference
+count is never reused), whereas repeating the operation could underflow a reference count.
+
 #### Synchronization of concurrent rollbacks
 
 Since in specific configurations we could have multiple local proxy event instances (with the same `TransactionLogId`)

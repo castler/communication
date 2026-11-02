@@ -28,6 +28,19 @@
 namespace score::mw::com::impl::lola
 {
 
+/// \brief Defines how a rollback treats transactions which were interrupted at a point where it is not recorded whether
+/// the guarded operation (increment/decrement of a slot reference count, Subscribe/Unsubscribe) took effect.
+enum class RollbackAmbiguityPolicy : std::uint8_t
+{
+    /// Fail the rollback with ComErrc::kCouldNotRestartProxy and leave the log untouched. The log stays stuck.
+    kFail,
+    /// Neither repeat nor undo the interrupted operation, drop the transaction record and continue. In the worst case
+    /// the operation took effect and one slot reference / subscription stays accounted to the dead proxy (leak, which is
+    /// safe: a slot with a non-zero reference count is never reused by the skeleton). Repeating the operation instead
+    /// could underflow a reference count, which is not safe.
+    kQuarantine,
+};
+
 /// \brief View class which provides functionality for interacting with Transactionlog.
 class TransactionLogLocalView
 {
@@ -79,8 +92,11 @@ class TransactionLogLocalView
     /// This function should be called when trying to create a Proxy service element that had previously crashed. It
     /// will decrement all reference counts that the old Proxy had incremented in the EventDataControl which were
     /// recorded in this TransactionLog.
+    /// \param ambiguity_policy how to handle transactions which were interrupted while the effect of the guarded
+    ///        operation is unknown. With kFail (default) the rollback is aborted with kCouldNotRestartProxy.
     Result<void> RollbackProxyElementLog(const DereferenceSlotCallback& dereference_slot_callback,
-                                         const UnsubscribeCallback& unsubscribe_callback);
+                                         const UnsubscribeCallback& unsubscribe_callback,
+                                         const RollbackAmbiguityPolicy ambiguity_policy = RollbackAmbiguityPolicy::kFail);
 
     /// \brief Rollback all previous increments that were recorded in the transaction log.
     /// \param dereference_slot_callback Callback which will decrement the slot in EventDataControl with the provided
@@ -97,8 +113,11 @@ class TransactionLogLocalView
     bool ContainsTransactions() const noexcept;
 
   private:
-    Result<void> RollbackIncrementTransactions(const DereferenceSlotCallback& dereference_slot_callback) noexcept;
-    Result<void> RollbackSubscribeTransactions(const UnsubscribeCallback& unsubscribe_callback);
+    Result<void> RollbackIncrementTransactions(
+        const DereferenceSlotCallback& dereference_slot_callback,
+        const RollbackAmbiguityPolicy ambiguity_policy = RollbackAmbiguityPolicy::kFail) noexcept;
+    Result<void> RollbackSubscribeTransactions(const UnsubscribeCallback& unsubscribe_callback,
+                                               const RollbackAmbiguityPolicy ambiguity_policy);
 
     /// \brief View pointing to DynamicArray containing one TransactionLogSlot for each slot in the corresponding
     /// control vector.
