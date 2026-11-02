@@ -14,6 +14,8 @@
 #define SCORE_MW_COM_IMPL_BINDINGS_LOLA_APPLICATION_ID_PID_MAPPING_H
 
 #include "score/mw/com/impl/bindings/lola/application_id_pid_mapping_entry.h"
+#include "score/mw/com/impl/bindings/lola/i_incarnation_authority.h"
+#include "score/mw/com/impl/bindings/lola/incarnation.h"
 #include "score/mw/com/impl/bindings/lola/register_pid_fake.h"
 
 #include "score/concurrency/atomic_indirector.h"
@@ -28,8 +30,48 @@
 namespace score::mw::com::impl::lola
 {
 
+/// \brief Outcome of ApplicationIdPidMapping::Takeover().
+enum class TakeoverResult : std::uint8_t
+{
+    /// No incarnation was registered for the application id (or the entry had been released / was left half written);
+    /// the caller now owns it.
+    kFresh,
+    /// The caller already owned the application id.
+    kSame,
+    /// The caller took the application id over from the incarnation reported in TakeoverOutcome::previous.
+    kTookOver,
+    /// The previous incarnation is not known to be dead, but the TakeoverPolicy requires that. Nothing was changed.
+    kRefusedLive,
+    /// No entry could be claimed (mapping full or too much contention). Nothing was changed.
+    kContended,
+};
+
+struct TakeoverOutcome
+{
+    TakeoverResult result;
+    /// Incarnation which owned the application id before; only valid for kTookOver, kSame and kRefusedLive.
+    IncarnationId previous;
+};
+
 namespace detail
 {
+
+/// \brief implementation for ApplicationIdPidMapping::Takeover, which allows selecting the AtomicIndirectorType for
+///        testing purpose.
+// coverity[autosar_cpp14_m3_2_3_violation] This is false positive. Function is declared only once.
+template <template <class> class AtomicIndirectorType = concurrency::AtomicIndirectorReal>
+// coverity[autosar_cpp14_m3_2_3_violation] This is false positive. Function is declared only once.
+TakeoverOutcome Takeover(score::containers::DynamicArray<ApplicationIdPidMappingEntry>::iterator entries_begin,
+                         score::containers::DynamicArray<ApplicationIdPidMappingEntry>::iterator entries_end,
+                         const std::uint32_t application_id,
+                         const IncarnationId incarnation,
+                         const IIncarnationAuthority& authority);
+
+/// \brief Releases the entry of application_id if (and only if) it is still owned by expected_owner.
+bool ReleaseIfOwner(score::containers::DynamicArray<ApplicationIdPidMappingEntry>::iterator entries_begin,
+                    score::containers::DynamicArray<ApplicationIdPidMappingEntry>::iterator entries_end,
+                    const std::uint32_t application_id,
+                    const IncarnationId expected_owner);
 
 /// \brief implementation for ApplicationIdPidMapping::RegisterPid, which allows selecting the AtomicIndirectorType for
 ///        testing purpose.
@@ -115,6 +157,37 @@ class ApplicationIdPidMapping
         return detail::RegisterPid<concurrency::AtomicIndirectorReal>(
             mapping_entries_.begin(), mapping_entries_.end(), application_id, pid);
     };
+
+    /// \brief Makes the given incarnation the owner of the application id, following the TakeoverPolicy of the
+    ///        authority.
+    /// \details Linearization point of "I own application_id" is the successful compare-and-swap of the owner word; of
+    ///          two racing takers exactly one gets kTookOver(previous), the other one either takes over again
+    ///          (kAlwaysTakeover, same as last-writer-wins of RegisterPid()) or is refused (kRequireDead).
+    ///          The owner word is 32 bit wide in shared memory, hence only incarnations which fit (all pid derived ones)
+    ///          are supported; a wider incarnation requires the planned layout change.
+    /// \param incarnation incarnation of the caller, must be valid.
+    TakeoverOutcome Takeover(const std::uint32_t application_id,
+                             const IncarnationId incarnation,
+                             const IIncarnationAuthority& authority)
+    {
+        SCORE_LANGUAGE_FUTURECPP_ASSERT_PRD(nullptr != mapping_entries_.begin());
+        SCORE_LANGUAGE_FUTURECPP_ASSERT_PRD(nullptr != mapping_entries_.end());
+        // coverity[autosar_cpp14_a5_3_2_violation]
+        return detail::Takeover<concurrency::AtomicIndirectorReal>(
+            mapping_entries_.begin(), mapping_entries_.end(), application_id, incarnation, authority);
+    }
+
+    /// \brief Gives up the ownership of expected_owner for application_id, e.g. after its transaction logs have been
+    ///        rolled back on its behalf. A following Takeover() reports kFresh.
+    /// \return true if the entry was owned by expected_owner and has been released, false if the application id has no
+    ///         entry or is owned by somebody else (e.g. a restarted proxy took it over in the meantime).
+    bool ReleaseIfOwner(const std::uint32_t application_id, const IncarnationId expected_owner)
+    {
+        SCORE_LANGUAGE_FUTURECPP_ASSERT_PRD(nullptr != mapping_entries_.begin());
+        SCORE_LANGUAGE_FUTURECPP_ASSERT_PRD(nullptr != mapping_entries_.end());
+        // coverity[autosar_cpp14_a5_3_2_violation]
+        return detail::ReleaseIfOwner(mapping_entries_.begin(), mapping_entries_.end(), application_id, expected_owner);
+    }
 
     static void InjectRegisterPidFake(RegisterPidFake& register_pid_fake)
     {
