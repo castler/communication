@@ -16,6 +16,8 @@
 #include "score/message_passing/i_client_factory.h"
 #include "score/message_passing/identity_types.h"
 #include "score/mw/com/impl/bindings/lola/messaging/client_quality_type.h"
+#include "score/mw/com/impl/bindings/lola/messaging/i_node_address_resolver.h"
+#include "score/mw/com/impl/bindings/lola/messaging/name_based_node_address_resolver.h"
 
 #include <memory>
 #include <mutex>
@@ -33,6 +35,11 @@ class MessagePassingClientCache
     MessagePassingClientCache(const ClientQualityType asil_level,
                               score::message_passing::IClientFactory& client_factory) noexcept;
 
+    /// \brief Creates a cache which uses the given resolver (must outlive the cache) to find the server of a node.
+    MessagePassingClientCache(const ClientQualityType asil_level,
+                              score::message_passing::IClientFactory& client_factory,
+                              const INodeAddressResolver& address_resolver) noexcept;
+
     ~MessagePassingClientCache() noexcept = default;
 
     MessagePassingClientCache(MessagePassingClientCache&&) = delete;
@@ -42,6 +49,8 @@ class MessagePassingClientCache
 
     std::shared_ptr<score::message_passing::IClientConnection> GetCachedMessagePassingClient(
         const NodeId target_node_id) noexcept;
+    /// \return a (possibly not yet ready) client for the node or nullptr, if the node cannot be resolved to an
+    ///         address (the peer is not known (anymore)).
     std::shared_ptr<score::message_passing::IClientConnection> GetMessagePassingClient(
         const NodeId target_node_id) noexcept;
     void RemoveMessagePassingClient(const NodeId target_node_id) noexcept;
@@ -55,6 +64,8 @@ class MessagePassingClientCache
 
     const ClientQualityType asil_level_;
     score::message_passing::IClientFactory& client_factory_;
+    NameBasedNodeAddressResolver default_address_resolver_;
+    const INodeAddressResolver& address_resolver_;
     // TODO: PMR
     std::unordered_map<NodeId, std::shared_ptr<score::message_passing::IClientConnection>> clients_;
     std::mutex mutex_;

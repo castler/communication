@@ -33,11 +33,6 @@ namespace score::mw::com::impl::lola
 
 namespace
 {
-// TODO: avoid duplication with message_passing_service_instance.cpp
-constexpr auto mq_name_prefix_mpcc("LoLa_2_");
-constexpr auto mq_name_qm_postfix_mpcc("_QM");
-constexpr auto mq_name_asil_b_postfix_mpcc("_ASIL_B");
-
 constexpr std::uint32_t kMaxSendSize{32U};
 constexpr std::uint32_t kMaxReplySize{32U};
 
@@ -53,7 +48,24 @@ constexpr std::chrono::milliseconds kConnectTimeout{kStateTryAttempts * kStateRe
 
 MessagePassingClientCache::MessagePassingClientCache(const ClientQualityType asil_level,
                                                      score::message_passing::IClientFactory& client_factory) noexcept
-    : asil_level_{asil_level}, client_factory_{client_factory}, clients_{}, mutex_{}
+    : asil_level_{asil_level},
+      client_factory_{client_factory},
+      default_address_resolver_{},
+      address_resolver_{default_address_resolver_},
+      clients_{},
+      mutex_{}
+{
+}
+
+MessagePassingClientCache::MessagePassingClientCache(const ClientQualityType asil_level,
+                                                     score::message_passing::IClientFactory& client_factory,
+                                                     const INodeAddressResolver& address_resolver) noexcept
+    : asil_level_{asil_level},
+      client_factory_{client_factory},
+      default_address_resolver_{},
+      address_resolver_{address_resolver},
+      clients_{},
+      mutex_{}
 {
 }
 
@@ -106,7 +118,10 @@ std::shared_ptr<score::message_passing::IClientConnection> MessagePassingClientC
 
     // create the OS specific sender
     auto new_sender = CreateNewClient(target_node_id);
-
+    if (new_sender == nullptr)
+    {
+        return nullptr;
+    }
     auto elem = clients_.emplace(target_node_id, new_sender);
     SCORE_LANGUAGE_FUTURECPP_ASSERT_PRD_MESSAGE(
         elem.second, "MessagePassingClientCache::GetMessagePassingClient(): Failed to emplace Client!");
@@ -117,7 +132,14 @@ std::shared_ptr<score::message_passing::IClientConnection> MessagePassingClientC
 std::shared_ptr<score::message_passing::IClientConnection> MessagePassingClientCache::CreateNewClient(
     const NodeId target_node_id) noexcept
 {
-    const std::string service_identifier = CreateMessagePassingName(asil_level_, target_node_id);
+    const auto resolved_identifier = address_resolver_.Resolve(asil_level_, target_node_id);
+    if (!resolved_identifier.has_value())
+    {
+        score::mw::log::LogWarn("lola") << "MessagePassingClientCache: Node " << target_node_id.Raw()
+                                        << " cannot be resolved to an address. Not creating a client.";
+        return nullptr;
+    }
+    const std::string& service_identifier = resolved_identifier.value();
 
     const bool fully_async = asil_level_ == ClientQualityType::kASIL_QMfromB;
     const score::message_passing::ServiceProtocolConfig protocol_config{
@@ -193,17 +215,7 @@ void MessagePassingClientCache::RemoveMessagePassingClient(const NodeId target_n
 std::string MessagePassingClientCache::CreateMessagePassingName(const ClientQualityType asil_level,
                                                                 const NodeId node_id) noexcept
 {
-    std::stringstream identifier;
-    identifier << mq_name_prefix_mpcc << score::message_passing::NodeIdToPid(node_id);
-    if (asil_level != ClientQualityType::kASIL_B)
-    {
-        identifier << mq_name_qm_postfix_mpcc;
-    }
-    else
-    {
-        identifier << mq_name_asil_b_postfix_mpcc;
-    }
-    return identifier.str();
+    return NameBasedNodeAddressResolver::CreateName(asil_level, node_id);
 }
 
 }  // namespace score::mw::com::impl::lola
