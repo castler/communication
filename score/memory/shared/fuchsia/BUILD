@@ -67,3 +67,21 @@ cc_library(
         "@score_baselibs//score/mw/log",
     ],
 )
+
+# Stand-in for the lock broker: serves an ILockRegistry over a channel, locks are bound to eventpairs.
+cc_library(
+    name = "lock_registry_channel",
+    srcs = ["lock_registry_channel.cpp"],
+    hdrs = ["lock_registry_channel.h"],
+    features = COMPILER_WARNING_FEATURES,
+    tags = ["manual"],
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//score/memory/shared/lock_provider:i_lock_registry",
+        "@fuchsia_sdk//pkg/zx",
+        "@score_baselibs//score/language/futurecpp",
+        "@score_baselibs//score/mw/log",
+        "@score_baselibs//score/os:errno",
+    ],
+)

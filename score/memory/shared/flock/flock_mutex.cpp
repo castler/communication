@@ -12,6 +12,7 @@
  ********************************************************************************/
 #include "score/memory/shared/flock/flock_mutex.h"
 
+#include "score/memory/shared/lock_provider/lock_provider.h"
 #include "score/mw/log/logging.h"
 #include "score/os/errno.h"
 
@@ -31,7 +32,7 @@ FlockMutex::FlockMutex(const LockFile& lock_file,
 
 void FlockMutex::lock() noexcept
 {
-    auto flock_result = score::os::Fcntl::instance().flock(file_descriptor_, locking_operation_);
+    auto flock_result = LockProvider::Instance().Flock(file_descriptor_, locking_operation_);
     if (!flock_result.has_value())
     {
         score::mw::log::LogFatal("shm") << "Flock locking operation failed:" << flock_result.error().ToString();
@@ -41,7 +42,7 @@ void FlockMutex::lock() noexcept
 
 bool FlockMutex::try_lock() noexcept
 {
-    auto flock_result = score::os::Fcntl::instance().flock(file_descriptor_, try_locking_operation_);
+    auto flock_result = LockProvider::Instance().Flock(file_descriptor_, try_locking_operation_);
     if (!flock_result.has_value())
     {
         if (flock_result.error() == ::score::os::Error::createFromErrnoFlockSpecific(EWOULDBLOCK))
@@ -59,7 +60,7 @@ bool FlockMutex::try_lock() noexcept
 void FlockMutex::unlock() noexcept
 {
     constexpr auto unlocking_operation = score::os::Fcntl::Operation::kUnLock;
-    auto flock_result = score::os::Fcntl::instance().flock(file_descriptor_, unlocking_operation);
+    auto flock_result = LockProvider::Instance().Flock(file_descriptor_, unlocking_operation);
     if (!flock_result.has_value())
     {
         score::mw::log::LogFatal("shm") << "Flock unlocking operation failed:" << flock_result.error().ToString();
