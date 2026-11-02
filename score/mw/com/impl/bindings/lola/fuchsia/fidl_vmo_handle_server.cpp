@@ -134,11 +134,24 @@ class FidlVmoHandleServer::Connection final : public fidl::Server<score_mw_com::
         }
         auto data_copy = DuplicateForSending(data->second.handle, kDataRights);
         auto control_copy = DuplicateForSending(control->second.handle, kControlRights);
+        zx::vmo asil_b_out;
+        const auto asil_b = state_->published.find(VmoRole::kControlAsilB);
+        bool asil_b_ok{true};
+        if (asil_b != state_->published.end())
+        {
+            auto asil_b_copy = DuplicateForSending(asil_b->second.handle, kControlRights);
+            asil_b_ok = asil_b_copy.has_value();
+            if (asil_b_ok)
+            {
+                asil_b_out = std::move(asil_b_copy).value();
+            }
+        }
         zx::eventpair local;
         zx::eventpair remote;
         zx::eventpair notify_local;
         zx::eventpair notify_remote;
-        if (!data_copy.has_value() || !control_copy.has_value() || (zx::eventpair::create(0U, &local, &remote) != ZX_OK) ||
+        if (!data_copy.has_value() || !control_copy.has_value() || !asil_b_ok ||
+            (zx::eventpair::create(0U, &local, &remote) != ZX_OK) ||
             (remote.replace(kLivenessRights | ZX_RIGHT_TRANSFER, &remote) != ZX_OK) ||
             (zx::eventpair::create(0U, &notify_local, &notify_remote) != ZX_OK) ||
             (notify_remote.replace(kNotificationRights | ZX_RIGHT_TRANSFER, &notify_remote) != ZX_OK))
@@ -158,7 +171,8 @@ class FidlVmoHandleServer::Connection final : public fidl::Server<score_mw_com::
                                                                      state_->epoch,
                                                                      application_id_,
                                                                      std::move(remote),
-                                                                     std::move(notify_remote)}));
+                                                                     std::move(notify_remote),
+                                                                     std::move(asil_b_out)}));
     }
 
   private:

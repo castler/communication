@@ -28,6 +28,7 @@ enum class VmoRole
 {
     kData,
     kControl,
+    kControlAsilB,
 };
 
 using KeyClassifier = std::function<std::optional<VmoRole>(const std::string& key)>;
@@ -39,7 +40,8 @@ std::optional<VmoRole> DefaultKeyClassifier(const std::string& key) noexcept;
 /// \brief The control region is the one that proxies write.
 inline bool IsConsumerWritable(const std::string& key) noexcept
 {
-    return DefaultKeyClassifier(key) == VmoRole::kControl;
+    const auto role = DefaultKeyClassifier(key);
+    return (role == VmoRole::kControl) || (role == VmoRole::kControlAsilB);
 }
 
 /// \brief Rights of the handles as declared in score_mw_com.fidl; the sender duplicates with these (plus TRANSFER, which

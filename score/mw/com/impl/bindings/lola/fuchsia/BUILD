@@ -138,3 +138,55 @@ cc_library(
         "@score_baselibs//score/mw/log",
     ],
 )
+
+# Routes LoLa's shared-memory creation/opening through VMOs and FIDL Attach (instead of shm_open).
+cc_library(
+    name = "vmo_shm_runtime",
+    srcs = ["vmo_shm_runtime.cpp"],
+    hdrs = ["vmo_shm_runtime.h"],
+    features = COMPILER_WARNING_FEATURES,
+    tags = ["manual"],
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = ["//quality/integration_testing/test:__subpackages__"],
+    deps = [
+        ":fidl_vmo_handle_client",
+        ":fidl_vmo_handle_server",
+        ":score_mw_com_fidl_cpp",
+        ":vmo_role",
+        "//score/memory/shared:shared_memory_factory",
+        "//score/memory/shared/fuchsia:i_vmo_handle_provider",
+        "//score/memory/shared/fuchsia:vmo_shared_memory_factory",
+        "//score/memory/shared/lock_provider",
+        "//score/memory/shared/lock_provider:i_lock_provider",
+        "@fuchsia_sdk//pkg/async-cpp",
+        "@fuchsia_sdk//pkg/component_incoming_cpp",
+        "@fuchsia_sdk//pkg/zx",
+    ],
+)
+
+# Drives the real lola::SkeletonMemoryManager (skeleton) and the proxy-side Open of the regions with a faked runtime.
+cc_library(
+    name = "lola_shm_harness",
+    srcs = ["lola_shm_harness.cpp"],
+    hdrs = ["lola_shm_harness.h"],
+    features = COMPILER_WARNING_FEATURES,
+    tags = ["manual"],
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = ["//quality/integration_testing/test:__subpackages__"],
+    deps = [
+        "//score/memory/shared:managed_memory_resource",
+        "//score/memory/shared:shared_memory_factory",
+        "//score/mw/com/impl:runtime",
+        "//score/mw/com/impl:runtime_interfaces",
+        "//score/mw/com/impl:skeleton_event_binding",
+        "//score/mw/com/impl/bindings/lola:element_fq_id",
+        "//score/mw/com/impl/bindings/lola:event_control",
+        "//score/mw/com/impl/bindings/lola:event_data_storage",
+        "//score/mw/com/impl/bindings/lola:i_runtime",
+        "//score/mw/com/impl/bindings/lola:service_data_control",
+        "//score/mw/com/impl/bindings/lola:service_data_storage",
+        "//score/mw/com/impl/bindings/lola:shm_path_builder",
+        "//score/mw/com/impl/bindings/lola:skeleton",
+        "//score/mw/com/impl/configuration",
+    ],
+)

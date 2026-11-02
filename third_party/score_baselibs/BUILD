@@ -18,6 +18,7 @@ exports_files([
     "fuchsia_support.patch",
     "fuchsia_shm_support.patch",
     "fuchsia_lola_support.patch",
+    "fuchsia_interprocess_sync.patch",
 ])
 
 # Certified-scope stubs for score_baselibs dependencies used by mw_com.

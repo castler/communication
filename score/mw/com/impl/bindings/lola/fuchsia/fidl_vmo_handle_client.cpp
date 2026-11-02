@@ -94,6 +94,10 @@ auto FidlVmoHandleClient::EnsureAttached() -> zx_status_t
                        RightsOf(response.liveness())};
     handles_.emplace(VmoRole::kData, std::move(response.data_vmo()));
     handles_.emplace(VmoRole::kControl, std::move(response.control_vmo()));
+    if (response.control_asil_b_vmo().is_valid())
+    {
+        handles_.emplace(VmoRole::kControlAsilB, std::move(response.control_asil_b_vmo()));
+    }
     liveness_ = std::move(response.liveness());
     notification_ = std::move(response.notification());
     return ZX_OK;

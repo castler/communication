@@ -43,6 +43,7 @@ git_override(
         "//third_party/score_baselibs:fuchsia_support.patch",
         "//third_party/score_baselibs:fuchsia_shm_support.patch",
         "//third_party/score_baselibs:fuchsia_lola_support.patch",
+        "//third_party/score_baselibs:fuchsia_interprocess_sync.patch",
     ],
     remote = "https://github.com/eclipse-score/baselibs.git",
 )

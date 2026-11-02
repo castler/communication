@@ -120,6 +120,8 @@ closed protocol Endpoint {
         /// Per-subscriber wake-up. Wait for USER_0 (clear it, then re-read the VMO); peer-closed means the skeleton is
         /// gone. SIGNAL only allows clearing the own side, the skeleton's side cannot be signalled from here.
         notification zx.Handle:<EVENTPAIR, zx.Rights.WAIT | zx.Rights.SIGNAL>;
+        /// Control region of the ASIL-B quality; absent when the skeleton offers QM only.
+        control_asil_b_vmo zx.Handle:<VMO, zx.Rights.READ | zx.Rights.WRITE | zx.Rights.MAP | zx.Rights.GET_PROPERTY, optional>;
     }) error AttachError;
 };
 type BrokerError = flexible enum : uint32 {

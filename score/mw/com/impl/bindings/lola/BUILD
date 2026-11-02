@@ -54,7 +54,10 @@ cc_library(
     features = COMPILER_WARNING_FEATURES,
     implementation_deps = [":path_builder"],
     tags = ["FFI"],
-    visibility = ["//score/mw/com/impl/plumbing:__pkg__"],
+    visibility = [
+        "//score/mw/com/impl/bindings/lola/fuchsia:__pkg__",
+        "//score/mw/com/impl/plumbing:__pkg__",
+    ],
     deps = [
         ":i_shm_path_builder",
         "//score/mw/com/impl/configuration",
@@ -118,7 +121,10 @@ cc_library(
     hdrs = ["i_runtime.h"],
     features = COMPILER_WARNING_FEATURES,
     tags = ["FFI"],
-    visibility = ["//score/mw/com/impl/plumbing:__pkg__"],
+    visibility = [
+        "//score/mw/com/impl/bindings/lola/fuchsia:__pkg__",
+        "//score/mw/com/impl/plumbing:__pkg__",
+    ],
     deps = [
         ":i_incarnation_authority",
         ":rollback_synchronization",
@@ -279,6 +285,7 @@ cc_library(
     tags = ["FFI"],
     visibility = [
         "//score/mw/com/impl/bindings/lola:__pkg__",
+        "//score/mw/com/impl/bindings/lola/fuchsia:__pkg__",
         "//score/mw/com/impl/bindings/lola/test:__pkg__",
         "//score/mw/com/impl/bindings/lola/test_doubles:__pkg__",
     ],
@@ -309,6 +316,7 @@ cc_library(
     features = COMPILER_WARNING_FEATURES,
     tags = ["FFI"],
     visibility = [
+        "//score/mw/com/impl/bindings/lola/fuchsia:__pkg__",
         "//score/mw/com/impl/bindings/lola/test:__pkg__",
         "//score/mw/com/impl/bindings/lola/test_doubles:__pkg__",
     ],
@@ -351,6 +359,7 @@ cc_library(
     ],
     tags = ["FFI"],
     visibility = [
+        "//score/mw/com/impl/bindings/lola/fuchsia:__pkg__",
         "//score/mw/com/impl/bindings/lola/test:__pkg__",
         "//score/mw/com/impl/bindings/lola/test_doubles:__pkg__",
     ],

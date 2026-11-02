@@ -83,7 +83,8 @@ class RogueServer final : public fidl::Server<score_mw_com::Endpoint>
                                                                      1U,
                                                                      2U,
                                                                      std::move(remote_out),
-                                                                     std::move(notify_out)}));
+                                                                     std::move(notify_out),
+                                                                     zx::vmo{}}));
     }
 
   private:

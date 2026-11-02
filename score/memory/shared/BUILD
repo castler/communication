@@ -126,7 +126,10 @@ cc_library(
     hdrs = ["i_shared_memory_factory.h"],
     features = COMPILER_WARNING_FEATURES,
     tags = ["FFI"],
-    visibility = ["//score/memory/shared/fuchsia:__pkg__"],
+    visibility = [
+        "//quality/integration_testing/test/femu_lola_shm:__pkg__",
+        "//score/memory/shared/fuchsia:__pkg__",
+    ],
     deps = [
         ":i_shared_memory_resource",
         "//score/memory/shared/typedshm/typedshm_wrapper:typedmemory",
@@ -181,12 +184,17 @@ cc_library(
         "shared_memory_factory_impl",
         "@score_baselibs//score/language/futurecpp",
         "@score_baselibs//score/utils:static_destruction_guard",
-    ],
+    ] + select({
+        "@platforms//os:fuchsia": ["//score/memory/shared/fuchsia:vmo_shared_memory_factory"],
+        "//conditions:default": [],
+    }),
     tags = ["FFI"],
     visibility = [
         "//quality/integration_testing/test/femu_fuchsia_attach:__pkg__",
         "//quality/integration_testing/test/femu_fuchsia_broker:__pkg__",
+        "//quality/integration_testing/test/femu_lola_shm:__pkg__",
         "//quality/integration_testing/test/femu_vmo_shm:__pkg__",
+        "//score/mw/com/impl/bindings/lola/fuchsia:__pkg__",
     ],
     deps = [
         ":i_shared_memory_factory",

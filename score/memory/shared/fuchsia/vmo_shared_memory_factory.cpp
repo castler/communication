@@ -19,10 +19,37 @@
 #include <zircon/rights.h>
 #include <zircon/syscalls.h>
 
+#include <cerrno>
 #include <utility>
 
 namespace score::memory::shared::fuchsia
 {
+
+namespace
+{
+
+class LocalOnlyVmoHandleProvider final : public IVmoHandleProvider
+{
+  public:
+    score::cpp::expected<zx::vmo, score::os::Error> Acquire(const std::string&) noexcept override
+    {
+        return score::cpp::make_unexpected(score::os::Error::createFromErrno(ENOENT));
+    }
+
+    score::cpp::expected_blank<score::os::Error> Publish(const std::string&, zx::vmo) noexcept override
+    {
+        return {};
+    }
+
+    void Withdraw(const std::string&) noexcept override {}
+};
+
+}  // namespace
+
+DefaultVmoSharedMemoryFactory::DefaultVmoSharedMemoryFactory() noexcept
+    : VmoSharedMemoryFactory{std::make_shared<LocalOnlyVmoHandleProvider>()}
+{
+}
 
 VmoSharedMemoryFactory::VmoSharedMemoryFactory(std::shared_ptr<IVmoHandleProvider> handle_provider,
                                                ConsumerWritablePredicate consumer_writable) noexcept

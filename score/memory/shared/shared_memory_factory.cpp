@@ -13,6 +13,9 @@
 #include "score/memory/shared/shared_memory_factory.h"
 #include "score/memory/shared/i_shared_memory_factory.h"
 #include "score/memory/shared/shared_memory_factory_impl.h"
+#if defined(__Fuchsia__)
+#include "score/memory/shared/fuchsia/vmo_shared_memory_factory.h"
+#endif
 
 #include "score/utils/static_destruction_guard.h"
 
@@ -102,7 +105,12 @@ auto SharedMemoryFactory::instance() noexcept -> ISharedMemoryFactory&
     // detail::nifty_counter_shared_memory_factory_impl) rather than a plain
     // function-local static (Meyer's singleton), for the same static destruction order reasons as
     // MemoryResourceRegistry.
+#if defined(__Fuchsia__)
+    // Fuchsia has no shm_open namespace: regions are VMOs unless a factory was injected.
+    return ::score::utils::StaticDestructionGuard<fuchsia::DefaultVmoSharedMemoryFactory>::GetStorage();
+#else
     return ::score::utils::StaticDestructionGuard<SharedMemoryFactoryImpl>::GetStorage();
+#endif
 }
 
 auto SharedMemoryFactory::InjectMock(ISharedMemoryFactory* mock) noexcept -> void

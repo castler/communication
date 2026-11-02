@@ -1,0 +1,206 @@
+diff -ru a/score/os/utils/interprocess/interprocess_conditional_variable.cpp b/score/os/utils/interprocess/interprocess_conditional_variable.cpp
+--- a/score/os/utils/interprocess/interprocess_conditional_variable.cpp	2026-11-02 15:56:49.252000000 +0100
++++ b/score/os/utils/interprocess/interprocess_conditional_variable.cpp	2026-11-02 15:57:15.717000000 +0100
+@@ -17,6 +17,63 @@
+ #include <iostream>
+ #include <tuple>
+ 
++#if defined(__Fuchsia__)
++#include <zircon/syscalls.h>
++#include <sched.h>
++
++namespace
++{
++constexpr std::uint32_t kYieldIterations{64U};
++constexpr std::int64_t kMinSleepNs{20'000};
++constexpr std::int64_t kMaxSleepNs{1'000'000};
++}  // namespace
++
++score::os::InterprocessConditionalVariable::InterprocessConditionalVariable() noexcept = default;
++
++score::os::InterprocessConditionalVariable::~InterprocessConditionalVariable() noexcept = default;
++
++auto score::os::InterprocessConditionalVariable::notify_one() noexcept -> void
++{
++    conditionalVariable.fetch_add(1U, std::memory_order_release);
++}
++
++auto score::os::InterprocessConditionalVariable::notify_all() noexcept -> void
++{
++    conditionalVariable.fetch_add(1U, std::memory_order_release);
++}
++
++auto score::os::InterprocessConditionalVariable::wait(std::unique_lock<InterprocessMutex>& lock) noexcept -> void
++{
++    if (!lock.owns_lock())
++    {
++        std::cerr << "Violated precondition. mutex needs to be locked before passing to conditional variable!";
++        std::abort();
++    }
++
++    // The generation is read while the mutex is held, so a notification issued after the unlock below (by someone who
++    // changed the predicate under the mutex) is never lost.
++    const auto generation = conditionalVariable.load(std::memory_order_acquire);
++    lock.unlock();
++    std::uint32_t iteration{0U};
++    std::int64_t sleep_ns{kMinSleepNs};
++    while (conditionalVariable.load(std::memory_order_acquire) == generation)
++    {
++        if (iteration < kYieldIterations)
++        {
++            ++iteration;
++            ::sched_yield();
++        }
++        else
++        {
++            static_cast<void>(::zx_nanosleep(::zx_deadline_after(sleep_ns)));
++            sleep_ns = (sleep_ns * 2 > kMaxSleepNs) ? kMaxSleepNs : sleep_ns * 2;
++        }
++    }
++    lock.lock();
++}
++
++#else
++
+ score::os::InterprocessConditionalVariable::InterprocessConditionalVariable() noexcept
+ {
+     std::int32_t error{0};
+@@ -115,3 +172,5 @@
+ 
+     std::ignore = ::pthread_cond_wait(&this->conditionalVariable, &(lock.mutex()->mutex));
+ }
++
++#endif  // __Fuchsia__
+diff -ru a/score/os/utils/interprocess/interprocess_conditional_variable.h b/score/os/utils/interprocess/interprocess_conditional_variable.h
+--- a/score/os/utils/interprocess/interprocess_conditional_variable.h	2026-11-02 15:56:49.244000000 +0100
++++ b/score/os/utils/interprocess/interprocess_conditional_variable.h	2026-11-02 15:56:57.841000000 +0100
+@@ -18,6 +18,11 @@
+ #include <sys/types.h>
+ #include <mutex>
+ 
++#if defined(__Fuchsia__)
++#include <atomic>
++#include <cstdint>
++#endif
++
+ namespace score
+ {
+ namespace os
+@@ -47,7 +52,14 @@
+     }
+ 
+   private:
++#if defined(__Fuchsia__)
++    // Generation counter in the shared mapping. A waiter remembers it, releases the mutex and polls until it changed;
++    // notify_one() and notify_all() both advance it (so notify_one may wake more than one waiter, which the
++    // condition variable contract permits as spurious wake-up).
++    std::atomic<std::uint32_t> conditionalVariable{0U};
++#else
+     pthread_cond_t conditionalVariable{};
++#endif
+ };
+ }  // namespace os
+ }  // namespace score
+diff -ru a/score/os/utils/interprocess/interprocess_mutex.cpp b/score/os/utils/interprocess/interprocess_mutex.cpp
+--- a/score/os/utils/interprocess/interprocess_mutex.cpp	2026-11-02 15:56:49.238000000 +0100
++++ b/score/os/utils/interprocess/interprocess_mutex.cpp	2026-11-02 15:57:07.974000000 +0100
+@@ -17,10 +17,63 @@
+ #include <pthread.h>
+ #include <iostream>
+ 
++#if defined(__Fuchsia__)
++#include <zircon/syscalls.h>
++#include <sched.h>
++#include <cstdint>
++#endif
++
+ // We need to ensure that this is the case, since otherwise we cannot store it in shared memory.
+ static_assert(std::is_standard_layout<score::os::InterprocessMutex>::value,
+               "InterprocessMutex is not of Standard layout");
+ 
++#if defined(__Fuchsia__)
++
++namespace
++{
++constexpr std::uint32_t kYieldIterations{64U};
++constexpr std::int64_t kMinSleepNs{20'000};
++constexpr std::int64_t kMaxSleepNs{1'000'000};
++}  // namespace
++
++score::os::InterprocessMutex::InterprocessMutex() noexcept = default;
++
++score::os::InterprocessMutex::~InterprocessMutex() noexcept = default;
++
++bool score::os::InterprocessMutex::try_lock() noexcept
++{
++    std::uint32_t expected{0U};
++    return mutex.compare_exchange_strong(expected, 1U, std::memory_order_acquire, std::memory_order_relaxed);
++}
++
++void score::os::InterprocessMutex::lock() noexcept
++{
++    std::uint32_t iteration{0U};
++    std::int64_t sleep_ns{kMinSleepNs};
++    while (!try_lock())
++    {
++        // Contended: the holder may live in another process, so there is nothing to futex-wait on. Yield first, then
++        // sleep with a back-off capped at 1 ms.
++        if (iteration < kYieldIterations)
++        {
++            ++iteration;
++            ::sched_yield();
++        }
++        else
++        {
++            static_cast<void>(::zx_nanosleep(::zx_deadline_after(sleep_ns)));
++            sleep_ns = (sleep_ns * 2 > kMaxSleepNs) ? kMaxSleepNs : sleep_ns * 2;
++        }
++    }
++}
++
++void score::os::InterprocessMutex::unlock() noexcept
++{
++    mutex.store(0U, std::memory_order_release);
++}
++
++#else
++
+ score::os::InterprocessMutex::InterprocessMutex() noexcept
+ {
+     ::pthread_mutexattr_t mutexConfig;
+@@ -101,3 +154,5 @@
+ {
+     return ::pthread_mutex_trylock(&mutex) == 0; /** \requirement swdda.pthread_mutex_trylock.mutex */
+ }
++
++#endif  // __Fuchsia__
+diff -ru a/score/os/utils/interprocess/interprocess_mutex.h b/score/os/utils/interprocess/interprocess_mutex.h
+--- a/score/os/utils/interprocess/interprocess_mutex.h	2026-11-02 15:56:49.230000000 +0100
++++ b/score/os/utils/interprocess/interprocess_mutex.h	2026-11-02 15:56:57.832000000 +0100
+@@ -15,6 +15,11 @@
+ 
+ #include <sys/types.h>
+ 
++#if defined(__Fuchsia__)
++#include <atomic>
++#include <cstdint>
++#endif
++
+ namespace score
+ {
+ namespace os
+@@ -64,7 +69,14 @@
+     bool try_lock() noexcept;
+ 
+   private:
++#if defined(__Fuchsia__)
++    // Fuchsia libc has no process-shared pthread mutex and zx_futex is keyed by the process-local address, so the
++    // lock is a plain word in the shared mapping that is acquired with CAS and polled with a bounded back-off.
++    // 0: unlocked, 1: locked.
++    std::atomic<std::uint32_t> mutex{0U};
++#else
+     pthread_mutex_t mutex{};
++#endif
+     // Suppress "AUTOSAR C++14 A11-3-1" rule finding: "Friend declarations shall not be used.".
+     // Rationale: Friend is used as the class InterprocessConditionalVariable needs access to private &
+     // protected members of InterprocessMutex and both classes are tightly coupled.

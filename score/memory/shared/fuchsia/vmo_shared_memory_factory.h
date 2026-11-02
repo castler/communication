@@ -33,7 +33,7 @@ namespace score::memory::shared::fuchsia
 ///          - UserPermissions, AccessControl::allowedProviders, prefer_typed_memory are ignored; access is governed by
 ///            who is given a handle (capability routing).
 ///          - There is no lock file; mutual exclusion of creators is limited to this process (own resource map).
-class VmoSharedMemoryFactory final : public ISharedMemoryFactory
+class VmoSharedMemoryFactory : public ISharedMemoryFactory
 {
   public:
     /// \brief Decides per key whether the published consumer handle carries WRITE (e.g. the control region of a LoLa
@@ -90,6 +90,20 @@ class VmoSharedMemoryFactory final : public ISharedMemoryFactory
     ConsumerWritablePredicate consumer_writable_;
     std::recursive_mutex mutex_;
     std::unordered_map<std::string, std::weak_ptr<ISharedMemoryResource>> resources_;
+};
+
+}  // namespace score::memory::shared::fuchsia
+
+namespace score::memory::shared::fuchsia
+{
+
+/// \brief Factory the SharedMemoryFactory facade uses on Fuchsia when nothing was injected: regions are VMOs, handles
+///        are published to a provider that keeps them in this process only and cannot acquire foreign ones. Cross
+///        process sharing needs an injected factory whose provider transfers the handles (e.g. FidlVmoHandleServer).
+class DefaultVmoSharedMemoryFactory final : public VmoSharedMemoryFactory
+{
+  public:
+    DefaultVmoSharedMemoryFactory() noexcept;
 };
 
 }  // namespace score::memory::shared::fuchsia
