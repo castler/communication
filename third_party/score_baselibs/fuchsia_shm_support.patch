@@ -1,0 +1,267 @@
+diff --git a/score/json/internal/parser/vajson/vajson_impl/util/number.h b/score/json/internal/parser/vajson/vajson_impl/util/number.h
+index 1210aac3..88195b17 100644
+--- a/score/json/internal/parser/vajson/vajson_impl/util/number.h
++++ b/score/json/internal/parser/vajson/vajson_impl/util/number.h
+@@ -473,7 +473,7 @@ class JsonNumber final
+     {
+         // std::strtod uncomplainingly parses input that ends with a period, although that is invalid JSON!
+ 
+-        return ((end == this->view_.cend()) && (this->view_.back() != '.'));
++        return ((end == this->view_.data() + this->view_.size()) && (this->view_.back() != '.'));
+     }
+ 
+     auto ParseIntegerSuccessful(const char* end) const noexcept -> bool
+diff --git a/score/json/json_parser.cpp b/score/json/json_parser.cpp
+index da7d6afc..6c85ce4f 100644
+--- a/score/json/json_parser.cpp
++++ b/score/json/json_parser.cpp
+@@ -13,6 +13,7 @@
+ 
+ #include "score/json/json_parser.h"
+ 
++#include <exception>
+ #include <iostream>
+ 
+ namespace score
+diff --git a/score/json/json_writer.cpp b/score/json/json_writer.cpp
+index 2d64b9fe..eb50f3b8 100644
+--- a/score/json/json_writer.cpp
++++ b/score/json/json_writer.cpp
+@@ -82,7 +82,7 @@ score::Result<void> score::json::JsonWriter::ToFile(const score::json::Object& j
+ {
+     return (file_sync_mode_ == FileSyncMode::kSynced)
+                ? ToFileInternalAtomic(json_data,
+-                                      std::string_view{file_path.begin(), file_path.size()},
++                                      file_path,
+                                       *file_factory,
+                                       atomic_ownership_,
+                                       formatting_)
+@@ -95,7 +95,7 @@ score::Result<void> score::json::JsonWriter::ToFile(const score::json::List& jso
+ {
+     return (file_sync_mode_ == FileSyncMode::kSynced)
+                ? ToFileInternalAtomic(json_data,
+-                                      std::string_view{file_path.begin(), file_path.size()},
++                                      file_path,
+                                       *file_factory,
+                                       atomic_ownership_,
+                                       formatting_)
+@@ -108,7 +108,7 @@ score::Result<void> score::json::JsonWriter::ToFile(const score::json::Any& json
+ {
+     return (file_sync_mode_ == FileSyncMode::kSynced)
+                ? ToFileInternalAtomic(json_data,
+-                                      std::string_view{file_path.begin(), file_path.size()},
++                                      file_path,
+                                       *file_factory,
+                                       atomic_ownership_,
+                                       formatting_)
+diff --git a/score/language/safecpp/string_view/details/zspan.h b/score/language/safecpp/string_view/details/zspan.h
+index 3d1f31e3..638b9bd6 100644
+--- a/score/language/safecpp/string_view/details/zspan.h
++++ b/score/language/safecpp/string_view/details/zspan.h
+@@ -443,8 +443,8 @@ class zspan
+     /// @brief Disallow implicit conversions back to `std::span` since its `data()` method exposes a non-const pointer.
+     /// @details Reason: a non-const pointer to the underlying sequence could get used to overwrite the null-terminator.
+ #if defined(__cpp_lib_span)
+-    operator std::span<std::remove_const_t<CharType>>() const = delete;
+-    operator std::span<std::add_const_t<CharType>>() const = delete;
++    operator std::span<std::remove_const_t<T>>() const = delete;
++    operator std::span<std::add_const_t<T>>() const = delete;
+ #endif
+ 
+   private:
+diff --git a/score/mw/log/detail/text_recorder/text_format.cpp b/score/mw/log/detail/text_recorder/text_format.cpp
+index c429cd68..9fb4da7e 100644
+--- a/score/mw/log/detail/text_recorder/text_format.cpp
++++ b/score/mw/log/detail/text_recorder/text_format.cpp
+@@ -86,7 +86,7 @@ std::size_t TextFormat::PutLogRawBufferData(const LogRawBuffer& data, score::cpp
+                 std::array<char, 3> temporary_formatting_buffer{};
+                 // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) safe to use std::snprintf
+                 std::ignore = std::snprintf(
+-                    temporary_formatting_buffer.begin(), temporary_formatting_buffer.size(), "%02hhx", input);
++                    temporary_formatting_buffer.data(), temporary_formatting_buffer.size(), "%02hhx", input);
+                 //  Take first two characters from temporary formatting buffer:
+                 destination_iterator = std::copy_n(temporary_formatting_buffer.begin(), 2, destination_iterator);
+             }
+diff --git a/score/os/BUILD b/score/os/BUILD
+index e8dc4acc..430dfe32 100644
+--- a/score/os/BUILD
++++ b/score/os/BUILD
+@@ -24,7 +24,12 @@ cc_library(
+     hdrs = [
+         "acl.h",
+         "acl_impl.h",
+-    ],
++    ] + select(
++        {
++            "@platforms//os:fuchsia": ["fuchsia_sys_acl.h"],
++            "//conditions:default": [],
++        },
++    ),
+     features = COMPILER_WARNING_FEATURES,
+     tags = ["FFI"],
+     visibility = [
+diff --git a/score/os/acl.h b/score/os/acl.h
+index fab95da1..b5a11f43 100644
+--- a/score/os/acl.h
++++ b/score/os/acl.h
+@@ -19,7 +19,11 @@
+ #include <score/expected.hpp>
+ #include <score/optional.hpp>
+ 
++#if defined(__Fuchsia__)
++#include "score/os/fuchsia_sys_acl.h"
++#else
+ #include <sys/acl.h>
++#endif
+ 
+ #if defined(__linux__)
+ #include <acl/libacl.h>
+diff --git a/score/os/acl_impl.cpp b/score/os/acl_impl.cpp
+index f3675be1..8f5a9c31 100644
+--- a/score/os/acl_impl.cpp
++++ b/score/os/acl_impl.cpp
+@@ -12,6 +12,8 @@
+  ********************************************************************************/
+ #include "score/os/acl_impl.h"
+ 
++#include <exception>
++
+ // Note 1
+ // Suppress "AUTOSAR C++14 M6-4-5" and "AUTOSAR C++14 M6-4-3", The rule states: An unconditional throw or break
+ // statement shall terminate every nonempty switch-clause." and "A switch statement shall be a well-formed
+@@ -147,7 +149,7 @@ score::cpp::expected<bool, score::os::Error> AclInstance::acl_get_perm(const Acl
+                                                                        const Acl::Permission permission) const noexcept
+ {
+ // coverity[autosar_cpp14_a16_0_1_violation] Different implementation required for linux and QNX
+-#if defined(__linux__)
++#if defined(__linux__) || defined(__Fuchsia__)
+     const auto result = ::acl_get_perm(permission_set, ConvertToPlatformDependentPermission(permission));
+ // coverity[autosar_cpp14_a16_0_1_violation] Different implementation required for linux and QNX
+ #elif defined(__QNX__)
+diff --git a/score/os/fcntl.cpp b/score/os/fcntl.cpp
+index 34df140b..a79e28bb 100644
+--- a/score/os/fcntl.cpp
++++ b/score/os/fcntl.cpp
+@@ -14,6 +14,10 @@
+ 
+ #include <type_traits>
+ 
++#if defined(__Fuchsia__)
++#include <sys/file.h>
++#endif
++
+ // Note 1
+ // Suppress "AUTOSAR C++14 M6-4-5" and "AUTOSAR C++14 M6-4-3", The rule states: An unconditional throw or break
+ // statement shall terminate every nonempty switch-clause." and "A switch statement shall be a well-formed
+diff --git a/spike_b/score/os/fuchsia_sys_acl.h b/score/os/fuchsia_sys_acl.h
+new file mode 100644
+index 00000000..1ce84910
+--- /dev/null
++++ b/score/os/fuchsia_sys_acl.h
+@@ -0,0 +1,93 @@
++/********************************************************************************
++ * Copyright (c) 2026 Contributors to the Eclipse Foundation
++ *
++ * See the NOTICE file(s) distributed with this work for additional
++ * information regarding copyright ownership.
++ *
++ * This program and the accompanying materials are made available under the
++ * terms of the Apache License Version 2.0 which is available at
++ * https://www.apache.org/licenses/LICENSE-2.0
++ *
++ * SPDX-License-Identifier: Apache-2.0
++ ********************************************************************************/
++#ifndef SCORE_LIB_OS_FUCHSIA_SYS_ACL_H
++#define SCORE_LIB_OS_FUCHSIA_SYS_ACL_H
++
++// Fuchsia has no POSIX.1e ACLs and its sysroot has no <sys/acl.h>. This shim provides the subset used by
++// score/os/acl_impl.cpp. Every operation fails with ENOTSUP.
++
++#include <cerrno>
++#include <cstddef>
++#include <sys/types.h>
++
++struct fuchsia_acl_object;
++struct fuchsia_acl_entry_object;
++struct fuchsia_acl_permset_object;
++
++using acl_t = fuchsia_acl_object*;
++using acl_entry_t = fuchsia_acl_entry_object*;
++using acl_permset_t = fuchsia_acl_permset_object*;
++using acl_tag_t = int;
++using acl_perm_t = unsigned int;
++using acl_type_t = int;
++
++constexpr int ACL_UNDEFINED_TAG{0};
++constexpr int ACL_USER_OBJ{1};
++constexpr int ACL_USER{2};
++constexpr int ACL_GROUP_OBJ{4};
++constexpr int ACL_GROUP{8};
++constexpr int ACL_MASK{16};
++constexpr int ACL_OTHER{32};
++
++constexpr unsigned int ACL_READ{4U};
++constexpr unsigned int ACL_WRITE{2U};
++constexpr unsigned int ACL_EXECUTE{1U};
++
++constexpr int ACL_FIRST_ENTRY{0};
++constexpr int ACL_NEXT_ENTRY{1};
++constexpr acl_type_t ACL_TYPE_ACCESS{0x8000};
++
++namespace score::os::fuchsia_acl_detail
++{
++inline int NotSupported() noexcept
++{
++    errno = ENOTSUP;
++    return -1;
++}
++}  // namespace score::os::fuchsia_acl_detail
++
++inline acl_t acl_get_fd(const int) noexcept
++{
++    static_cast<void>(score::os::fuchsia_acl_detail::NotSupported());
++    return nullptr;
++}
++inline acl_t acl_get_file(const char*, const acl_type_t) noexcept
++{
++    static_cast<void>(score::os::fuchsia_acl_detail::NotSupported());
++    return nullptr;
++}
++inline int acl_create_entry(acl_t*, acl_entry_t*) noexcept { return score::os::fuchsia_acl_detail::NotSupported(); }
++inline int acl_get_entry(acl_t, const int, acl_entry_t*) noexcept { return score::os::fuchsia_acl_detail::NotSupported(); }
++inline int acl_get_tag_type(acl_entry_t, acl_tag_t*) noexcept { return score::os::fuchsia_acl_detail::NotSupported(); }
++inline int acl_set_tag_type(acl_entry_t, const acl_tag_t) noexcept { return score::os::fuchsia_acl_detail::NotSupported(); }
++inline void* acl_get_qualifier(acl_entry_t) noexcept
++{
++    static_cast<void>(score::os::fuchsia_acl_detail::NotSupported());
++    return nullptr;
++}
++inline int acl_set_qualifier(acl_entry_t, const void*) noexcept { return score::os::fuchsia_acl_detail::NotSupported(); }
++inline int acl_get_perm(acl_permset_t, const acl_perm_t) noexcept { return score::os::fuchsia_acl_detail::NotSupported(); }
++inline int acl_get_permset(acl_entry_t, acl_permset_t*) noexcept { return score::os::fuchsia_acl_detail::NotSupported(); }
++inline int acl_clear_perms(acl_permset_t) noexcept { return score::os::fuchsia_acl_detail::NotSupported(); }
++inline int acl_add_perm(acl_permset_t, const acl_perm_t) noexcept { return score::os::fuchsia_acl_detail::NotSupported(); }
++inline int acl_calc_mask(acl_t*) noexcept { return score::os::fuchsia_acl_detail::NotSupported(); }
++inline int acl_valid(acl_t) noexcept { return score::os::fuchsia_acl_detail::NotSupported(); }
++inline int acl_set_fd(const int, acl_t) noexcept { return score::os::fuchsia_acl_detail::NotSupported(); }
++inline int acl_free(void*) noexcept { return 0; }
++inline char* acl_to_text(acl_t, ssize_t*) noexcept
++{
++    static_cast<void>(score::os::fuchsia_acl_detail::NotSupported());
++    return nullptr;
++}
++
++#endif  // SCORE_LIB_OS_FUCHSIA_SYS_ACL_H
+diff --git a/score/os/grp.h b/score/os/grp.h
+index bed78dd8..58066a1f 100644
+--- a/score/os/grp.h
++++ b/score/os/grp.h
+@@ -20,6 +20,8 @@
+ 
+ #include <cstdint>
+ 
++#include <sys/types.h>
++
+ namespace score
+ {
+ namespace os

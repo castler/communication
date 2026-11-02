@@ -98,6 +98,7 @@ cc_library(
     tags = ["FFI"],
     visibility = [
         "//score/memory/shared/fake:__subpackages__",
+        "//score/memory/shared/fuchsia:__pkg__",
     ],
     deps = [
         ":i_shared_memory_resource",
@@ -125,6 +126,7 @@ cc_library(
     hdrs = ["i_shared_memory_factory.h"],
     features = COMPILER_WARNING_FEATURES,
     tags = ["FFI"],
+    visibility = ["//score/memory/shared/fuchsia:__pkg__"],
     deps = [
         ":i_shared_memory_resource",
         "//score/memory/shared/typedshm/typedshm_wrapper:typedmemory",
@@ -181,6 +183,7 @@ cc_library(
         "@score_baselibs//score/utils:static_destruction_guard",
     ],
     tags = ["FFI"],
+    visibility = ["//quality/integration_testing/test/femu_vmo_shm:__pkg__"],
     deps = [
         ":i_shared_memory_factory",
         ":i_shared_memory_resource",

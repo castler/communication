@@ -16,6 +16,7 @@ load(":score_baselibs_stub.bzl", "score_baselibs_stub")
 exports_files([
     "restore_qnx8_poll_workaround.patch",
     "fuchsia_support.patch",
+    "fuchsia_shm_support.patch",
 ])
 
 # Certified-scope stubs for score_baselibs dependencies used by mw_com.

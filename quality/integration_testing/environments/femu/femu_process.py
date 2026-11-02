@@ -59,9 +59,13 @@ class Femu:
     def start(self):
         if not os.access("/dev/kvm", os.R_OK | os.W_OK):
             _log("WARNING: /dev/kvm is not accessible, the emulator will be very slow")
+        extra = []
+        smp = os.environ.get("FEMU_SMP")
+        if smp:
+            extra += ["--smp", smp]
         self.ffx(
             "emu", "start", self._product_bundle.parent,
-            "--headless", "--net", "user", "--name", self._name,
+            "--headless", "--net", "user", "--name", self._name, *extra,
         )
 
     def deploy(self, package_archives):

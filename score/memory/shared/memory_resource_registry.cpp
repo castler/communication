@@ -22,6 +22,7 @@
 #include <score/utility.hpp>
 
 #include <exception>
+#include <mutex>
 #include <optional>
 
 auto score::memory::shared::MemoryResourceRegistry::getInstance() -> MemoryResourceRegistry&
