@@ -81,6 +81,11 @@ class VmoSharedMemoryResource final : public ISharedMemoryResource,
     /// \brief Like DuplicateConsumerHandle() but with kTransferRights, i.e. what the skeleton actually sends.
     score::cpp::expected<zx::vmo, score::os::Error> DuplicateTransferHandle() const noexcept;
 
+    /// \brief What the factory publishes to an IVmoHandleProvider that stays in the creating process: kTransferRights
+    ///        (plus WRITE if `consumer_writable`, e.g. the control region) and DUPLICATE, so the provider can hand out
+    ///        one duplicate per consumer. DUPLICATE must be removed again from every handle that leaves the process.
+    score::cpp::expected<zx::vmo, score::os::Error> DuplicatePublishHandle(const bool consumer_writable) const noexcept;
+
     /// \brief Replaces `vmo` by a handle with `rights & (kConsumerRights | WRITE if keep_write)`: strips TRANSFER,
     ///        DUPLICATE, EXECUTE, SET_PROPERTY. Called by Open() on every received handle.
     static score::cpp::expected_blank<score::os::Error> RestrictRights(zx::vmo& vmo, const bool keep_write) noexcept;

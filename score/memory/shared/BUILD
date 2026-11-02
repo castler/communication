@@ -183,7 +183,10 @@ cc_library(
         "@score_baselibs//score/utils:static_destruction_guard",
     ],
     tags = ["FFI"],
-    visibility = ["//quality/integration_testing/test/femu_vmo_shm:__pkg__"],
+    visibility = [
+        "//quality/integration_testing/test/femu_fuchsia_attach:__pkg__",
+        "//quality/integration_testing/test/femu_vmo_shm:__pkg__",
+    ],
     deps = [
         ":i_shared_memory_factory",
         ":i_shared_memory_resource",

@@ -1,0 +1,38 @@
+// Copyright (c) 2026 Contributors to the Eclipse Foundation
+//
+// See the NOTICE file(s) distributed with this work for additional
+// information regarding copyright ownership.
+//
+// This program and the accompanying materials are made available under the
+// terms of the Apache License Version 2.0 which is available at
+// https://www.apache.org/licenses/LICENSE-2.0
+//
+// SPDX-License-Identifier: Apache-2.0
+
+// Test only: lets the driver read what a consumer component observed (ITF only sees the driver's output).
+library score.mw.com.test;
+
+type ProbeResult = struct {
+    find_count uint32;
+    /// Size of the first Watch snapshot (returns at once) and of the snapshot returned by the hanging get.
+    first_watch_count uint32;
+    watch_count uint32;
+    /// 0 on success, otherwise an errno of the IVmoHandleProvider (ECONNRESET: endpoint not routed).
+    attach_errno int32;
+    data_rights uint32;
+    control_rights uint32;
+    application_id uint64;
+    epoch uint64;
+    discovery_epoch uint64;
+    /// Read through VmoSharedMemoryFactory::Open of the data region: magic and counter of the skeleton.
+    data_read_ok bool;
+    data_write_denied bool;
+    control_write_ok bool;
+};
+
+@discoverable
+closed protocol Probe {
+    strict Run() -> (struct {
+        result ProbeResult;
+    });
+};

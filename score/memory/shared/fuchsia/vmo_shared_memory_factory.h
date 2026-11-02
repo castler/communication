@@ -16,6 +16,7 @@
 #include "score/memory/shared/fuchsia/i_vmo_handle_provider.h"
 #include "score/memory/shared/i_shared_memory_factory.h"
 
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -35,7 +36,12 @@ namespace score::memory::shared::fuchsia
 class VmoSharedMemoryFactory final : public ISharedMemoryFactory
 {
   public:
-    explicit VmoSharedMemoryFactory(std::shared_ptr<IVmoHandleProvider> handle_provider) noexcept;
+    /// \brief Decides per key whether the published consumer handle carries WRITE (e.g. the control region of a LoLa
+    ///        service instance, which proxies must write). Default: consumers are read-only.
+    using ConsumerWritablePredicate = std::function<bool(const std::string& key)>;
+
+    explicit VmoSharedMemoryFactory(std::shared_ptr<IVmoHandleProvider> handle_provider,
+                                    ConsumerWritablePredicate consumer_writable = nullptr) noexcept;
     ~VmoSharedMemoryFactory() override = default;
 
     std::shared_ptr<ISharedMemoryResource> Open(const std::string& path,
@@ -81,6 +87,7 @@ class VmoSharedMemoryFactory final : public ISharedMemoryFactory
     std::shared_ptr<ISharedMemoryResource> Lookup(const std::string& key) noexcept;
 
     std::shared_ptr<IVmoHandleProvider> handle_provider_;
+    ConsumerWritablePredicate consumer_writable_;
     std::recursive_mutex mutex_;
     std::unordered_map<std::string, std::weak_ptr<ISharedMemoryResource>> resources_;
 };
