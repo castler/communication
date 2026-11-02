@@ -871,7 +871,7 @@ TEST_F(MessagePassingServiceInstanceTest, NotifyOutdatedNodeSendsOutdatedNodeIdM
             return score::cpp::expected_blank<score::os::Error>{};
         }));
 
-    instance.NotifyOutdatedNodeId(remote_pid_, remote_pid_ + 2);
+    instance.NotifyOutdatedNodeId(remote_node_, message_passing::NodeIdFromPid(remote_pid_ + 2));
 
     ASSERT_EQ(sent.size(), 1U + sizeof(pid_t));
     EXPECT_EQ(sent[0], score::cpp::to_underlying(MessageType::kOutdatedNodeId));

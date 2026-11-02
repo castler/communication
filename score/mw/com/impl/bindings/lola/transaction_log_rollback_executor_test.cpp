@@ -538,7 +538,7 @@ TEST_F(TransactionLogRollbackRerunFixture, RestartedProxyTakesOverFromCrashedRol
     auto& node_0 = RegisterProxyElementWithTransactionLogSet(kDummyElementFqId, kDummyTransactionLogId);
     auto& node_1 = RegisterProxyElementWithTransactionLogSet(kDummyElementFqId, kDummyTransactionLogId);
     EXPECT_CALL(message_passing_service_mock_,
-                NotifyOutdatedNodeId(kDummyQualityType, kDummyOldConsumerPid, kDummyProviderPid))
+                NotifyOutdatedNodeId(kDummyQualityType, message_passing::NodeIdFromPid(kDummyOldConsumerPid), message_passing::NodeIdFromPid(kDummyProviderPid)))
         .Times(1);
     ASSERT_TRUE(unit_->RollbackTransactionLogs().has_value());
     ASSERT_FALSE(node_0.IsActive());
@@ -552,7 +552,7 @@ TEST_F(TransactionLogRollbackRerunFixture, RestartedProxyTakesOverFromCrashedRol
     ON_CALL(lola_runtime_mock_, GetRollbackSynchronization())
         .WillByDefault(ReturnRef(restarted_rollback_synchronization));
     EXPECT_CALL(message_passing_service_mock_,
-                NotifyOutdatedNodeId(kDummyQualityType, kDummyCurrentConsumerPid, kDummyProviderPid))
+                NotifyOutdatedNodeId(kDummyQualityType, message_passing::NodeIdFromPid(kDummyCurrentConsumerPid), message_passing::NodeIdFromPid(kDummyProviderPid)))
         .Times(1);
     ASSERT_TRUE(unit_->RollbackTransactionLogs().has_value());
 

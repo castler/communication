@@ -101,7 +101,7 @@ TEST(ClientIdentityTest, HashIsConsistentWithEquality)
 TEST(ClientIdentityTest, ToStringDescribesIdentity)
 {
     EXPECT_EQ(ClientIdentity::FromCredentials(10, 20, 30).ToString(), "pid=10, uid=20, gid=30");
-    EXPECT_EQ(ClientIdentity::FromEndpoint(4, 5).ToString(), "connection=4, consumer=5");
+    EXPECT_EQ(ClientIdentity::FromEndpoint(4, 5).ToString(), "connection=node=4, consumer=5");
 }
 
 TEST(ClientIdentityTest, IsAllowedWithoutListAllowsEverybody)

@@ -1272,7 +1272,7 @@ TEST_F(MessagePassingServiceInstanceHandleSubscribeMethodMessageTest,
     // Expecting that the registered subscribe method handler will be called with the uid and pid returned by
     // GetClientIdentity()
     EXPECT_CALL(mock_subscribe_method_handler_,
-                Call(kProxyInstanceIdentifier, invalid_client_identity.GetPrincipalId(), invalid_client_identity.GetNodeId().ToPid()));
+                Call(kProxyInstanceIdentifier, invalid_client_identity.GetPrincipalId(), invalid_client_identity.GetNodeId()));
 
     // When a valid MessageWithReply message is received of type kSubscribeServiceMethod
     const auto result =
