@@ -39,3 +39,4 @@ user-mode networking. `/dev/kvm` is required (`requires-kvm` tag).
   ignores HTTP proxies, hence the custom repository rule.
 - `bazel run` of a component fails in this snapshot (missing python module in `run_component`), and a
   plain component has no log sink in `core/ffx-laboratory`. Hence the program runs as a test.
+- `FEMU_SMP=<n>` (pass with `--test_env=FEMU_SMP=<n>`) sets the number of emulated CPUs (`ffx emu start --smp`); useful on shared hosts.
