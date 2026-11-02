@@ -1,0 +1,15 @@
+{
+    include: [
+        "sys/testing/elf_test_runner.shard.cml",
+        "syslog/client.shard.cml",
+    ],
+
+    program: {
+        binary: "bin/vmo_shm_test",
+    },
+
+    // fdio_spawn of the reader process
+    use: [
+        { protocol: "fuchsia.process.Launcher" },
+    ],
+}

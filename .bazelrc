@@ -226,3 +226,5 @@ build:fuchsia --copt=-fexceptions
 build:fuchsia --cxxopt=-fexceptions
 build:fuchsia --linkopt=-fexceptions
 build:fuchsia --copt=-Wno-extra-semi
+# baselibs uses typeid and dynamic_cast, the Fuchsia clang toolchain defaults to -fno-rtti.
+build:fuchsia --cxxopt=-frtti
