@@ -19,6 +19,12 @@
 #include <score/memory.hpp>
 
 #include <sys/types.h>
+#include <cstddef>
+#include <cstdint>
+#include <functional>
+#include <optional>
+#include <set>
+#include <string>
 #include <variant>
 
 namespace score::message_passing
@@ -35,20 +41,110 @@ using MessageCallback = score::cpp::callback<score::cpp::expected_blank<score::o
     IServerConnection& connection,
     score::cpp::span<const std::uint8_t> message) /* noexcept */>;
 
-// Suppress "AUTOSAR C++14 A9-6-1" rule findings. This rule declares: "Data types used for interfacing with hardware
-// or conforming to communication protocols shall be trivial, standard-layout and only contain members of types with
-// defined sizes."
-// False positive. These are OS API types.
-struct ClientIdentity
+/// \brief Opaque identity of the peer of a server connection.
+/// \details On Linux/QNX it wraps the OS credentials (pid, uid, gid) of the peer. On Fuchsia, where channels carry no
+/// credentials, it wraps the per-consumer id of the endpoint the connection arrived on.
+class ClientIdentity
 {
-    // coverity[autosar_cpp14_a9_6_1_violation : FALSE]
-    pid_t pid;
-    // coverity[autosar_cpp14_a9_6_1_violation : FALSE]
-    uid_t uid;
-    // coverity[autosar_cpp14_a9_6_1_violation : FALSE]
-    gid_t gid;
+  public:
+    using PrincipalId = uid_t;
+    using NodeId = pid_t;
+    using AllowedPrincipals = std::optional<std::set<PrincipalId>>;
+
+    static ClientIdentity FromCredentials(const pid_t pid, const uid_t uid, const gid_t gid) noexcept
+    {
+        return ClientIdentity{Kind::kCredentials, pid, uid, gid};
+    }
+
+    /// \brief Identity derived from the endpoint (per-consumer id assigned at registration), used on Fuchsia.
+    static ClientIdentity FromEndpoint(const std::uint32_t consumer_id) noexcept
+    {
+        return ClientIdentity{Kind::kEndpoint, static_cast<pid_t>(consumer_id), static_cast<uid_t>(consumer_id), 0};
+    }
+
+    /// \brief Checks the identity against a configured list of allowed principals; no list means everybody is allowed.
+    bool IsAllowed(const AllowedPrincipals& allowed) const noexcept
+    {
+        return (!allowed.has_value()) || (allowed->count(principal_) != 0U);
+    }
+
+    bool IsAllowed(const PrincipalId allowed) const noexcept
+    {
+        return principal_ == allowed;
+    }
+
+    /// \brief Key identifying the peer as a communication partner (pid on Linux/QNX, consumer id on Fuchsia).
+    NodeId GetNodeId() const noexcept
+    {
+        return node_;
+    }
+
+    /// \brief Key used for permission checks (uid on Linux/QNX, consumer id on Fuchsia).
+    PrincipalId GetPrincipalId() const noexcept
+    {
+        return principal_;
+    }
+
+    std::size_t Hash() const noexcept
+    {
+        std::size_t result = std::hash<int>{}(static_cast<int>(kind_));
+        const auto combine = [&result](const std::size_t value) noexcept {
+            result ^= value + 0x9e3779b9U + (result << 6U) + (result >> 2U);
+        };
+        combine(std::hash<std::uint64_t>{}(static_cast<std::uint64_t>(node_)));
+        combine(std::hash<std::uint64_t>{}(static_cast<std::uint64_t>(principal_)));
+        combine(std::hash<std::uint64_t>{}(static_cast<std::uint64_t>(group_)));
+        return result;
+    }
+
+    std::string ToString() const
+    {
+        if (kind_ == Kind::kEndpoint)
+        {
+            return "consumer=" + std::to_string(principal_);
+        }
+        return "pid=" + std::to_string(node_) + ", uid=" + std::to_string(principal_) +
+               ", gid=" + std::to_string(group_);
+    }
+
+    friend bool operator==(const ClientIdentity& lhs, const ClientIdentity& rhs) noexcept
+    {
+        return (lhs.kind_ == rhs.kind_) && (lhs.node_ == rhs.node_) && (lhs.principal_ == rhs.principal_) &&
+               (lhs.group_ == rhs.group_);
+    }
+
+    friend bool operator!=(const ClientIdentity& lhs, const ClientIdentity& rhs) noexcept
+    {
+        return !(lhs == rhs);
+    }
+
+  private:
+    enum class Kind : std::uint8_t
+    {
+        kCredentials,
+        kEndpoint,
+    };
+
+    ClientIdentity(const Kind kind, const pid_t node, const uid_t principal, const gid_t group) noexcept
+        : kind_{kind}, node_{node}, principal_{principal}, group_{group}
+    {
+    }
+
+    Kind kind_;
+    pid_t node_;
+    uid_t principal_;
+    gid_t group_;
 };
 
 }  // namespace score::message_passing
+
+template <>
+struct std::hash<score::message_passing::ClientIdentity>
+{
+    std::size_t operator()(const score::message_passing::ClientIdentity& identity) const noexcept
+    {
+        return identity.Hash();
+    }
+};
 
 #endif  // SCORE_LIB_MESSAGE_PASSING_SERVER_TYPES_H

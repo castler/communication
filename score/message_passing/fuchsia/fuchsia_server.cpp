@@ -217,8 +217,9 @@ void FuchsiaServer::ProcessConnect() noexcept
         return;
     }
     const std::int32_t data_fd = accepted.value();
-    // Zircon sockets carry no peer credentials
-    const ClientIdentity identity{0, 0, 0};
+    // Zircon sockets carry no peer credentials; the identity is derived from the endpoint. Until the registry reports
+    // the per-consumer id assigned at registration, each accepted connection gets a server-local id.
+    const auto identity = ClientIdentity::FromEndpoint(next_consumer_id_++);
     auto connection =
         score::cpp::pmr::make_unique<ServerConnection>(engine_->GetMemoryResource(), *this, data_fd, identity);
 

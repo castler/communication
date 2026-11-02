@@ -117,7 +117,7 @@ class MessagePassingServiceInstanceTest : public ::testing::Test
     pid_t local_pid_{1};
     pid_t remote_pid_{2};
 
-    ClientIdentity client_identity_{15u, 25u, 35u};
+    ClientIdentity client_identity_{ClientIdentity::FromCredentials(15u, 25u, 35u)};
     UserData user_data_{std::in_place_type<uintptr_t>, 10u};
 
     ElementFqId event_id_;
@@ -160,7 +160,7 @@ TEST_F(MessagePassingServiceInstanceTest, ConnectCallbackReturnsClientPid)
 
     // Expect return value contains user pid
     ASSERT_TRUE(pid_result.has_value());
-    EXPECT_EQ(std::get<uintptr_t>(pid_result.value()), client_identity_.pid);
+    EXPECT_EQ(std::get<uintptr_t>(pid_result.value()), client_identity_.GetNodeId());
 }
 
 TEST_F(MessagePassingServiceInstanceTest, DisconnectCallbackSuccessfullyExecuted)
