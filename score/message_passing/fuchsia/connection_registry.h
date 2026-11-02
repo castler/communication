@@ -55,15 +55,25 @@ class FuchsiaConnectionRegistry
     score::cpp::expected<std::int32_t, score::os::Error> Listen(std::string_view identifier) noexcept;
     void StopListening(std::string_view identifier) noexcept;
 
-    /// \return the server end of a pending connection
-    score::cpp::expected<std::int32_t, score::os::Error> Accept(std::string_view identifier) noexcept;
+    /// \brief The server end of a pending connection with the identities attached to it
+    struct AcceptedConnection
+    {
+        std::int32_t fd;
+        std::uint32_t connection_id;  ///< unique per connection incarnation (the node)
+        std::uint32_t consumer_id;    ///< capability identity given at registration of the connecting consumer
+    };
 
+    /// \return the server end of a pending connection
+    score::cpp::expected<AcceptedConnection, score::os::Error> Accept(std::string_view identifier) noexcept;
+
+    /// \param consumer_id the consumer id the connecting client was registered with
     /// \return the client end of a new connection, ECONNREFUSED if nobody listens on the identifier
-    score::cpp::expected<std::int32_t, score::os::Error> Connect(std::string_view identifier) noexcept;
+    score::cpp::expected<std::int32_t, score::os::Error> Connect(std::string_view identifier,
+                                                                 std::uint32_t consumer_id = 0U) noexcept;
 
     /// \brief Queues the server end of a connection that arrived through the Connector protocol
     /// \return false if nobody listens on the identifier
-    bool Enqueue(std::string_view identifier, std::int32_t server_fd) noexcept;
+    bool Enqueue(std::string_view identifier, std::int32_t server_fd, std::uint32_t consumer_id = 0U) noexcept;
 
   private:
     class Service;
@@ -72,10 +82,11 @@ class FuchsiaConnectionRegistry
     {
         std::int32_t wake_write_fd;
         std::int32_t wake_read_fd;  // owned by the listening server
-        std::deque<std::int32_t> pending;
+        std::deque<AcceptedConnection> pending;
     };
 
     std::mutex mutex_;
+    std::uint32_t next_connection_id_{1U};
     std::map<std::string, Listener, std::less<>> listeners_;
     std::unique_ptr<Service> service_;
     ServiceStarter service_starter_;

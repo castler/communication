@@ -107,7 +107,7 @@ class FuchsiaConnectionRegistry::Service final : public fidl::Server<Connector>
             completer.Reply(fit::error(score_messagepassing::ConnectError::kNotFound));
             return;
         }
-        if (!registry_.Enqueue(request.identifier(), fd.value()))
+        if (!registry_.Enqueue(request.identifier(), fd.value(), request.consumer_id()))
         {
             std::ignore = ::close(fd.value());
             completer.Reply(fit::error(score_messagepassing::ConnectError::kNotFound));
@@ -174,15 +174,15 @@ void FuchsiaConnectionRegistry::StopListening(const std::string_view identifier)
     {
         return;
     }
-    for (const auto fd : found->second.pending)
+    for (const auto& pending : found->second.pending)
     {
-        std::ignore = ::close(fd);
+        std::ignore = ::close(pending.fd);
     }
     std::ignore = ::close(found->second.wake_write_fd);
     listeners_.erase(found);
 }
 
-score::cpp::expected<std::int32_t, score::os::Error> FuchsiaConnectionRegistry::Accept(
+score::cpp::expected<FuchsiaConnectionRegistry::AcceptedConnection, score::os::Error> FuchsiaConnectionRegistry::Accept(
     const std::string_view identifier) noexcept
 {
     std::lock_guard<std::mutex> guard{mutex_};
@@ -193,12 +193,14 @@ score::cpp::expected<std::int32_t, score::os::Error> FuchsiaConnectionRegistry::
     }
     std::uint8_t token{};
     std::ignore = ::read(found->second.wake_read_fd, &token, sizeof(token));
-    const std::int32_t fd = found->second.pending.front();
+    const AcceptedConnection accepted = found->second.pending.front();
     found->second.pending.pop_front();
-    return fd;
+    return accepted;
 }
 
-bool FuchsiaConnectionRegistry::Enqueue(const std::string_view identifier, const std::int32_t server_fd) noexcept
+bool FuchsiaConnectionRegistry::Enqueue(const std::string_view identifier,
+                                        const std::int32_t server_fd,
+                                        const std::uint32_t consumer_id) noexcept
 {
     std::lock_guard<std::mutex> guard{mutex_};
     const auto found = listeners_.find(identifier);
@@ -206,14 +208,15 @@ bool FuchsiaConnectionRegistry::Enqueue(const std::string_view identifier, const
     {
         return false;
     }
-    found->second.pending.push_back(server_fd);
+    found->second.pending.push_back({server_fd, next_connection_id_++, consumer_id});
     const std::uint8_t token{1U};
     std::ignore = ::write(found->second.wake_write_fd, &token, sizeof(token));
     return true;
 }
 
 score::cpp::expected<std::int32_t, score::os::Error> FuchsiaConnectionRegistry::Connect(
-    const std::string_view identifier) noexcept
+    const std::string_view identifier,
+    const std::uint32_t consumer_id) noexcept
 {
     zx::socket client_end;
     zx::socket server_end;
@@ -234,7 +237,7 @@ score::cpp::expected<std::int32_t, score::os::Error> FuchsiaConnectionRegistry::
         {
             return score::cpp::make_unexpected(server_fd.error());
         }
-        if (!Enqueue(identifier, server_fd.value()))
+        if (!Enqueue(identifier, server_fd.value(), consumer_id))
         {
             std::ignore = ::close(server_fd.value());
             return score::cpp::make_unexpected(score::os::Error::createFromErrno(ECONNREFUSED));
@@ -248,7 +251,8 @@ score::cpp::expected<std::int32_t, score::os::Error> FuchsiaConnectionRegistry::
         return score::cpp::make_unexpected(score::os::Error::createFromErrno(ECONNREFUSED));
     }
     fidl::SyncClient<Connector> connector{std::move(connector_end.value())};
-    auto result = connector->Connect({{.identifier = std::string{identifier}, .socket = std::move(server_end)}});
+    auto result = connector->Connect(
+        {{.identifier = std::string{identifier}, .socket = std::move(server_end), .consumer_id = consumer_id}});
     if (result.is_error())
     {
         return score::cpp::make_unexpected(score::os::Error::createFromErrno(ECONNREFUSED));

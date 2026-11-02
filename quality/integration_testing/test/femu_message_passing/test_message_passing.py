@@ -15,6 +15,7 @@
 def test_message_passing_echo_on_fuchsia(target):
     result = target.run_test_component("message_passing_echo_test#meta/echo_test.cm")
     assert "echo OK" in result.output, result.output
+    assert "identities OK" in result.output, result.output
     assert result.returncode == 0, result.output
 
 

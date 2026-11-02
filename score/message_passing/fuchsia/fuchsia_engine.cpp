@@ -104,8 +104,11 @@ score::cpp::expected<std::size_t, score::os::Error> ReadAll(const std::int32_t f
 
 }  // namespace
 
-FuchsiaEngine::FuchsiaEngine(score::cpp::pmr::memory_resource* memory_resource, LoggingCallback logger) noexcept
+FuchsiaEngine::FuchsiaEngine(score::cpp::pmr::memory_resource* memory_resource,
+                             LoggingCallback logger,
+                             const std::uint32_t consumer_id) noexcept
     : memory_resource_{memory_resource},
+      consumer_id_{consumer_id},
       os_resources_{GetDefaultOsResources(memory_resource)},
       logger_{std::move(logger)},
       quit_flag_{false},
@@ -138,7 +141,7 @@ FuchsiaEngine::~FuchsiaEngine() noexcept
 score::cpp::expected<std::int32_t, score::os::Error> FuchsiaEngine::TryOpenClientConnection(
     std::string_view identifier) noexcept
 {
-    return detail::FuchsiaConnectionRegistry::Instance().Connect(identifier);
+    return detail::FuchsiaConnectionRegistry::Instance().Connect(identifier, consumer_id_);
 }
 
 void FuchsiaEngine::CloseClientConnection(std::int32_t client_fd) noexcept

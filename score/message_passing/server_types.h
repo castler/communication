@@ -43,7 +43,7 @@ using MessageCallback = score::cpp::callback<score::cpp::expected_blank<score::o
 
 /// \brief Opaque identity of the peer of a server connection.
 /// \details On Linux/QNX it wraps the OS credentials (pid, uid, gid) of the peer. On Fuchsia, where channels carry no
-/// credentials, it wraps the per-consumer id of the endpoint the connection arrived on.
+/// credentials, it carries the connection (node) id and the per-consumer (principal) id assigned at registration.
 class ClientIdentity
 {
   public:
@@ -56,10 +56,12 @@ class ClientIdentity
         return ClientIdentity{Kind::kCredentials, pid, uid, gid};
     }
 
-    /// \brief Identity derived from the endpoint (per-consumer id assigned at registration), used on Fuchsia.
-    static ClientIdentity FromEndpoint(const std::uint32_t consumer_id) noexcept
+    /// \brief Identity derived from the endpoint, used on Fuchsia.
+    /// \param connection_id identifies this connection incarnation (the node); differs for every new connection
+    /// \param consumer_id capability identity (the principal) assigned when the consumer registered
+    static ClientIdentity FromEndpoint(const std::uint32_t connection_id, const std::uint32_t consumer_id) noexcept
     {
-        return ClientIdentity{Kind::kEndpoint, static_cast<pid_t>(consumer_id), static_cast<uid_t>(consumer_id), 0};
+        return ClientIdentity{Kind::kEndpoint, static_cast<pid_t>(connection_id), static_cast<uid_t>(consumer_id), 0};
     }
 
     /// \brief Checks the identity against a configured list of allowed principals; no list means everybody is allowed.
@@ -73,7 +75,7 @@ class ClientIdentity
         return principal_ == allowed;
     }
 
-    /// \brief Key identifying the peer as a communication partner (pid on Linux/QNX, consumer id on Fuchsia).
+    /// \brief Key identifying the peer as a communication partner (pid on Linux/QNX, connection id on Fuchsia).
     NodeId GetNodeId() const noexcept
     {
         return node_;
@@ -101,7 +103,7 @@ class ClientIdentity
     {
         if (kind_ == Kind::kEndpoint)
         {
-            return "consumer=" + std::to_string(principal_);
+            return "connection=" + std::to_string(node_) + ", consumer=" + std::to_string(principal_);
         }
         return "pid=" + std::to_string(node_) + ", uid=" + std::to_string(principal_) +
                ", gid=" + std::to_string(group_);

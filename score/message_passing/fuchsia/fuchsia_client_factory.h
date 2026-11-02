@@ -24,7 +24,8 @@ class FuchsiaClientFactory final : public IClientFactory
 {
   public:
     explicit FuchsiaClientFactory(
-        score::cpp::pmr::memory_resource* const resource = score::cpp::pmr::get_default_resource()) noexcept;
+        score::cpp::pmr::memory_resource* const resource = score::cpp::pmr::get_default_resource(),
+        const std::uint32_t consumer_id = 0U) noexcept;
     explicit FuchsiaClientFactory(const std::shared_ptr<FuchsiaEngine> engine) noexcept;
     ~FuchsiaClientFactory() noexcept;
 

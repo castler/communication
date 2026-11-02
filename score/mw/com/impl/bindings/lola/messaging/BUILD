@@ -52,6 +52,7 @@ cc_library(
     tags = ["FFI"],
     visibility = ["//score/mw/com/impl/bindings/lola:__pkg__"],
     deps = [
+        "//score/message_passing:common_headers",
         "//score/mw/com/impl:scoped_event_receive_handler",
         "//score/mw/com/impl/bindings/lola:element_fq_id",
         "//score/mw/com/impl/bindings/lola:proxy_instance_identifier",

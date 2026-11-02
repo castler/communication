@@ -23,6 +23,8 @@
 #include "score/mw/com/impl/configuration/quality_type.h"
 #include "score/mw/com/impl/scoped_event_receive_handler.h"
 
+#include "score/message_passing/server_types.h"
+
 #include "score/language/safecpp/scoped_function/copyable_scoped_function.h"
 
 #include "score/result/result.h"
@@ -52,6 +54,12 @@ class IMessagePassingService
 
   public:
     using HandlerRegistrationNoType = std::uint32_t;
+
+    /// \brief Opaque identity of a communication partner node (pid on Linux/QNX).
+    using NodeId = message_passing::ClientIdentity::NodeId;
+
+    /// \brief Opaque identity of a principal used for permission checks (uid on Linux/QNX).
+    using PrincipalId = message_passing::ClientIdentity::PrincipalId;
 
     /// \brief Callback type to be invoked when either the first registration of an event-update-notification
     ///        occurs for the given event_id or the last event-update-notification has been withdrawn.
@@ -86,7 +94,7 @@ class IMessagePassingService
     ///        the new shared memory region and close all methods shared memory regions that were in the process that
     ///        restarted.
     using ServiceMethodSubscribedHandler = safecpp::CopyableScopedFunction<
-        score::Result<void>(ProxyInstanceIdentifier proxy_instance_identifier, uid_t proxy_uid, pid_t proxy_pid)>;
+        score::Result<void>(ProxyInstanceIdentifier proxy_instance_identifier, PrincipalId proxy_uid, NodeId proxy_pid)>;
 
     /// \brief Handler which will be called when the proxy process sends a message that it has unsubscribed from a
     /// service method.
@@ -120,7 +128,7 @@ class IMessagePassingService
     /// If the optional is empty, is indicates that any uid is allowed.
     /// If the optional is filled, then all allowed uids are listed in the set. An empty set indicates that no uids are
     /// allowed.
-    using AllowedConsumerUids = std::optional<std::set<uid_t>>;
+    using AllowedConsumerUids = message_passing::ClientIdentity::AllowedPrincipals;
 
     IMessagePassingService() noexcept = default;
 
@@ -150,7 +158,7 @@ class IMessagePassingService
     virtual HandlerRegistrationNoType RegisterEventNotification(const QualityType asil_level,
                                                                 const ElementFqId event_id,
                                                                 std::weak_ptr<ScopedEventReceiveHandler> callback,
-                                                                const pid_t target_node_id) noexcept = 0;
+                                                                const NodeId target_node_id) noexcept = 0;
 
     /// \brief Re-registers an event update notification handler for event _event_id_ in case target_node_id is a remote
     ///        pid.
@@ -170,7 +178,7 @@ class IMessagePassingService
     /// \param target_node_id node_id, where the event provider is located.
     virtual void ReregisterEventNotification(const QualityType asil_level,
                                              const ElementFqId event_id,
-                                             const pid_t target_node_id) noexcept = 0;
+                                             const NodeId target_node_id) noexcept = 0;
 
     /// \brief Unregister an event update notification callback, which has been registered with
     /// RegisterEventNotification()
@@ -181,7 +189,7 @@ class IMessagePassingService
     virtual void UnregisterEventNotification(const QualityType asil_level,
                                              const ElementFqId event_id,
                                              const HandlerRegistrationNoType registration_no,
-                                             const pid_t target_node_id) noexcept = 0;
+                                             const NodeId target_node_id) noexcept = 0;
 
     /// \brief Register a handler on Skeleton side which will be called when SubscribeServiceMethod is called by a
     /// Proxy.
@@ -255,7 +263,7 @@ class IMessagePassingService
         const QualityType asil_level,
         const ProxyMethodInstanceIdentifier proxy_method_instance_identifier,
         MethodCallHandler method_call_callback,
-        const uid_t allowed_proxy_uid) = 0;
+        const PrincipalId allowed_proxy_uid) = 0;
 
     /// \brief Notify given target_node_id about outdated_node_id being an old/not to be used node identifier.
     /// \details This is used by LoLa proxy instances during creation, when they detect, that they are re-starting
@@ -270,8 +278,8 @@ class IMessagePassingService
     /// \param outdated_node_id
     /// \param target_node_id
     virtual void NotifyOutdatedNodeId(const QualityType asil_level,
-                                      const pid_t outdated_node_id,
-                                      const pid_t target_node_id) noexcept = 0;
+                                      const NodeId outdated_node_id,
+                                      const NodeId target_node_id) noexcept = 0;
 
     /// \brief Registers a callback for event notification existence changes.
     /// \details This callback is invoked when the existence of event notification registrations changes:
@@ -312,7 +320,7 @@ class IMessagePassingService
     virtual Result<void> SubscribeServiceMethod(const QualityType asil_level,
                                                 const SkeletonInstanceIdentifier& skeleton_instance_identifier,
                                                 const ProxyInstanceIdentifier& proxy_instance_identifier,
-                                                const pid_t target_node_id) = 0;
+                                                const NodeId target_node_id) = 0;
 
     /// \brief Best-effort call made by a Proxy on destruction to notify the Skeleton that the proxy is being
     /// destroyed so that the Skeleton can clean up the proxy's shared memory region.
@@ -327,7 +335,7 @@ class IMessagePassingService
     virtual Result<void> UnsubscribeServiceMethod(const QualityType asil_level,
                                                   const SkeletonInstanceIdentifier& skeleton_instance_identifier,
                                                   const ProxyInstanceIdentifier& proxy_instance_identifier,
-                                                  const pid_t target_node_id) = 0;
+                                                  const NodeId target_node_id) = 0;
 
     /// \brief Blocking call which is called on Proxy side to trigger the Skeleton to process a method call. The
     /// callback registered with RegisterOnServiceMethodSubscribed will be called on the Skeleton side and a response
@@ -345,7 +353,7 @@ class IMessagePassingService
     virtual Result<void> CallMethod(const QualityType asil_level,
                                     const ProxyMethodInstanceIdentifier& proxy_method_instance_identifier,
                                     const std::size_t queue_position,
-                                    const pid_t target_node_id) = 0;
+                                    const NodeId target_node_id) = 0;
 
   private:
     /// \brief Unregister handler that was registered with RegisterOnServiceMethodSubscribedHandler

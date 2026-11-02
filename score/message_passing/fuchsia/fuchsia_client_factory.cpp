@@ -18,8 +18,10 @@
 namespace score::message_passing
 {
 
-FuchsiaClientFactory::FuchsiaClientFactory(score::cpp::pmr::memory_resource* const resource) noexcept
-    : FuchsiaClientFactory{score::cpp::pmr::make_shared<FuchsiaEngine>(resource, resource)}
+FuchsiaClientFactory::FuchsiaClientFactory(score::cpp::pmr::memory_resource* const resource,
+                                           const std::uint32_t consumer_id) noexcept
+    : FuchsiaClientFactory{
+          score::cpp::pmr::make_shared<FuchsiaEngine>(resource, resource, GetCerrLogger(), consumer_id)}
 {
 }
 
