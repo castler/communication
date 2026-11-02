@@ -24,9 +24,11 @@
 #include "score/os/unistd.h"
 
 #include <array>
+#include <map>
 #include <mutex>
 #include <string_view>
 #include <thread>
+#include <vector>
 
 #include <poll.h>
 
@@ -90,6 +92,8 @@ class FuchsiaEngine final : public ISharedResourceEngine
     // this call is blocking
     void CleanUpOwner(const void* const owner) noexcept override;
 
+    // Never blocks and is safe to call concurrently. A frame is either accepted as a whole or rejected with EAGAIN
+    // when the bounded per-connection queue of a slow peer is full; the connection stays open and frame-aligned.
     score::cpp::expected_blank<score::os::Error> SendProtocolMessage(
         const std::int32_t fd,
         std::uint8_t code,
@@ -116,6 +120,18 @@ class FuchsiaEngine final : public ISharedResourceEngine
         const void* owner;
     };
 
+    struct SendQueue
+    {
+        std::vector<std::uint8_t> bytes;
+        std::size_t head{0U};
+    };
+
+    // upper bound of unsent bytes per connection; must exceed the largest frame (3 + 65535 bytes)
+    static constexpr std::size_t kMaxPendingBytes{128U * 1024U};
+
+    void DiscardSendQueue(const std::int32_t fd) noexcept;
+    void FlushSendQueue(const std::int32_t fd, const bool failed) noexcept;
+    void CollectPendingSendFds(score::cpp::pmr::vector<pollfd>& fds) noexcept;
     void UnpollEndpoint(const std::size_t index) noexcept;
     void SendPipeEvent(PipeEvent pipe_event) noexcept;
     void ProcessPipeEvent() noexcept;
@@ -137,6 +153,10 @@ class FuchsiaEngine final : public ISharedResourceEngine
     // identified by a null endpoint and parked on the write end of the wake-up pipe, which never becomes ready.
     score::cpp::pmr::vector<pollfd> poll_fds_;
     score::cpp::pmr::vector<PosixEndpointEntry*> poll_endpoints_;
+    score::cpp::pmr::vector<pollfd> poll_scratch_;
+
+    std::mutex send_mutex_;
+    std::map<std::int32_t, SendQueue> send_queues_;
 
     detail::TimedCommandQueue timer_queue_;
     score::containers::intrusive_list<PosixEndpointEntry> posix_endpoint_list_;

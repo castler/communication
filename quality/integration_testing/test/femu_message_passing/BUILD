@@ -20,5 +20,6 @@ femu_integration_test(
         "//score/message_passing/fuchsia:connection_registry_test_pkg",
         "//score/message_passing/fuchsia:cross_component_echo_test_pkg",
         "//score/message_passing/fuchsia:echo_test_pkg",
+        "//score/message_passing/fuchsia:stalled_reader_test_pkg",
     ],
 )
