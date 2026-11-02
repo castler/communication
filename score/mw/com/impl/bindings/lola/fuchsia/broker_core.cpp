@@ -52,6 +52,27 @@ BrokerStatus BrokerCore::BeginIncarnation(const InstanceKey& key, Epoch& epoch, 
     return BrokerStatus::kOk;
 }
 
+BrokerStatus BrokerCore::AdoptIncarnation(const InstanceKey& key, Epoch epoch, LeaseId& skeleton_lease)
+{
+    auto& instance = instances_[key];
+    for (const auto& entry : instance.incarnations)
+    {
+        if (entry.second.state != State::kFenced || entry.first == epoch)
+        {
+            return BrokerStatus::kAlreadyProvisioned;
+        }
+    }
+    if (epoch == 0U || epoch == UINT64_MAX)
+    {
+        return BrokerStatus::kStaleEpoch;
+    }
+    instance.last_epoch = std::max(instance.last_epoch, epoch);
+    skeleton_lease = next_lease_++;
+    instance.incarnations[epoch] = Incarnation{State::kActive, skeleton_lease, 0U};
+    leases_[skeleton_lease] = LeaseInfo{LeaseKind::kSkeleton, key, epoch};
+    return BrokerStatus::kOk;
+}
+
 BrokerStatus BrokerCore::Publish(const InstanceKey& key, Epoch epoch)
 {
     const auto instance = instances_.find(key);

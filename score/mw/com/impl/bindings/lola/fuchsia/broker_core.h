@@ -111,6 +111,10 @@ class BrokerCore
 
     /// \brief Allocates epoch = max(last + 1, clock) and a skeleton lease; the incarnation is PROVISIONING.
     BrokerStatus BeginIncarnation(const InstanceKey& instance, Epoch& epoch, LeaseId& skeleton_lease);
+    /// \brief Broker restart: a live skeleton re-announces its incarnation `epoch` (allocated by the previous broker).
+    ///        The incarnation becomes ACTIVE at once; `last_epoch` is raised so later epochs stay greater. Refused with
+    ///        kAlreadyProvisioned while the instance has a live incarnation. The caller has verified the regions.
+    BrokerStatus AdoptIncarnation(const InstanceKey& instance, Epoch epoch, LeaseId& skeleton_lease);
     /// \brief PROVISIONING -> ACTIVE. The caller has verified the regions.
     BrokerStatus Publish(const InstanceKey& instance, Epoch epoch);
     /// \brief Orderly StopOffer. Idempotent; a stale epoch is ignored.

@@ -38,8 +38,8 @@ namespace score::mw::com::impl::lola::fuchsia
 ///          handle by itself), and on skeleton loss writes the tombstone into the control header and signals every
 ///          proxy's `fenced` eventpair, then releases the VMOs once no proxy lease pins the incarnation any more.
 ///
-///          Single threaded: everything (handlers, waits, tasks) runs on `dispatcher`. Broker restart is not
-///          implemented: the state is soft, a restarted broker is empty (t03 4.6, "re-announce" is future work).
+///          Single threaded: everything (handlers, waits, tasks) runs on `dispatcher`. The state is soft: a restarted
+///          broker is empty and live skeletons re-announce (Reannounce) their incarnation, proxies register again.
 class BrokerService final : public fidl::Server<score_mw_com::Broker>
 {
   public:
@@ -60,6 +60,7 @@ class BrokerService final : public fidl::Server<score_mw_com::Broker>
     void Resign(ResignRequest& request, ResignCompleter::Sync& completer) override;
     void RegisterProxy(RegisterProxyRequest& request, RegisterProxyCompleter::Sync& completer) override;
     void ReleaseLease(ReleaseLeaseRequest& request, ReleaseLeaseCompleter::Sync& completer) override;
+    void Reannounce(ReannounceRequest& request, ReannounceCompleter::Sync& completer) override;
     void Inspect(InspectRequest& request, InspectCompleter::Sync& completer) override;
 
   private:
@@ -77,10 +78,16 @@ class BrokerService final : public fidl::Server<score_mw_com::Broker>
         zx_vaddr_t control_mapping{0U};
         std::size_t control_size{0U};
         std::uint64_t control_header_offset{0U};
-        std::vector<zx::eventpair> fenced;
+        std::map<LeaseId, zx::eventpair> fenced;
     };
     using RetainedKey = std::pair<InstanceKey, Epoch>;
 
+    static bool VerifyRegions(zx::vmo& data,
+                              zx::vmo& control,
+                              std::uint64_t data_offset,
+                              std::uint64_t control_offset,
+                              Epoch epoch,
+                              Retained& retained);
     void StartWatch(LeaseId lease, LeaseKind kind, zx::eventpair liveness, zx::process process);
     void OnHolderGone(LeaseId lease, LeaseKind kind, BrokerFenceReason reason);
     void OnFence(const InstanceKey& key, Epoch epoch, BrokerFenceReason reason);
@@ -92,6 +99,7 @@ class BrokerService final : public fidl::Server<score_mw_com::Broker>
     fidl::ServerBindingGroup<score_mw_com::Broker> bindings_;
     std::map<LeaseId, std::unique_ptr<Watch>> watches_;
     std::map<RetainedKey, Retained> retained_;
+    std::map<LeaseId, RetainedKey> proxy_incarnation_;
     std::function<void(LeaseId, LeaseKind)> lease_end_observer_;
 };
 

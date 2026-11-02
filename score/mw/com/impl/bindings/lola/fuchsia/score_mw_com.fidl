@@ -215,6 +215,22 @@ closed protocol Broker {
     strict ReleaseLease(struct {
         proxy_lease uint64;
     }) -> ();
+    /// Broker restart (state is soft): a live skeleton re-announces the incarnation `epoch` it got from the previous
+    /// broker, with its still valid regions and fresh liveness/process handles. The broker verifies the headers and
+    /// adopts the incarnation as ACTIVE; proxies then register again with RegisterProxy. Refused with
+    /// ALREADY_PROVISIONED if the instance already has a live incarnation.
+    strict Reannounce(resource struct {
+        instance ServiceInstanceId;
+        epoch uint64;
+        data zx.Handle:<VMO, zx.Rights.READ | zx.Rights.MAP | zx.Rights.GET_PROPERTY>;
+        control zx.Handle:<VMO, zx.Rights.READ | zx.Rights.WRITE | zx.Rights.MAP | zx.Rights.GET_PROPERTY>;
+        data_header_offset uint64;
+        control_header_offset uint64;
+        liveness zx.Handle:<EVENTPAIR, zx.Rights.WAIT>;
+        process zx.Handle:<PROCESS, zx.Rights.WAIT, optional>;
+    }) -> (struct {
+        skeleton_lease uint64;
+    }) error BrokerError;
     strict Inspect(struct {
         instance ServiceInstanceId;
     }) -> (struct {
