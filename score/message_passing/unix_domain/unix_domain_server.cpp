@@ -243,7 +243,7 @@ void UnixDomainServer::ProcessConnect() noexcept
     const std::int32_t data_fd = socket->accept(server_fd_, nullptr, nullptr).value();
 #ifdef __QNX__
     // no support for SO_PEERCRED on QNX
-    ClientIdentity identity{0, 0, 0};
+    const auto identity = ClientIdentity::FromCredentials(0, 0, 0);
 #else
     ucred cr{};
     socklen_t cr_len = sizeof(cr);
@@ -254,7 +254,7 @@ void UnixDomainServer::ProcessConnect() noexcept
         return;
     }
 
-    ClientIdentity identity{cr.pid, cr.uid, cr.gid};
+    const auto identity = ClientIdentity::FromCredentials(cr.pid, cr.uid, cr.gid);
 #endif
     auto connection =
         score::cpp::pmr::make_unique<ServerConnection>(engine_->GetMemoryResource(), *this, data_fd, identity);

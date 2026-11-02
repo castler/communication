@@ -374,7 +374,7 @@ std::int32_t QnxDispatchServer::ProcessConnect(resmgr_context_t* const ctp, io_o
         return EINVAL;
     }
     LogInfo(logger, "Incoming connection, uid=", cinfo.cred.euid, ", pid=", ctp->info.pid);
-    ClientIdentity identity{ctp->info.pid, cinfo.cred.euid, cinfo.cred.egid};
+    const auto identity = ClientIdentity::FromCredentials(ctp->info.pid, cinfo.cred.euid, cinfo.cred.egid);
     // here, we need to provide server directly as an argument
     auto connection = score::cpp::pmr::make_unique<ServerConnection>(engine_->GetMemoryResource(), identity, *this);
 
