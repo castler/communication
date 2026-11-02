@@ -66,6 +66,7 @@ jobs:
         # All Fuchsia targets are tagged "manual", so wildcards would not match them and they are listed explicitly.
         run: >
           bazel build --config=ci --config=fuchsia --
+          //quality/integration_testing/test/femu_fuchsia_attach:fuchsia_attach_itf_test
           //score/message_passing/fuchsia:connection_registry_test_pkg
           //score/message_passing/fuchsia:cross_component_echo_test_pkg
           //score/message_passing/fuchsia:echo_test_pkg
@@ -77,6 +78,7 @@ jobs:
         id: run-tests
         run: >
           bazel test --config=ci --config=fuchsia --flaky_test_attempts=2 --test_output=errors --
+          //quality/integration_testing/test/femu_fuchsia_attach:fuchsia_attach_itf_test
           //quality/integration_testing/test/femu_hello_world:hello_world_itf_test
           //quality/integration_testing/test/femu_message_passing:message_passing_itf_test
 

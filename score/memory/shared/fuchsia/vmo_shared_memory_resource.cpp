@@ -260,6 +260,20 @@ auto VmoSharedMemoryResource::DuplicateTransferHandle() const noexcept
     return duplicate;
 }
 
+auto VmoSharedMemoryResource::DuplicatePublishHandle(const bool consumer_writable) const noexcept
+    -> score::cpp::expected<zx::vmo, score::os::Error>
+{
+    zx::vmo duplicate;
+    const zx_rights_t rights =
+        kTransferRights | ZX_RIGHT_DUPLICATE | (consumer_writable ? static_cast<zx_rights_t>(ZX_RIGHT_WRITE) : 0U);
+    const zx_status_t status = vmo_.duplicate(rights, &duplicate);
+    if (status != ZX_OK)
+    {
+        return score::cpp::make_unexpected(ErrorFromStatus(status));
+    }
+    return duplicate;
+}
+
 auto VmoSharedMemoryResource::do_allocate(const std::size_t bytes, const std::size_t alignment) -> void*
 {
     if (!writable_)

@@ -38,9 +38,10 @@ class IVmoHandleProvider
     /// \return ENOENT if no such region is known (yet).
     virtual score::cpp::expected<zx::vmo, score::os::Error> Acquire(const std::string& key) noexcept = 0;
 
-    /// \brief Skeleton side: offers the consumer handle (reduced rights plus TRANSFER so it can be sent, see
-    ///        VmoSharedMemoryResource::kTransferRights) of a freshly
-    ///        created region. Ownership moves to the provider.
+    /// \brief Skeleton side: offers the consumer handle of a freshly created region (reduced rights plus TRANSFER so it
+    ///        can be sent, plus DUPLICATE so the provider can hand out one duplicate per consumer, see
+    ///        VmoSharedMemoryResource::DuplicatePublishHandle; the provider must not let DUPLICATE leave the process).
+    ///        Ownership moves to the provider.
     virtual score::cpp::expected_blank<score::os::Error> Publish(const std::string& key,
                                                                  zx::vmo consumer_handle) noexcept = 0;
 

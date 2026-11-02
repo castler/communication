@@ -1,0 +1,24 @@
+{
+    include: [ "syslog/client.shard.cml" ],
+
+    program: {
+        runner: "elf",
+        binary: "bin/skeleton_main",
+        forward_stderr_to: "log",
+        forward_stdout_to: "log",
+    },
+
+    // The only Endpoint that exists is the one of application 4002.
+    capabilities: [
+        { protocol: "score.mw.com.Endpoint.for_app_4002" },
+    ],
+    use: [
+        { protocol: "score.mw.com.ServiceRegistry" },
+    ],
+    expose: [
+        {
+            protocol: "score.mw.com.Endpoint.for_app_4002",
+            from: "self",
+        },
+    ],
+}

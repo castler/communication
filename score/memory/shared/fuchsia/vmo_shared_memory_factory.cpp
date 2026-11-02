@@ -24,8 +24,13 @@
 namespace score::memory::shared::fuchsia
 {
 
-VmoSharedMemoryFactory::VmoSharedMemoryFactory(std::shared_ptr<IVmoHandleProvider> handle_provider) noexcept
-    : ISharedMemoryFactory{}, handle_provider_{std::move(handle_provider)}, mutex_{}, resources_{}
+VmoSharedMemoryFactory::VmoSharedMemoryFactory(std::shared_ptr<IVmoHandleProvider> handle_provider,
+                                               ConsumerWritablePredicate consumer_writable) noexcept
+    : ISharedMemoryFactory{},
+      handle_provider_{std::move(handle_provider)},
+      consumer_writable_{std::move(consumer_writable)},
+      mutex_{},
+      resources_{}
 {
 }
 
@@ -68,7 +73,8 @@ auto VmoSharedMemoryFactory::CreateImpl(const std::string& key,
     }
     if (handle_provider_ != nullptr)
     {
-        auto consumer_handle = resource.value()->DuplicateTransferHandle();
+        const bool writable = (consumer_writable_ != nullptr) && consumer_writable_(key);
+        auto consumer_handle = resource.value()->DuplicatePublishHandle(writable);
         if (!consumer_handle.has_value() ||
             !handle_provider_->Publish(key, std::move(consumer_handle).value()).has_value())
         {

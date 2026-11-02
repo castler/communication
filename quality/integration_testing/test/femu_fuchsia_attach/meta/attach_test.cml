@@ -1,0 +1,82 @@
+{
+    include: [
+        "sys/testing/elf_test_runner.shard.cml",
+        "syslog/client.shard.cml",
+    ],
+
+    program: {
+        binary: "bin/attach_test",
+    },
+
+    children: [
+        {
+            name: "discovery",
+            url: "#meta/discovery.cm",
+        },
+        {
+            name: "skeleton",
+            url: "#meta/skeleton.cm",
+            startup: "eager",
+        },
+        {
+            name: "proxy",
+            url: "#meta/proxy.cm",
+        },
+        {
+            name: "rogue",
+            url: "#meta/rogue.cm",
+        },
+    ],
+    offer: [
+        {
+            protocol: "fuchsia.logger.LogSink",
+            from: "parent",
+            to: [
+                "#discovery",
+                "#proxy",
+                "#rogue",
+                "#skeleton",
+            ],
+        },
+
+        // Skeleton application 1000 may offer, consumers 4002 and 4003 get their own discovery capability.
+        {
+            protocol: "score.mw.com.registry.for_app_1000",
+            from: "#discovery",
+            to: "#skeleton",
+            as: "score.mw.com.ServiceRegistry",
+        },
+        {
+            protocol: "score.mw.com.discovery.for_app_4002",
+            from: "#discovery",
+            to: "#proxy",
+            as: "score.mw.com.ServiceDiscovery",
+        },
+        {
+            protocol: "score.mw.com.discovery.for_app_4003",
+            from: "#discovery",
+            to: "#rogue",
+            as: "score.mw.com.ServiceDiscovery",
+        },
+
+        // The endpoint of the skeleton for application 4002 is routed to the proxy only.
+        {
+            protocol: "score.mw.com.Endpoint.for_app_4002",
+            from: "#skeleton",
+            to: "#proxy",
+            as: "score.mw.com.Endpoint",
+        },
+    ],
+    use: [
+        {
+            protocol: "score.mw.com.test.Probe",
+            from: "#proxy",
+            path: "/svc/probe_proxy",
+        },
+        {
+            protocol: "score.mw.com.test.Probe",
+            from: "#rogue",
+            path: "/svc/probe_rogue",
+        },
+    ],
+}

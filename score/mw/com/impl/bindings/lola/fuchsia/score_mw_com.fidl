@@ -1,0 +1,131 @@
+// Copyright (c) 2026 Contributors to the Eclipse Foundation
+//
+// See the NOTICE file(s) distributed with this work for additional
+// information regarding copyright ownership.
+//
+// This program and the accompanying materials are made available under the
+// terms of the Apache License Version 2.0 which is available at
+// https://www.apache.org/licenses/LICENSE-2.0
+//
+// SPDX-License-Identifier: Apache-2.0
+
+// Attach and service discovery of LoLa on Fuchsia, see design/fuchsia/README.md section 6.3.
+//
+// Discovery carries information only (what is offered, in which epoch), never handles. Access is capability routing:
+// every allowed consumer reaches a skeleton through its own routed `Endpoint` capability, the skeleton derives the
+// consumer identity from the endpoint the connection arrived on.
+library score.mw.com;
+
+using zx;
+
+type ServiceInstanceId = struct {
+    service_id uint64;
+    instance_id uint32;
+    major_version uint8;
+    minor_version uint8;
+};
+
+type Quality = flexible enum : uint8 {
+    QM = 1;
+    ASIL_B = 2;
+};
+
+/// Absent fields are wildcards.
+type InstanceFilter = table {
+    1: service_id uint64;
+    2: instance_id uint32;
+    3: major_version uint8;
+    4: minor_version uint8;
+    5: quality Quality;
+};
+
+type OfferedInstance = struct {
+    id ServiceInstanceId;
+    quality Quality;
+    /// Incarnation of the skeleton, compare with `Endpoint.Attach().epoch`.
+    epoch uint64;
+};
+
+const MAX_INSTANCES uint32 = 256;
+const MAX_LAYOUT_SIZE uint32 = 4096;
+
+type OfferError = flexible enum : uint32 {
+    NOT_CONFIGURED = 1;
+    ALREADY_OFFERED = 2;
+};
+
+type AttachError = flexible enum : uint32 {
+    NOT_FOUND = 1;
+    NOT_ALLOWED = 2;
+    INCOMPATIBLE_VERSION = 3;
+};
+
+/// Skeleton -> discovery, one renamed capability per skeleton. Closing the channel (also on crash) withdraws every
+/// offer of that skeleton.
+@discoverable(name="score.mw.com.ServiceRegistry")
+closed protocol ServiceRegistry {
+    strict Offer(struct {
+        id ServiceInstanceId;
+        quality Quality;
+        epoch uint64;
+    }) -> () error OfferError;
+    strict StopOffer(struct {
+        id ServiceInstanceId;
+        quality Quality;
+    }) -> ();
+};
+
+/// Proxy -> discovery, one renamed capability per consumer. Answers only contain instances the caller may use.
+@discoverable(name="score.mw.com.ServiceDiscovery")
+closed protocol ServiceDiscovery {
+    /// Snapshot of the currently offered instances matching `filter`.
+    strict Find(struct {
+        filter InstanceFilter;
+    }) -> (struct {
+        instances vector<OfferedInstance>:MAX_INSTANCES;
+    });
+    /// Cancelling the search is closing `search`.
+    strict StartFind(resource struct {
+        filter InstanceFilter;
+        search server_end:Search;
+    });
+};
+
+closed protocol Search {
+    /// Hanging get. The first call returns the current snapshot at once, later calls return when the set or any epoch
+    /// changed against the last reply. A second call while one is outstanding closes the channel.
+    strict Watch() -> (struct {
+        instances vector<OfferedInstance>:MAX_INSTANCES;
+    });
+};
+
+/// Served by a skeleton at one path per allowed consumer and routed with `as` to a constant name. The consumer is
+/// identified by the endpoint only, there is deliberately no application id in the request.
+/// Typed markers (`compose score.mw.com.Endpoint`) are generated per service type, see realm_generator.
+closed protocol Endpoint {
+    /// `events` is served by the skeleton (it sends the events), the proxy keeps the client end.
+    strict Attach(resource struct {
+        events server_end:EventChannel;
+    }) -> (resource struct {
+        data_vmo zx.Handle:<VMO, zx.Rights.READ | zx.Rights.MAP | zx.Rights.GET_PROPERTY>;
+        control_vmo zx.Handle:<VMO, zx.Rights.READ | zx.Rights.WRITE | zx.Rights.MAP | zx.Rights.GET_PROPERTY>;
+        layout vector<uint8>:MAX_LAYOUT_SIZE;
+        /// Copy of the epoch in the data VMO header, for the mismatch check against discovery.
+        epoch uint64;
+        /// Derived by the skeleton from the endpoint, not supplied by the caller.
+        application_id uint64;
+        /// Peer-closed means the skeleton is gone.
+        liveness zx.Handle:<EVENTPAIR, zx.Rights.WAIT>;
+    }) error AttachError;
+};
+
+closed protocol EventChannel {
+    strict -> OnEvent(struct {
+        element_index uint32;
+        slot uint32;
+        sequence uint64;
+    });
+    strict -> OnSkeletonRestart(struct {
+        epoch uint64;
+    });
+};
