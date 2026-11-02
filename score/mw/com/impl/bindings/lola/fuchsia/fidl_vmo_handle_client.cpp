@@ -44,6 +44,10 @@ int ErrnoFor(const score_mw_com::AttachError error) noexcept
     {
         return EACCES;
     }
+    if (error == score_mw_com::AttachError::kInsufficientIntegrity)
+    {
+        return EPERM;
+    }
     if (error == score_mw_com::AttachError::kIncompatibleVersion)
     {
         return EPROTO;

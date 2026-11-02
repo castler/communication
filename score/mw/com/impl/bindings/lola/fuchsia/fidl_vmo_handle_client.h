@@ -35,6 +35,7 @@ namespace score::mw::com::impl::lola::fuchsia
 /// \details The first Acquire() performs the (blocking) Attach call, the data and the control handle arrive together
 ///          and are cached; each handle is handed out once. The proxy sends no identity, the skeleton derives it from
 ///          the endpoint. Errors are mapped to errno values: ENOENT NOT_FOUND / no such role, EACCES NOT_ALLOWED,
+///          EPERM INSUFFICIENT_INTEGRITY (no handle at all is delivered),
 ///          EPROTO INCOMPATIBLE_VERSION, ECONNRESET the channel is closed (skeleton gone *or* the endpoint is not
 ///          routed to this component, which is indistinguishable by design, see README A.1).
 class FidlVmoHandleClient final : public score::memory::shared::fuchsia::IVmoHandleProvider

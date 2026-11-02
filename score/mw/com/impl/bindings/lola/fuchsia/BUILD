@@ -42,6 +42,24 @@ cc_library(
     deps = ["@fuchsia_sdk//pkg/zx"],
 )
 
+# Platform neutral, unit tested on the host.
+cc_library(
+    name = "integrity_policy",
+    hdrs = ["integrity_policy.h"],
+    features = COMPILER_WARNING_FEATURES,
+    visibility = ["//quality/integration_testing/test:__subpackages__"],
+)
+
+cc_test(
+    name = "integrity_policy_test",
+    srcs = ["integrity_policy_test.cpp"],
+    features = COMPILER_WARNING_FEATURES,
+    deps = [
+        ":integrity_policy",
+        "@googletest//:gtest_main",
+    ],
+)
+
 cc_library(
     name = "fidl_vmo_handle_server",
     srcs = ["fidl_vmo_handle_server.cpp"],
@@ -51,6 +69,7 @@ cc_library(
     target_compatible_with = ["@platforms//os:fuchsia"],
     visibility = ["//quality/integration_testing/test:__subpackages__"],
     deps = [
+        ":integrity_policy",
         ":score_mw_com_fidl_cpp",
         ":vmo_role",
         "//score/memory/shared/fuchsia:i_vmo_handle_provider",

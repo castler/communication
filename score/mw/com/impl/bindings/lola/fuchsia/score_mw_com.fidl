@@ -58,6 +58,10 @@ type AttachError = flexible enum : uint32 {
     NOT_FOUND = 1;
     NOT_ALLOWED = 2;
     INCOMPATIBLE_VERSION = 3;
+    /// The control regions are consumer-writable, so they are only handed to consumers whose integrity (configured by
+    /// the realm for the endpoint, never supplied by the caller) is at least the one of the service instance. Fail
+    /// closed: no handle is sent.
+    INSUFFICIENT_INTEGRITY = 4;
 };
 
 /// Skeleton -> discovery, one renamed capability per skeleton. Closing the channel (also on crash) withdraws every

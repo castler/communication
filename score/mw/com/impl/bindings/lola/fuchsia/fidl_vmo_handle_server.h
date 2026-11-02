@@ -14,6 +14,7 @@
 #define SCORE_MW_COM_IMPL_BINDINGS_LOLA_FUCHSIA_FIDL_VMO_HANDLE_SERVER_H
 
 #include "score/memory/shared/fuchsia/i_vmo_handle_provider.h"
+#include "score/mw/com/impl/bindings/lola/fuchsia/integrity_policy.h"
 #include "score/mw/com/impl/bindings/lola/fuchsia/vmo_role.h"
 
 #include <fidl/score.mw.com/cpp/fidl.h>
@@ -64,6 +65,12 @@ class FidlVmoHandleServer final : public score::memory::shared::fuchsia::IVmoHan
     /// \brief strict_permissions: when set, Attach on an endpoint of any other application id is refused with
     ///        NOT_ALLOWED (defence in depth against a mis-generated realm).
     void SetAllowedApplications(std::optional<std::set<std::uint64_t>> allowed) noexcept;
+
+    /// \brief Declared integrity of the consumer behind the endpoint of `application_id` (generated from the realm, like
+    ///        the application id). Attach hands the consumer-writable control regions only to consumers whose integrity
+    ///        is >= the one of the service (ASIL-B if an ASIL-B control region is published, else QM) and otherwise
+    ///        fails with INSUFFICIENT_INTEGRITY. Application ids that were never declared count as QM.
+    void SetConsumerIntegrity(const std::uint64_t application_id, const Integrity integrity) noexcept;
 
     /// \brief Handler to hand to OutgoingDirectory::AddProtocol for the endpoint of `application_id`.
     fidl::ProtocolHandler<score_mw_com::Endpoint> CreateHandler(const std::uint64_t application_id);
