@@ -1,0 +1,15 @@
+{
+    include: [
+        "sys/testing/elf_test_runner.shard.cml",
+        "syslog/client.shard.cml",
+    ],
+
+    program: {
+        binary: "bin/lock_test",
+    },
+
+    // fdio_spawn of the client processes
+    use: [
+        { protocol: "fuchsia.process.Launcher" },
+    ],
+}

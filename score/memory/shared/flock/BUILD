@@ -21,6 +21,7 @@ cc_library(
     hdrs = ["flock_mutex.h"],
     features = COMPILER_WARNING_FEATURES,
     implementation_deps = [
+        "//score/memory/shared/lock_provider",
         "@score_baselibs//score/mw/log:frontend",
         "@score_baselibs//score/os:fcntl",
     ],
