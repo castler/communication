@@ -17,6 +17,7 @@
 #include "score/mw/com/impl/bindings/lola/event_subscription_control.h"
 #include "score/mw/com/impl/bindings/lola/i_runtime.h"
 #include "score/mw/com/impl/bindings/lola/messaging/message_passing_service_mock.h"
+#include "score/mw/com/impl/bindings/lola/pid_incarnation_authority.h"
 #include "score/mw/com/impl/bindings/lola/provider_event_data_control_local_view.h"
 #include "score/mw/com/impl/bindings/lola/proxy.h"
 #include "score/mw/com/impl/bindings/lola/proxy_event.h"
@@ -199,6 +200,7 @@ class ProxyMockedMemoryFixture : public ::testing::Test
 
     std::shared_ptr<MessagePassingServiceMock> mock_service_{std::make_shared<MessagePassingServiceMock>()};
     ::testing::NiceMock<LolaRuntimeMock<std::shared_ptr>> binding_runtime_{false, mock_service_};
+    PidIncarnationAuthority incarnation_authority_{kDummyPid};
 
     std::unique_ptr<Proxy> proxy_{nullptr};
 

@@ -54,7 +54,7 @@ TransactionLogRollbackExecutor::TransactionLogRollbackExecutor(
     const QualityType asil_level,
     const message_passing::NodeId provider_node,
     const TransactionLogId transaction_log_id,
-    const RollbackAmbiguityPolicy ambiguity_policy) noexcept
+    const std::optional<RollbackAmbiguityPolicy> ambiguity_policy) noexcept
     : service_data_control_{service_data_control},
       asil_level_{asil_level},
       provider_node_{provider_node},
@@ -70,32 +70,44 @@ TransactionLogRollbackExecutor::TransactionLogRollbackExecutor(
 // throwing std::bad_optional_access which leds to std::terminate(). This suppression should be removed after fixing
 // [Ticket-173043](broken_link_j/Ticket-173043)
 // coverity[autosar_cpp14_a15_5_3_violation : FALSE]
-void TransactionLogRollbackExecutor::PrepareRollback(lola::IRuntime& lola_runtime) noexcept
+Result<void> TransactionLogRollbackExecutor::PrepareRollback(lola::IRuntime& lola_runtime) noexcept
 {
-    // Register the application's unique identifier (which is the transaction_log_id_ for this context) and
-    // current pid in the shared mapping.
-    const auto current_pid = lola_runtime.GetPid();
-    const auto previous_pid =
-        service_data_control_.application_id_pid_mapping_.RegisterPid(transaction_log_id_, current_pid);
-    if (!(previous_pid.has_value()))
-    {
-        score::mw::log::LogFatal("lola")
-            << "Couldn't Register current PID for UID within shared memory. This can occurr "
-               "if there is too high contention accessing the registry. Terminating.";
-        std::terminate();
-    }
+    // Make the current incarnation the owner of the application's unique identifier (which is the transaction_log_id_
+    // for this context) in the shared mapping.
+    const auto current_incarnation = lola_runtime.GetIncarnation();
+    const auto outcome = service_data_control_.application_id_pid_mapping_.Takeover(
+        transaction_log_id_, current_incarnation, lola_runtime.GetIncarnationAuthority());
 
-    if (previous_pid.value() != current_pid)
+    switch (outcome.result)
     {
-        // we found an old/outdated PID for our UID in the shared-memory of the service-instance. Notify provider, that
-        // this pid is outdated.
-        lola_runtime.GetLolaMessaging().NotifyOutdatedNodeId(asil_level_,
-                                                                  message_passing::NodeIdFromPid(previous_pid.value()),
-                                                                  provider_node_);
+        case TakeoverResult::kContended:
+            score::mw::log::LogFatal("lola")
+                << "Couldn't register current incarnation for application id within shared memory. This can occurr "
+                   "if there is too high contention accessing the registry. Terminating.";
+            std::terminate();
+        case TakeoverResult::kRefusedLive:
+            score::mw::log::LogError("lola") << "Previous incarnation" << outcome.previous.Raw()
+                                             << "of this application id is not known to be dead. Refusing takeover.";
+            return MakeUnexpected(ComErrc::kBindingFailure,
+                                  "Rolling back transaction log failed: previous incarnation is still alive.");
+        case TakeoverResult::kTookOver:
+            if (outcome.previous.IsValid() && (outcome.previous != current_incarnation))
+            {
+                // we found an old/outdated incarnation for our application id in the shared-memory of the
+                // service-instance. Notify provider, that this incarnation is outdated.
+                lola_runtime.GetLolaMessaging().NotifyOutdatedNodeId(
+                    asil_level_, outcome.previous.ToNodeId(), provider_node_);
+            }
+            break;
+        case TakeoverResult::kFresh:
+        case TakeoverResult::kSame:
+        default:
+            break;
     }
 
     // Mark all TransactionLogs for each event that correspond to transaction_log_id as needing to be rolled back.
     MarkTransactionLogsNeedRollback(service_data_control_, transaction_log_id_);
+    return {};
 }
 
 // Suppress "AUTOSAR C++14 A15-5-3" rule findings. This rule states: "The std::terminate() function shall not be called
@@ -119,8 +131,21 @@ Result<void> TransactionLogRollbackExecutor::RollbackTransactionLogs() noexcept
     // service_data_control_
     if (!mutex_existed)
     {
-        PrepareRollback(lola_runtime);
+        const auto prepare_result = PrepareRollback(lola_runtime);
+        if (!prepare_result.has_value())
+        {
+            return prepare_result;
+        }
     }
+
+    // Where a takeover requires the previous incarnation to be confirmed dead, ambiguous logs of that incarnation can
+    // be resolved safely; otherwise (Linux/QNX) they keep the log stuck as before.
+    const auto effective_policy =
+        ambiguity_policy_.has_value()
+            ? ambiguity_policy_.value()
+            : ((lola_runtime.GetIncarnationAuthority().GetTakeoverPolicy() == TakeoverPolicy::kRequireDead)
+                   ? RollbackAmbiguityPolicy::kQuarantine
+                   : RollbackAmbiguityPolicy::kFail);
 
     for (auto& element : service_data_control_.event_controls_)
     {
@@ -135,7 +160,7 @@ Result<void> TransactionLogRollbackExecutor::RollbackTransactionLogs() noexcept
             [&event_control](const TransactionLog::MaxSampleCountType subscription_max_sample_count) noexcept {
                 event_control.subscription_control.Unsubscribe(subscription_max_sample_count);
             },
-            ambiguity_policy_);
+            effective_policy);
         if (!rollback_result.has_value())
         {
             return rollback_result;

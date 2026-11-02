@@ -15,7 +15,8 @@
 
 #include "score/mw/com/impl/bindings/lola/application_id_pid_mapping.h"
 #include "score/mw/com/impl/bindings/lola/messaging/message_passing_service_mock.h"
-#include "score/mw/com/impl/bindings/lola/register_pid_fake.h"
+#include "score/mw/com/impl/bindings/lola/incarnation_authority_mock.h"
+#include "score/mw/com/impl/bindings/lola/pid_incarnation_authority.h"
 #include "score/mw/com/impl/bindings/lola/rollback_synchronization.h"
 #include "score/mw/com/impl/bindings/lola/runtime_mock.h"
 #include "score/mw/com/impl/bindings/lola/service_data_control.h"
@@ -68,7 +69,9 @@ class TransactionLogRollbackExecutorFixture : public ::testing::Test
     {
         ON_CALL(runtime_mock_guard_.runtime_mock_, GetBindingRuntime(BindingType::kLoLa))
             .WillByDefault(Return(&lola_runtime_mock_));
-        ON_CALL(lola_runtime_mock_, GetPid()).WillByDefault(Return(kDummyCurrentConsumerPid));
+        ON_CALL(lola_runtime_mock_, GetIncarnation())
+            .WillByDefault(Return(IncarnationId::FromPid(kDummyCurrentConsumerPid)));
+        ON_CALL(lola_runtime_mock_, GetIncarnationAuthority()).WillByDefault(ReturnRef(incarnation_authority_));
         ON_CALL(lola_runtime_mock_, GetLolaMessaging).WillByDefault(ReturnRef(message_passing_service_mock_));
         ON_CALL(lola_runtime_mock_, GetRollbackSynchronization()).WillByDefault(ReturnRef(rollback_synchronization_));
     }
@@ -148,6 +151,7 @@ class TransactionLogRollbackExecutorFixture : public ::testing::Test
 
     RuntimeMockGuard runtime_mock_guard_{};
     lola::RuntimeMock lola_runtime_mock_{};
+    PidIncarnationAuthority incarnation_authority_{kDummyCurrentConsumerPid};
     memory::shared::SharedMemoryResourceHeapAllocatorMock memory_resource_mock_{kMemoryResourceId};
     MessagePassingServiceMock message_passing_service_mock_{};
 
@@ -264,6 +268,46 @@ TEST_F(TransactionLogRollbackExecutorRollbackLogsFixture, TakesOverMappingOfPrev
                   .RegisterPid(static_cast<std::uint32_t>(kDummyTransactionLogId), 9999)
                   .value(),
               kDummyCurrentConsumerPid);
+}
+
+TEST_F(TransactionLogRollbackExecutorRollbackLogsFixture, RefusedTakeoverFromLivePreviousIncarnationFailsAndChangesNothing)
+{
+    WithTransactionLogRollbackExecutor();
+    ::testing::NiceMock<IncarnationAuthorityMock> authority{};
+    ON_CALL(authority, GetTakeoverPolicy()).WillByDefault(Return(TakeoverPolicy::kRequireDead));
+    ON_CALL(authority, Query(_)).WillByDefault(Return(Liveness::kAlive));
+    ON_CALL(lola_runtime_mock_, GetIncarnationAuthority()).WillByDefault(ReturnRef(authority));
+    AddApplicationIdPidMapping(static_cast<std::uint32_t>(kDummyTransactionLogId), kDummyOldConsumerPid);
+    auto& transaction_log_node = RegisterProxyElementWithTransactionLogSet(kDummyElementFqId, kDummyTransactionLogId);
+    EXPECT_CALL(message_passing_service_mock_, NotifyOutdatedNodeId(_, _, _)).Times(0);
+
+    const auto result = unit_->RollbackTransactionLogs();
+
+    ASSERT_FALSE(result.has_value());
+    EXPECT_EQ(result.error(), ComErrc::kBindingFailure);
+    EXPECT_TRUE(transaction_log_node.IsActive());
+    EXPECT_FALSE(transaction_log_node.NeedsRollback());
+}
+
+TEST_F(TransactionLogRollbackExecutorRollbackLogsFixture, ConfirmedDeadPreviousIncarnationSelectsQuarantineByDefault)
+{
+    WithTransactionLogRollbackExecutor();
+    ::testing::NiceMock<IncarnationAuthorityMock> authority{};
+    ON_CALL(authority, GetTakeoverPolicy()).WillByDefault(Return(TakeoverPolicy::kRequireDead));
+    ON_CALL(authority, Query(_)).WillByDefault(Return(Liveness::kDead));
+    ON_CALL(lola_runtime_mock_, GetIncarnationAuthority()).WillByDefault(ReturnRef(authority));
+    AddApplicationIdPidMapping(static_cast<std::uint32_t>(kDummyTransactionLogId), kDummyOldConsumerPid);
+    auto& transaction_log_node = RegisterProxyElementWithTransactionLogSet(kDummyElementFqId, kDummyTransactionLogId);
+    TransactionLogLocalView{transaction_log_node.GetTransactionLog()}.SubscribeTransactionBegin(kNumberOfSlots);
+    EXPECT_CALL(message_passing_service_mock_,
+                NotifyOutdatedNodeId(kDummyQualityType,
+                                     message_passing::NodeIdFromPid(kDummyOldConsumerPid),
+                                     message_passing::NodeIdFromPid(kDummyProviderPid)))
+        .Times(1);
+
+    // the log of the crashed subscribe, which is stuck with the kFail default on Linux, is resolved
+    EXPECT_TRUE(unit_->RollbackTransactionLogs().has_value());
+    EXPECT_FALSE(transaction_log_node.IsActive());
 }
 
 TEST_F(TransactionLogRollbackExecutorRollbackLogsFixture, QuarantinePolicyOfExecutorResolvesLogOfCrashedSubscribe)
@@ -548,7 +592,7 @@ TEST_F(TransactionLogRollbackRerunFixture, RestartedProxyTakesOverFromCrashedRol
     // when a second incarnation (new pid, new process-local RollbackSynchronization) runs the rollback
     constexpr pid_t kNextConsumerPid{156};
     RollbackSynchronization restarted_rollback_synchronization{};
-    ON_CALL(lola_runtime_mock_, GetPid()).WillByDefault(Return(kNextConsumerPid));
+    ON_CALL(lola_runtime_mock_, GetIncarnation()).WillByDefault(Return(IncarnationId::FromPid(kNextConsumerPid)));
     ON_CALL(lola_runtime_mock_, GetRollbackSynchronization())
         .WillByDefault(ReturnRef(restarted_rollback_synchronization));
     EXPECT_CALL(message_passing_service_mock_,
@@ -685,23 +729,23 @@ TEST_F(TransactionLogRollbackExecutorMarkNeedRollbackDeathTest, FailingToGetLola
     EXPECT_DEATH(std::ignore = unit_->RollbackTransactionLogs(), ".*");
 }
 
-TEST_F(TransactionLogRollbackExecutorMarkNeedRollbackDeathTest, FailingToRegisterPidTerminates)
+TEST_F(TransactionLogRollbackExecutorMarkNeedRollbackDeathTest, FailingToTakeOverApplicationIdTerminates)
 {
     WithTransactionLogRollbackExecutor();
 
-    // Given that RegisterPid will return an empty result when called
-    RegisterPidFake register_pid_fake{};
-    const std::optional<pid_t> empty_register_pid_result{};
-    register_pid_fake.InjectRegisterPidResult(empty_register_pid_result);
-    ApplicationIdPidMapping<score::memory::shared::PolymorphicOffsetPtrAllocator<ApplicationIdPidMappingEntry>>::
-        InjectRegisterPidFake(register_pid_fake);
+    // Given that the mapping has no free entry left for further application ids
+    std::uint32_t other_application_id{1000U};
+    while (service_data_control_->application_id_pid_mapping_
+               .Takeover(other_application_id, IncarnationId::FromPid(5), incarnation_authority_)
+               .result != TakeoverResult::kContended)
+    {
+        ++other_application_id;
+        ASSERT_LT(other_application_id, 100000U);
+    }
 
     // When calling RollbackTransactionLogs
     // Then the program terminates
     EXPECT_DEATH(std::ignore = unit_->RollbackTransactionLogs(), ".*");
-
-    ApplicationIdPidMapping<
-        score::memory::shared::PolymorphicOffsetPtrAllocator<ApplicationIdPidMappingEntry>>::ClearRegisterPidFake();
 }
 
 }  // namespace

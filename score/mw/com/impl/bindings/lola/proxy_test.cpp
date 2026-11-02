@@ -719,6 +719,7 @@ TEST_F(ProxyUidPidRegistrationFixture, OutdatedPidNotificationWillBeSent)
     // and given that the LoLa runtime returns our application id (simulating fallback to uid) and new pid
     ON_CALL(binding_runtime_, GetApplicationId()).WillByDefault(Return(our_application_id));
     ON_CALL(binding_runtime_, GetPid()).WillByDefault(Return(new_pid));
+    ON_CALL(binding_runtime_, GetIncarnation()).WillByDefault(Return(IncarnationId::FromPid(new_pid)));
 
     // we expect that IMessagePassingService::NotifyOutdatedNodeId() will get called to notify about an outdated pid!
     EXPECT_CALL(*mock_service_, NotifyOutdatedNodeId(_, message_passing::NodeIdFromPid(old_pid), _)).Times(1);

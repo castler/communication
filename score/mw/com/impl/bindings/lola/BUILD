@@ -1237,6 +1237,10 @@ cc_unit_test(
     srcs = ["transaction_log_rollback_executor_test.cpp"],
     features = COMPILER_WARNING_FEATURES,
     deps = [
+        ":application_id_pid_mapping",
+        ":incarnation",
+        ":incarnation_authority_mock",
+        ":pid_incarnation_authority",
         ":rollback_synchronization",
         ":runtime_mock",
         ":skeleton",

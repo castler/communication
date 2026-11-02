@@ -52,6 +52,8 @@ ProxyMockedMemoryFixture::ProxyMockedMemoryFixture() noexcept
     ON_CALL(runtime_mock_.runtime_mock_, GetBindingRuntime(BindingType::kLoLa))
         .WillByDefault(::testing::Return(&binding_runtime_));
     ON_CALL(binding_runtime_, GetPid()).WillByDefault(::testing::Return(kDummyPid));
+    ON_CALL(binding_runtime_, GetIncarnation()).WillByDefault(::testing::Return(IncarnationId::FromPid(kDummyPid)));
+    ON_CALL(binding_runtime_, GetIncarnationAuthority()).WillByDefault(ReturnRef(incarnation_authority_));
     ON_CALL(binding_runtime_, GetApplicationId()).WillByDefault(::testing::Return(kDummyApplicationId));
     ON_CALL(runtime_mock_.runtime_mock_, GetServiceDiscovery()).WillByDefault(ReturnRef(service_discovery_mock_));
 
