@@ -138,7 +138,8 @@ class SkeletonMemoryManager final
     void RemoveStaleSharedMemoryArtefacts() const;
 
     /// \brief Cleans up all allocated slots for this SkeletonEvent of any previous running instance
-    /// \details Note: Only invoke _after_ a crash was detected!
+    /// \details Note: Only invoke _after_ a crash was detected! Afterwards publishes the skeleton epoch of the
+    ///          re-opened data section.
     void CleanupSharedMemoryAfterCrash();
 
     /// \brief Resets internal state of SkeletonMemoryManager.

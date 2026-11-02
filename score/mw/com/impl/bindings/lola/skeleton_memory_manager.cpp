@@ -322,6 +322,13 @@ void SkeletonMemoryManager::CleanupSharedMemoryAfterCrash()
             provider_event_data_control_local.RemoveAllocationsForWriting();
         }
     }
+
+    // Publish the epoch only now: a proxy that observes it also observes the repaired data.
+    if (storage_ != nullptr)
+    {
+        storage_->PublishSkeletonEpoch(SkeletonEpoch::FromIncarnation(
+            GetBindingRuntime<lola::IRuntime>(BindingType::kLoLa).GetIncarnation()));
+    }
 }
 
 void SkeletonMemoryManager::Reset()

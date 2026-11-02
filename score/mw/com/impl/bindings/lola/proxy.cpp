@@ -238,7 +238,7 @@ score::Result<void> ExecutePartialRestartLogic(const QualityType quality_type,
     TransactionLogRollbackExecutor transaction_log_rollback_executor{service_data_control,
                                                                      skeleton_instance_identifier,
                                                                      quality_type,
-                                                                     message_passing::NodeId::FromPid(service_data_storage.GetSkeletonPid()),
+                                                                     service_data_storage.GetProviderNode(),
                                                                      transaction_log_id};
     const auto rollback_result = transaction_log_rollback_executor.RollbackTransactionLogs();
     if (!rollback_result.has_value())
@@ -908,7 +908,7 @@ message_passing::NodeId Proxy::GetProviderNode() const noexcept
     SCORE_LANGUAGE_FUTURECPP_PRECONDITION_PRD_MESSAGE(data_ != nullptr,
                                                       "Proxy::GetProviderNode: Managed memory data pointer is Null");
     auto& service_data_storage = detail_proxy::GetServiceDataStorage(*data_);
-    return message_passing::NodeId::FromPid(service_data_storage.GetSkeletonPid());
+    return service_data_storage.GetProviderNode();
 }
 
 void Proxy::RegisterEvent(const std::string_view service_element_name, ProxyEvent& proxy_event) noexcept

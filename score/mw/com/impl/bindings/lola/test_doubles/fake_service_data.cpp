@@ -95,6 +95,8 @@ FakeServiceData::FakeServiceData(const std::string& control_file_name,
                 data_storage =
                     memory_resource->construct<ServiceDataStorage>(kMaxNumberOfServiceElements, *memory_resource);
                 data_storage->UpdateSkeletonPid(skeleton_process_pid_in);
+                data_storage->PublishSkeletonEpoch(
+                    SkeletonEpoch::FromIncarnation(IncarnationId::FromPid(skeleton_process_pid_in)));
                 data_storage->UpdateSkeletonUid(skeleton_uid_in);
             }
         },

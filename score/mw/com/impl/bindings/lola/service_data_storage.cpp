@@ -107,6 +107,30 @@ uid_t ServiceDataStorage::GetSkeletonUid() const
     return skeleton_uid_;
 }
 
+SkeletonEpoch ServiceDataStorage::GetSkeletonEpoch() const noexcept
+{
+    return SkeletonEpoch::FromRaw(skeleton_epoch_.value.load(std::memory_order_acquire));
+}
+
+void ServiceDataStorage::PublishSkeletonEpoch(const SkeletonEpoch epoch) noexcept
+{
+    skeleton_epoch_.value.store(epoch.Raw(), std::memory_order_release);
+}
+
+message_passing::NodeId ServiceDataStorage::GetProviderNode() const noexcept
+{
+    const auto epoch = GetSkeletonEpoch();
+    if (epoch.IsFenced())
+    {
+        return message_passing::NodeId{};
+    }
+    if (epoch.IsPublished())
+    {
+        return message_passing::NodeId::FromWire(epoch.Raw());
+    }
+    return message_passing::NodeId::FromPid(skeleton_pid_);
+}
+
 void ServiceDataStorage::UpdateSkeletonUid(const uid_t uid)
 {
     skeleton_uid_ = uid;
