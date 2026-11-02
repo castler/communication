@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Draft / proposal (RFC). Parts are implemented and verified, parts are design only. See [Status of this document](#13-status-of-this-document-what-is-verified-and-what-is-not). |
+| **Status** | Draft / proposal (RFC). Parts are implemented and verified on branches that are not yet merged or pushed, parts are design only. See [Status of this document](#13-status-of-this-document-what-is-verified-and-what-is-not) and [Appendix D](#d-branches-and-commits). |
 | **Scope** | Running `mw::com` (LoLa) and `score/message_passing` on the Fuchsia operating system |
 | **Audience** | Engineers who need to understand the concept and its impact on the current code base before deciding on or implementing it |
 
@@ -25,6 +25,7 @@
 15. [Appendix A: Experiment results](#a-experiment-results)
 16. [Appendix B: FMEA summary](#b-fmea-summary)
 17. [Appendix C: Test matrix summary](#c-test-matrix-summary)
+18. [Appendix D: Branches and commits](#d-branches-and-commits)
 
 ---
 
@@ -293,8 +294,18 @@ hold slot S", (2) "I am subscribed", (3) a recovery record of both.
 | **Option B (target)** | skeleton-owned control VMO (read-only for consumers) + one **per-consumer hold region** (fixed layout, no pointers, atomics only) written only by its owner; the skeleton aggregates and validates (range, count limit, epoch) and zeroes the region on peer-closed | read-only control, read/write own region | A faulty consumer can only starve slots up to its limit. Also removes transaction logs and the pid mapping on Fuchsia. |
 | Option C (not for events) | control updated by the skeleton on request messages | read-only | Per-sample syscalls; used only for `Subscribe`/`Unsubscribe`/methods. |
 
-Until Option B is implemented **no FFI claim between consumers is made** (risk 2). Option B needs a benchmark first
-(consumer store+validate vs CAS; skeleton scan for C = 8, 32, 255). Assumptions of use for the baseline:
+**Option B verdict (prototype `exp/option-b-hold-regions`, `efdd3725`).** A header-only, OS-agnostic prototype
+(slot-generation words owned by the skeleton, one hold VMO per consumer, scan-on-Allocate, Dekker-style
+store/revalidate on acquire, audit and eviction) passes 10 host tests (stress, TSan, fault injection; two mutations make
+the tests fail), and a 3-process FEMU test: a consumer that keeps writing garbage into its own hold region is evicted,
+the healthy consumer is unaffected (0 payload violations), and no consumer can reach another's hold VMO. Host benchmark
+against a replica of LoLa's CAS scheme (x86, 48 threads): consumer acquire+release 2.5x faster uncontended at 16
+consumers (37 vs 84 ns) and 2.5-8x under contention; skeleton Allocate+Send **+36 % at 16 consumers uncontended** (65 vs
+48 ns) but about 4x faster under contention. **Not measured:** ARM64 (the seq_cst/Dekker pair must be reviewed and
+measured there), the real LoLa classes (the baseline is a replica), FEMU timing (functional only). Verdict: hot-path
+cost neutral to better on x86, safety-side complexity lower (no consumer-writable refcounts, no transaction log), but
+LoLa integration (about ten work items, e.g. `ProviderEventDataControlLocalView`, `EventSlotStatus`, per-consumer hold
+VMO lifecycle) is not done. **Still no FFI claim between consumers** (risk 2). Assumptions of use for the baseline:
 
 * **AoU-FUCHSIA-SHM-1:** consumers of an ASIL level are developed to at least that ASIL; no QM consumer gets the ASIL-B control VMO.
 * **AoU-FUCHSIA-SHM-2:** consumers touch the control VMO only through the LoLa library.
@@ -318,11 +329,17 @@ The failure modes are summarised in [Appendix B](#b-fmea-summary).
 | Liveness eventpair | consumer | `WAIT` | `SIGNAL SIGNAL_PEER DUPLICATE TRANSFER` |
 
 The consumer's endpoint channel cannot be restricted when it comes from the component namespace (FM-04 residual).
-Tests (**design-only, none run**): (1) after `Attach` every received handle's `ZX_INFO_HANDLE_BASIC.rights` equals the
-table (equality, not `&`); (2) FEMU test with a routed proxy and an unrouted component: `zx_channel_write` of each
-VMO handle fails with `ZX_ERR_ACCESS_DENIED`, `zx_handle_duplicate`/`zx_vmo_create_child` fail, a `PERM_WRITE` map of
-the data VMO fails, and the same test with an original-rights handle succeeds (negative control); (3) a CI check that
-every `zx.Handle:VMO`/`EVENTPAIR` in FIDL declares rights.
+The notification eventpair (6.6) is held by the consumer with `WAIT | SIGNAL` (no `SIGNAL_PEER`: it can clear its own
+side but cannot signal the skeleton).
+
+Status: **verified on FEMU** (branch `feat/fuchsia-attach`, `99bac535`; `w07` E7/E9; Option B prototype `w08`) are the
+rights received after `Attach`, rights reduction by the bindings, `TRANSFER` absent after receive, and that a read-only
+data handle cannot be widened (map RW, duplicate with WRITE, `vmo_write`, `set_size`, slice and snapshot give
+`ACCESS_DENIED`). A CAS on a read-only mapping crashes the reader (`FATAL_PAGE_FAULT`), so every word a consumer must
+modify has to live in a separate RW VMO. **Still design-only:** the unrouted-component re-export test with a negative
+control and the CI lint for bare `zx.Handle:VMO`/`EVENTPAIR` (risk 3). Rights through FIDL: declared rights with *more*
+rights sent are silently reduced to the declared set; with *fewer* rights sent the receiving binding is closed
+(`ZX_ERR_INVALID_ARGS`), i.e. the whole channel, not only the call; untyped `zx.Handle` is passed through unchanged.
 
 ### 6.3 Attach and service discovery
 
@@ -357,15 +374,24 @@ after its VMOs exist and its endpoints are served. Discovery is a **hint**; `Att
 skeleton `epoch`, and a mismatch (or `PEER_CLOSED`) makes the proxy re-`Watch`.
 
 **Attach** replaces "open shm by name": the proxy connects to its routed endpoint `score.mw.com.ep.<service>.<instance>`
-(declared with `availability: "optional"`; if not routed, the first call fails with `PEER_CLOSED`, see A.1) and calls
-`Attach(event_channel)`. **There is no `application_id` parameter:** the skeleton derives the consumer identity (and
+(declared with `availability: "optional"`; if not routed, the first call fails with `PEER_CLOSED`, see A.1) and calls `Attach()`. **There is no `application_id` parameter:** the skeleton derives the consumer identity (and
 the application id used as transaction-log key) **only from the endpoint the connection arrived on** and returns it,
 so a proxy cannot claim another identity. The reply carries the data/control VMO duplicates, the layout metadata, the
-`epoch` and a liveness eventpair (6.5).
+`epoch`, a liveness eventpair (6.5) and a per-subscriber notification eventpair (6.6). There is **no event channel**:
+an earlier version of this document had the proxy pass an `EventChannel` in `Attach` over which the skeleton would send
+events. The implementation showed that direction was wrong (nothing ever served it); events are data in the shared VMO
+plus an eventpair wake-up, and FIDL stays control-only.
 
-FIDL sketch. The previous sketch did not compile (a `closed` protocol needs `strict` two-way methods, fi-0115); with
-`strict` the earlier version compiled with the pinned `fidlc` (audit t14). **This revised sketch has not been
-compiled.** Rights on handle types follow 6.2.2 and are untested end to end.
+**Implemented** (`feat/fuchsia-attach`, `99bac535`): `score_mw_com.fidl` with `Endpoint`, `ServiceRegistry`,
+`ServiceDiscovery` and `Search` (hanging-get `Watch`); per-caller discovery capabilities; `Attach` without application
+id. Deviation: one data+control VMO pair per provider endpoint, so an ASIL-B instance needs its own endpoint per quality
+level (consistent with one control VMO per ASIL level, 6.2.1). The sketch below is the *design* sketch; the compiled
+protocol on that branch differs in details (e.g. the notification handle, no `EventChannel`).
+
+FIDL sketch (design). The previous sketch did not compile (a `closed` protocol needs `strict` two-way methods, fi-0115);
+with `strict` the earlier version compiled with the pinned `fidlc` (audit t14). **This sketch itself has not been
+compiled**; the implemented `score_mw_com.fidl` is the reference. Rights on handle types follow 6.2.2 (reduction on
+receive verified).
 
 ```fidl
 library score.mw.com;
@@ -418,9 +444,7 @@ closed protocol Search {
 };
 
 closed protocol Endpoint {          // served at one path per allowed consumer, routed with `as`
-    strict Attach(resource struct {
-        events client_end:EventChannel;
-    }) -> (resource struct {
+    strict Attach() -> (resource struct {
         data_vmo zx.Handle:<VMO, zx.Rights.READ | zx.Rights.MAP | zx.Rights.GET_PROPERTY>;
         // Option A; Option B: READ|MAP|GET_PROPERTY plus a per-consumer hold region (6.2.1)
         control_vmo zx.Handle:<VMO, zx.Rights.READ | zx.Rights.WRITE | zx.Rights.MAP | zx.Rights.GET_PROPERTY>;
@@ -428,19 +452,23 @@ closed protocol Endpoint {          // served at one path per allowed consumer, 
         epoch uint64;                 // copy of the data-VMO header epoch, for the mismatch check
         application_id uint64;        // derived by the skeleton from the endpoint, not supplied by the caller
         liveness zx.Handle:<EVENTPAIR, zx.Rights.WAIT>;   // peer-closed == skeleton gone
+        notification zx.Handle:<EVENTPAIR, zx.Rights.WAIT | zx.Rights.SIGNAL>;   // USER_0 = new sample (6.6)
     }) error AttachError;
-};
-
-closed protocol EventChannel {
-    strict -> OnEvent(struct { element_index uint32; slot uint32; sequence uint64; });
-    strict -> OnSkeletonRestart(struct { epoch uint64; });
 };
 ```
 
 Subscribe/unsubscribe, notification registration and method calls continue to run through `message_passing`.
 
-Open points (FEMU experiments E1-E7, [11.1](#111-follow-up-work-packages)): non-eager start of the skeleton, reconnect after
-skeleton/discovery restart, `dependency: "weak"` for components that are both skeleton and proxy, 1500 parked `Watch`es.
+Open points, now measured on FEMU (`exp/fuchsia-open-questions`, `5262d114`, single runs, SMP=4, indicative):
+connecting to a *routed* provider that is not yet running **waits** (no error; a 3 s late provider gave a connect that
+returned after 3.0 s), so the client needs its own timeout; an unrouted capability or an exited provider gives
+`PEER_CLOSED`. After a skeleton kill `PEER_CLOSED` arrives within about 1 ms and reconnect to the restarted process takes
+1-16 ms (up to 2 attempts). A strong skeleton/proxy cycle is rejected by `cmc`; one `dependency: "weak"` edge suffices.
+1500 parked `Watch`es under churn: 1500/1500 completed, 0 errors, reply p99 <= 47 ms. After a discovery restart all
+`Watch`es see `PEER_CLOSED` and a re-`Watch` returns a full snapshot in about 10-15 ms (generation restarts at 0).
+1 provider x 50 services x 30 consumers: 0 errors. `Realm.CreateChild` with dynamic protocol/service offers works
+(about 2 ms) and `source_instance_filter=[inst_a]` restricts correctly, but combined with `renamed_instances` it neither
+restricted nor renamed (unreliable, **do not rely on it**).
 Rejected: *service* capabilities with instances (no per-consumer filtering or identity, A.2) and dynamic offers via
 `Realm.CreateChild` (moves the access policy out of the static, reviewed CML).
 
@@ -468,6 +496,12 @@ cannot open it. So:
    **principal** (which capability, i.e. which consumer; stable) and the **node** (which incarnation of that
    consumer; volatile, a broker lease, 6.5). `FromEndpoint` in `400bc46b` currently sets both to a per-connection id,
    which is a known issue to fix in the incarnation PRs ([10.3](#103-incarnation-aware-recovery-code-impact-and-pr-list)).
+   **Status:** `feat/identity-split` (`9a86db64`) separates node and principal; `feat/identity-opaque` (`c1e6187c`)
+   makes `NodeId`/`PrincipalId` distinct, non-convertible opaque types (`OpaqueId<Tag>`) throughout the LoLa messaging
+   layer; Linux/Fuchsia pid/uid conversions happen only at the platform boundary. Verified: 227 host tests pass (3
+   skipped), FEMU `message_passing_itf_test` passes. **Not done:** the wire format is still a 4-byte pid
+   (`kOutdatedNodeId`), message-passing names still use the pid, and skeleton internals and configuration still use
+   `pid_t`/`uid_t`; `IncarnationId` and the resolver are later PRs.
 
 Example: see [7.1](#71-capability-routing-for-one-service); app_c gets no offer, so its connection fails (`PEER_CLOSED` on first use).
 
@@ -551,7 +585,42 @@ skeleton does rebirth.
 **Faulty proxies.** Memory pinning (bounded by quarantine) and writes into an old control VMO (harmless under rebirth)
 are contained; corruption of the *current* control VMO is **not solved** in the baseline (Option B, 6.2.1). Remote
 revocation and `set_size`/decommit do not stop a mapped writer and are rejected. Test matrix: [Appendix C](#c-test-matrix-summary).
-The whole mechanism is **design-only**.
+**Implementation status (FEMU-verified parts only; everything else above remains design).**
+
+* *Locks* (`feat/fuchsia-lock`, `fed9fe49`): `ILockProvider` with `PosixLockProvider` (flock) and a Fuchsia
+  `RegistryLockProvider` whose locks are bound to an eventpair, so a holder's death releases the lock. FEMU test passes
+  including holder death. It is a registry, **not yet a real broker**, and does not give the "process terminated"
+  guarantee argued above (handle closure vs process death).
+* *Lease broker* (`feat/fuchsia-broker`, `5ad56a4b`; hardening `feat/fuchsia-broker-hardening`, `1571950c`): epoch in an
+  `IncarnationHeader` at the start of both VMOs (**deviation:** the broker writes the tombstone `UINT64_MAX` into the
+  *control* VMO, not the read-only data VMO), epoch = `max(last+1, boot clock)`, state machine PROVISIONING -> ACTIVE ->
+  FENCED -> released, at most 2 draining incarnations per instance, a second live incarnation refused. Death is detected
+  by a liveness eventpair (`PEER_CLOSED`) and an optional process-handle watch (`PROCESS_TERMINATED`); the broker
+  tombstones and signals each proxy's `fenced` eventpair. The broker does **not** hand VMOs to proxies (the routed
+  skeleton `Endpoint` does, preserving capability identity); `application_id` in `RegisterProxy` is caller-asserted.
+  Verified on FEMU (414 checks, about 24 s): skeleton death by process-only, liveness-only and both; proxy death by
+  release, liveness close and process kill (leases 4 -> 1); broker kill and restart (proxy distinguishes *broker lost*
+  from *skeleton lost*; `Reannounce` adopts a live skeleton's epoch, wrong epoch -> `INVALID_REGION`, duplicate ->
+  `ALREADY_PROVISIONED`); 100 kill cycles with 0 monotonicity violations, 0 missed fences and no leaked handles
+  (the hardening also fixed an unbounded per-lease eventpair leak found while writing the test). Also `broker_core_test`
+  (12 host cases) and a skeleton `zx_process_exit`/`__builtin_trap` kill with proxy reattach to a new epoch.
+  **Limitations:** adoption trusts the caller (any holder of valid VMOs with a correct header can adopt an unused
+  instance; no scrub state, no trusted-ack/ASIL profile); proxies that held leases on a fenced incarnation at broker
+  restart cannot re-register; `Reannounce` is not wired into `skeleton_main`; `last_epoch` is lost on a broker restart, so
+  monotonicity relies on the boot clock (monotonic across a broker restart, not across a reboot); the holders in the
+  hardening test are impersonated by the test; the process-handle path is only asserted in the hardening test (liveness
+  fires first in the plain test); single instance/proxy in `fuchsia_broker_itf_test`.
+* *Why a broker cannot find processes itself* (`exp/fuchsia-open-questions`, E10): `ZX_PROCESS_TERMINATED` needs
+  `ZX_RIGHT_WAIT` on the process handle (0.8 ms after kill; `ZX_INFO_PROCESS_MAPS` needs `INSPECT`), and a component in
+  another job cannot obtain it (`zx_object_get_child` -> `NOT_FOUND`, no `RootJob` routed): peers must send the handle
+  themselves. A liveness eventpair (`PEER_CLOSED` 0.2 ms, no extra rights) is the cheaper signal, but only a process handle
+  distinguishes crash from orderly exit (`return_code`).
+* *Rollback re-run question* (`feat/incarnation-pr0-2`, `3aca6e1b`; `feat/incarnation-pr3-7`): re-running an interrupted
+  rollback is safe only at slot granularity; a stuck log whose begin/end bits cannot tell "before" from "after" the
+  decrement may underflow if repeated. A `kQuarantine` policy (clear the record, worst case one leaked reference) exists
+  next to the default `kFail`; production (`proxy.cpp`) still uses `kFail`.
+
+The remaining mechanism (rebirth wiring in LoLa, adoption with scrub, provider-side rollback, claim word) is **design-only**.
 
 ### 6.6 Notification path
 
@@ -570,7 +639,19 @@ costs**), notification costs about 5-7 us **per subscriber**, i.e. O(m), not O(1
   reached 7 ms and delivery fell to 25-60 % (FIDL stayed at 100 %).
 
 Not covered: port-based subscribers, multi-slot rings (a late subscriber loses samples with a single slot), real hardware.
-The eventpair signal can be coalesced into the control channel so the `EventChannel` of 6.3 stays a fallback.
+
+**Implemented** (`feat/fuchsia-events`, `2fba0b66`): the `EventChannel` of the earlier sketch is **removed** (its direction
+was wrong, see 6.3). `Attach` returns a per-subscriber notification eventpair (`WAIT | SIGNAL`); the skeleton stores the
+sample, release-stores the index and calls `zx_object_signal_peer(USER_0)` on each session (never blocks, coalescing).
+The subscriber waits for `USER_0 | PEER_CLOSED`, **clears `USER_0`, then** re-reads the index (no lost wake-up);
+`PEER_CLOSED` = skeleton gone. Polling is opt-in: closing the handle makes the skeleton drop that session. Dead
+subscribers are pruned lazily (next notify/Attach). FEMU (single run, SMP=8, one slot, 500 samples at 1 kHz, indicative
+only): publish cost p50 9.9 us (m=1) to 57.8 us (m=8), about 7 us per extra subscriber; wake latency p50 about 40-80 us;
+a 20 ms/event slow subscriber saw 26 of 500 events and ended at the last sequence while the publisher stayed unblocked
+(p50 28 us, max 1.4 ms); killing a subscriber did not disturb the publisher; every surviving subscriber reached the final
+sequence (delivered < 100 % is coalescing). Publisher p99/max are ms-scale even at m=1 (host scheduling noise). **Not
+done:** ring/slot index, port-based multiplexing, async peer-closed pruning, `NotifySubscribers` is O(m) syscalls under a
+mutex, and it is **not hooked into LoLa's event/skeleton code**, only the transport.
 
 ### 6.7 Typed interfaces and IDL options
 
@@ -723,7 +804,16 @@ a pragmatic start is to keep the hand-written `vehicle_gen.h`-style interface an
   and `cmc` and `fidlc` were run on its output. Findings: FIDL sketches need `strict` on two-way methods and
   `@discoverable(name=...)`. It is a standalone prototype, not yet integrated into `inc_ecu_model`.
 * **FIDL parser** (`spike/fuchsia-fidl-parser`, `fe72722`, in an `inc_ecu_model` clone): parsing `fidlc` JSON IR works.
-  `DatatypeGenerator` handles only typedefs, so lowering struct/enum/union to C++ is about **one week** of work.
+* **Datatype lowering** (`feat/datatype-generator-lowering`, `8b6f41c`, in the `inc_ecu_model` clone): struct, enum, union
+  and array lowering plus a `FixedLayoutValidator`. Unions are lowered to tagged fixed-layout structs; **maps are
+  unsupported**. This replaces the "about one week" estimate for lowering (done); integration upstream is not.
+* **Realm on FEMU** (`exp/realm-generator-femu`, `6bf59dec`): the generated realm runs. Small model (3 skeletons + 5
+  consumers + discovery): pass; scale model (5 skeletons + 15 consumers = 20 apps): `cmc` builds all 22 manifests and the
+  realm passes. Per-caller discovery is verified (each consumer sees and attaches only to its routed services, with
+  rights checked); an unrouted consumer cannot see or attach; a provider offering a foreign service id is refused. Fixes
+  found: one shared discovery for all apps (now per-caller), missing `LogSink`, providers `use`ing discovery, strong
+  cycles (now SCC detection with weak edges). Limitations: single run per model, 20 apps only, negative checks have no
+  mutation test, nodes use the raw `Endpoint` (typed marker compiled but unused), harness-mode arguments are test-specific.
 
 ---
 
@@ -787,17 +877,17 @@ exactly **one** protocol per `offer` entry (A.1).
     │ Registry.Offer(id, q, epoch) ►│                                         │
     │                               │◄── StartFind(filter, Search); Watch() ──│ proxy A
     │                               │──── [{id, q, epoch}] (filtered for A) ─►│
-    │◄──────────────────────────────── Attach(events) on routed ep for A ─────│
+    │◄──────────────────────────────── Attach() on routed ep for A ──────────│
     │ identity := A (from the endpoint; no id parameter); check A allowed
-    │ dup(data, R|M|GP|T), dup(control, R|W|M|GP|T), epoch, application_id, liveness
+    │ dup(data, R|M|GP|T), dup(control, R|W|M|GP|T), epoch, application_id, liveness, notification
     │────────────────────────── reply: handles + layout ─────────────────────►│
     │                                                  strip T; map data (ro), control (rw)
     │ AllocateNextSlot; write sample; EventReady (atomics)                    │
-    │──────────── OnEvent(slot, seq)  (only if handler registered) ──────────►│
+    │──────── eventpair signal USER_0 (only if notification kept) ───────────►│
     │                                                  read slot IN PLACE; CAS refcount
 ```
 
-Design-only.
+Transport parts verified on FEMU (`feat/fuchsia-attach`, `feat/fuchsia-events`); the LoLa slot protocol is not hooked up.
 
 ### 7.3 Skeleton crash and restart (with broker)
 
@@ -918,7 +1008,12 @@ is unproven (PR 0 characterizes it first). Other changes are at the edges where 
 
 ### 10.3 Incarnation-aware recovery: code impact and PR list
 
-Design-only (t05). The pid is used as peer address, name seed, mapping key and liveness proof; each use gets its own type.
+Design-only (t05) except where noted. Status: PR 0-2 are on `feat/incarnation-pr0-2` (`3aca6e1b`); `feat/incarnation-pr3-7`
+adds `pid_` made atomic (`6121c192`), the `kQuarantine` rollback policy (`67df8e4c`) and
+`ApplicationIdPidMapping::Takeover`/`ReleaseIfOwner` with tests (`684915c2`). **PR 3** (about 60 mechanical files) is not done (the opaque-id part is in `feat/identity-opaque`,
+6.4), **PR 4** depends on it, **PR 5** is blocked (no shm layout version; widening the 4-byte owner word breaks mixed-version
+shm, `Takeover` currently asserts the incarnation fits in int32), **PR 7** (executor switch to `Takeover`) is not wired;
+PRs 6, 8-13 are not started. Known race: two simultaneous *fresh* claimants of one app id both see `kFresh`. The pid is used as peer address, name seed, mapping key and liveness proof; each use gets its own type.
 
 | Area | Change |
 |---|---|
@@ -957,9 +1052,9 @@ rollback changes Linux liveness semantics; pid reuse on Linux is accepted; the `
 | **0** | Fuchsia SDK/FEMU in ITF; OS-abstraction parts of baselibs compile; message_passing FIDL backend; echo tests | – | Done; FEMU ITF tests reported passing (not re-run for this document) |
 | **1** | Identity: opaque `ClientIdentity` (`400bc46b`, done); endpoint-derived identity, principal/node split (PR 1); `strict_permissions` definition | 0 | Unit tests; FEMU test with 2 consumers + 1 unrouted (A.1 covers routing) |
 | **2** | Shared-memory seam: `VmoSharedMemoryResource` (`313b0f73`, done); `Attach`; attach-style acquisition on all platforms; replace `flock`/`shm_open` use (t08 seams) | 1 | Existing Linux shm tests; FEMU test: skeleton writes, proxy reads |
-| **3** | Discovery: `ServiceRegistry`/`ServiceDiscovery` behind `IServiceDiscoveryClient` (6.3); E1-E7 experiments | 2 | Discovery FEMU tests; Linux crawler tests unchanged |
+| **3** | Discovery: `ServiceRegistry`/`ServiceDiscovery` behind `IServiceDiscoveryClient` (6.3); E1-E10 experiments done (`5262d114`), `feat/fuchsia-attach` prototype | 2 | Discovery FEMU tests; Linux crawler tests unchanged |
 | **4** | Incarnation PRs 0-11 (10.3) and Fuchsia rebirth-only restart without broker (PR 12 subset) | 2, 3 | Characterization tests first; crash/restart FEMU tests |
-| **5** | Realm generator (G5) and typed marker (G4): prototype `exp/realm-generator` (`dba39624`); integration in `inc_ecu_model`; generator lowering for struct/enum/union (about 1 week) | 1 | Build test; scale test |
+| **5** | Realm generator (G5) and typed marker (G4): prototype `exp/realm-generator` (`dba39624`); integration in `inc_ecu_model`; generator lowering for struct/enum/union (done on a clone, `8b6f41c`; upstreaming open); realm runs on FEMU (`6bf59dec`) | 1 | Build test; scale test |
 | **6** | Broker: leases, epochs, fencing, adoption (PR 12) | 4 | Skeleton restart test with slot rollback |
 | **7** | Option B per-consumer hold regions (PR 13) before any FFI claim between consumers | 6 | Benchmark, FEMU fault-injection |
 | **8** | CI job (`ci/fuchsia-femu`, `0009b5db`, written; `/dev/kvm` on hosted runners **unverified**); backend-neutral gtests; safety documentation | all | CI green on FEMU |
@@ -968,14 +1063,29 @@ Phases 1-4 are the critical path for a working "hello LoLa" on Fuchsia.
 
 ### 11.1 Follow-up work packages
 
-1. **Flock/shm_open replacement:** seams `MmanImpl::shm_open`, `Fcntl::flock`, ACL no-op (t08); Linux regression of the patched baselibs (not run).
-2. **Broker** (leases, epochs, fencing, quarantine budget) and incarnation PRs 0-13 (10.3).
-3. **FIDL `Attach`/discovery implementation** incl. rights on handle types (does fidlc reduce or reject?) and the rights-exactness/re-export tests (6.2.2).
-4. **Option B** (hold regions) with benchmark; AoU into requirements and safety docs.
-5. **Generator lowering** for struct/enum/union (`fe72722`, about 1 week); realm generator into `inc_ecu_model`.
-6. **FEMU experiments:** t02 E1-E7 (non-eager start, skeleton restart, weak-dependency cycles, discovery restart, 1500 parked `Watch`es, `Realm.CreateChild`, 1500 paths in one process); t14 list (`AF_UNIX`/inotify, `zx_vmar_map` of an R|M duplicate plus atomics, eventpair `PEER_CLOSED` on process death, VMO survival, rights through a FIDL reply, 4096-byte layout vector with handles, `data_slots_read_only`, benchmark variance, full 7.1 run, echo re-run). Shm/flock runtime behaviour is done (t08).
-7. **Notification path:** multi-slot ring, port-based subscribers, real hardware (A.4).
-8. **CI hardening:** KVM on hosted runners, SDK caching, Linux regression of patched baselibs.
+Done since the first draft (Appendix D): Attach/discovery, rights, locks, broker + hardening, events transport, identity
+split, datatype lowering, realm on FEMU, Option B prototype, E1-E10. Remaining:
+
+1. **Incarnation PRs 3-13** (10.3): PR 3 (pid -> `NodeId`/`IncarnationId` across messaging, about 60 files), PR 4 (resolver,
+   `kOutdatedIncarnation`), PR 5 (needs a shm layout version and a mixed-version decision), PR 7 (wire `Takeover` into the
+   rollback executor), PRs 6, 8-13. Open decisions: enable `kQuarantine` in production, owner-word widening, dual-read.
+2. **Broker ASIL profile:** trusted-ack for adoption (today the caller is trusted), scrub state, restart reconcile period,
+   persistent or re-derived `last_epoch`, automatic `Reannounce` in `skeleton_main`, re-registration of proxies on a
+   fenced incarnation, quarantine budget, proxy `application_id` from the routed endpoint rather than caller-asserted.
+3. **Option B** on ARM64 (seq_cst/Dekker review and benchmark) and against the real LoLa classes, then LoLa integration
+   (6.2.1); AoU into requirements and safety docs.
+4. **Hook events into LoLa:** connect the notification transport (6.6) to the real skeleton/proxy event code; multi-slot
+   ring, port-based subscribers, async pruning, real hardware.
+5. **QNX `flock` path** and Linux regression of the patched baselibs (the Fuchsia seams `MmanImpl::shm_open`,
+   `Fcntl::flock` and ACL no-op are in t08; `ILockProvider` exists on `feat/fuchsia-lock`).
+6. **Generators:** upstream the lowering and the realm generator into `inc_ecu_model`; maps; typed marker use at runtime;
+   realm scale beyond 20 apps with repetition; mutation tests for the negative routing checks.
+7. **ASIL-B per quality:** one endpoint (and data+control pair) per quality level per provider (w02 deviation).
+8. **Remaining experiments/tests:** re-export denial test with negative control and the FIDL rights lint (6.2.2); retest
+   `source_instance_filter` + `renamed_instances`; proxy-death and multi-proxy tests with the real LoLa path; full 7.1 run.
+9. **CI hardening:** KVM on hosted runners, SDK caching.
+10. **Validation:** `validation_cli` reports 2 errors for `message_passing_architectural_design` (`static_design.puml` lines
+    16/17); verified identical on the base commit, so pre-existing (warning only).
 
 ---
 
@@ -985,23 +1095,26 @@ Phases 1-4 are the critical path for a working "hello LoLa" on Fuchsia.
 |---|---|---|---|
 | 1 | **`shm_open`/`flock` on Fuchsia libc** | Measured (t08): `shm_open` fails with ENOENT, `flock` with ENOTSUP; `memfd_create`/`mmap` work. `memory/shared` compiles only with compile patches (not on mainline). | Seams for `shm_open`/`flock`/ACLs; VMO resource (done); Linux regression of patches not run. |
 | 2 | **Writable control VMO; no FFI between consumers** | A faulty admitted consumer can corrupt control state, starve slots or feed wild offsets; routing does not prevent it. | Baseline: per-ASIL control VMOs, rights, AoU-FUCHSIA-SHM-1…6, FMEA (Appendix B). Target: Option B (PR 13). No FFI claim until then. |
-| 3 | **Rights reduction through FIDL untested** | Whether `fidlc`/bindings reduce or reject declared handle rights is unknown; TRANSFER must be stripped by the receiver. | FEMU test; rights-exactness and re-export tests (6.2.2); CI lint for bare `zx.Handle:VMO`. |
-| 4 | **Broker design** | New component in the safety path; fail-static on death; epoch and lease issuing, quarantine pressure from pinned VMOs. | Phase it; rebirth-only fallback; quarantine budget; supervisor events. |
-| 5 | **Discovery/endpoint behaviours unverified (E1-E7)** | Non-eager start, restart reconnect, weak-dependency cycles, 1500 parked `Watch`es, `Realm.CreateChild`. | FEMU experiments (11.1). |
-| 6 | **Rollback re-runnability and layout change** | `RollbackProxyTransactions` after a crash mid-rollback is unproven; epoch and mapping change the shm layout and wire format (mixed-version decision needed). | PR 0 characterization; layout version; adjacent PRs 5/6. |
+| 3 | **Rights reduction through FIDL** | Verified (`w07` E9, `99bac535`): more rights are reduced, fewer close the binding (whole channel). Remaining: re-export denial test and lint. | Rights-exactness and re-export tests (6.2.2); CI lint for bare `zx.Handle:VMO`; declare rights exactly. |
+| 4 | **Broker design** | Implemented and FEMU-tested (6.5), but adoption trusts the caller, no ASIL profile, `last_epoch` lost on restart (boot clock), quarantine pressure not addressed. | Phase it; rebirth-only fallback; trusted-ack; quarantine budget; supervisor events. |
+| 5 | **Discovery/endpoint behaviours (E1-E10)** | Measured (6.3). A routed but not-running provider makes the client *wait*; `source_instance_filter` + `renamed_instances` unreliable; single runs. | Client timeouts; per-consumer protocol capabilities; rerun per release. |
+| 6 | **Rollback re-runnability and layout change** | Re-running an interrupted rollback is safe only at slot granularity; stuck logs otherwise (`kQuarantine` leaks at most one reference, `kFail` stays default). Epoch/mapping change the shm layout and wire format (mixed-version decision needed, PR 5 blocked). | `kQuarantine` decision; layout version; adjacent PRs 5/6. |
 | 7 | **Provider-side rollback and pid reuse on Linux** | Provider-side rollback changes Linux liveness semantics (kept off); pid reuse on Linux is accepted. | Policy `kAlwaysTakeover`; documented. |
-| 8 | **`ClientIdentity::FromEndpoint` conflates node and principal ids** | Known issue in `400bc46b`. | PR 1. |
+| 8 | **`ClientIdentity::FromEndpoint` conflates node and principal ids** | Split done on `feat/identity-split`/`feat/identity-opaque`; the wire format is still a pid. | Incarnation PRs 3-5. |
 | 9 | **Routing cost at scale** | Fine up to 10,000 offers (A.3, single runs); compiled CML grows to MBs. | Subrealms; generator; rerun per release. |
 | 10 | **Single FIDL async loop thread in the registry** | Throughput and isolation; writes now non-blocking, serialized, bounded queue, drop-with-EAGAIN (`645b2a88`): drops under load. | Measure; keep control traffic small. |
-| 11 | **Notification-path cost** | About 5-7 µs per subscriber, O(m); single-slot benchmark, emulated (A.4). | Eventpairs for >= 4 KiB or >= 8 subscribers; ring/port experiments. |
+| 11 | **Notification-path cost** | About 5-7 µs per subscriber, O(m) (A.4; `feat/fuchsia-events` about 7 µs per extra subscriber); single slot, emulated, not hooked into LoLa. | Eventpairs for >= 4 KiB or >= 8 subscribers; ring/port experiments. |
 | 12 | **Hot-path epoch check** | One acquire load per `GetNewSamples`; budget < 2 ns unmeasured. | PR 11, microbenchmark T30. |
 | 13 | **Unrouted `use` detected late** | Connect succeeds, first call fails with `PEER_CLOSED` (A.1). | Treat as "not offered"; realm self-check. |
 | 14 | **No instance filtering in CML** | A service capability exposes all instances (A.2). | Per-consumer protocol capabilities (this design). |
-| 15 | **`inc_ecu_model` maturity** | Incubator; `DatatypeGenerator` handles only typedefs; no Fuchsia `NetworkKind`. | Start with G4/G5; lowering about 1 week (`fe72722`). |
+| 15 | **`inc_ecu_model` maturity** | Incubator; lowering done in a clone (`8b6f41c`, no maps), not upstream; no Fuchsia `NetworkKind`. | Start with G4/G5; upstream. |
 | 16 | **`strict_permissions` meaning** | Needs a decision with safety/requirements owners. | Proposal in 6.4. |
 | 17 | **Stable application ids** | Transaction-log rollback relies on them. | Configuration requirement; validate at attach (live twin rejected). |
 | 18 | **ASIL aspects** | Component framework and FIDL stack not qualified by us. | Out of scope here. |
-| 19 | **CI infrastructure** | `ci/fuchsia-femu` (`0009b5db`) written; `/dev/kvm` on hosted runners unverified; SDK size, caching. | Dedicated job; cache the SDK. |
+| 19 | **CI infrastructure** | `ci/fuchsia-femu` (`0009b5db`) written; `/dev/kvm` on hosted runners unverified; SDK size, caching (one FEMU run also hit "No space left on device" on `/mnt/data` during an SDK fetch). | Dedicated job; cache the SDK. |
+| 20 | **Option B unmeasured where it matters** | Only x86 and a replica baseline; skeleton Allocate +36 % at 16 consumers; ARM64 ordering unreviewed. | ARM64 measurement; real-LoLa benchmark before any decision. |
+| 21 | **One endpoint per quality** | One data+control pair per provider endpoint, so ASIL-B needs its own endpoint (`99bac535`). | Generator emits one endpoint per quality. |
+| 22 | **Weak-test caveats** | Many FEMU results are single runs with passing output not captured (broker, events); negative routing checks lack mutation tests; flaky `reserving_skeleton_slots` seen once under load. | Repeat runs; add mutation tests. |
 
 ---
 
@@ -1017,17 +1130,36 @@ this document)
 * `message_passing` Fuchsia backend over FIDL; in-process and cross-component echo tests; Linux unaffected.
 * Hardening: `fix/fuchsia-registry-start` (`ea8396f9`), `fix/fuchsia-engine-writes` (`645b2a88`).
 * `feat/vmo-shared-memory-resource` (`313b0f73`): `VmoSharedMemoryResource` with FEMU test; TRANSFER is stripped on open.
-* `feat/opaque-client-identity` (`400bc46b`); known issue: `FromEndpoint` conflates node and principal ids.
+* `feat/opaque-client-identity` (`400bc46b`); the node/principal conflation is addressed by the later identity branches (below).
 * t08 spike: `shm_open` ENOENT and `flock` ENOTSUP at runtime; `memfd_create`/`ftruncate`/`mmap(MAP_SHARED)`/`fchmod` work.
 * `exp/realm-generator` (`dba39624`): 20 tests, `cmc`/`fidlc` verified on its output.
-* `spike/fuchsia-fidl-parser` (`fe72722`): parser works; struct/enum/union lowering not implemented.
+* `spike/fuchsia-fidl-parser` (`fe72722`): parser works; lowering is on `feat/datatype-generator-lowering` (`8b6f41c`, below).
 * Experiments on `exp/fuchsia-cml-routing` (`023b6c77`, `42a73b23`, `45b8246e`): routing with `as`, no instance filtering, scale, fan-out benchmark (Appendix A; limited runs).
+
+**Implemented and verified on FEMU, branches local and not pushed** (full table: [Appendix D](#d-branches-and-commits); all
+single runs unless noted; "verified" means the stated test passed, not that the feature is complete)
+
+* Locks: `feat/fuchsia-lock` (`fed9fe49`): `ILockProvider`, eventpair-bound registry locks incl. holder death; not a broker.
+* Attach/discovery/rights: `feat/fuchsia-attach` (`99bac535`): `score_mw_com.fidl`, per-caller discovery, `Attach` without application id, rights reduction on receive, `TRANSFER` absent.
+* Broker: `feat/fuchsia-broker` (`5ad56a4b`), `feat/fuchsia-broker-hardening` (`1571950c`): leases, epoch, tombstone, fencing, reannounce, 100-cycle stress, no leaked handles; adoption trusts the caller, no ASIL profile.
+* Events: `feat/fuchsia-events` (`2fba0b66`): VMO data + per-subscriber eventpair wake-up; transport only, not in LoLa.
+* Identity: `feat/identity-split` (`9a86db64`), `feat/identity-opaque` (`c1e6187c`): host + FEMU `message_passing` tests; wire format still pid.
+* Realm: `exp/realm-generator-femu` (`6bf59dec`): generated realm runs (8 and 20 apps), per-caller discovery, unrouted consumer blocked.
+* Option B: `exp/option-b-hold-regions` (`efdd3725`): host + FEMU fault injection; x86 benchmark only.
+* Experiments E1-E10: `exp/fuchsia-open-questions` (`5262d114`).
+* Regression proof: the two hardening fixes fail their new tests on the old code (`connection_registry_test` FAILED, `stalled_reader_test` TIMEOUT) and pass on `ea8396f9`/`645b2a88`.
+
+**Verified on host only:** `feat/datatype-generator-lowering` (`8b6f41c`, struct/enum/union/array lowering, fixed-layout
+validator, no maps); `feat/incarnation-pr0-2` (`3aca6e1b`) and `feat/incarnation-pr3-7` (`684915c2`: atomic `pid_`,
+`kQuarantine`, `Takeover`; `//score/...` suites pass except one `reserving_skeleton_slots` flake that passed in isolation).
 
 **Written but unverified:** `ci/fuchsia-femu` (`0009b5db`): `/dev/kvm` on hosted runners not verified.
 
-**Design only (not built, not measured):** `Attach`/discovery protocols and all FIDL snippets (the revised 6.3 sketch is
-uncompiled), rights reduction through FIDL, tests of 6.2.2 and Appendix C, Option B, broker, leases, epoch, rebirth/adoption,
-incarnation PRs 0-13, realm integration in `inc_ecu_model`, FEMU experiments E1-E7. CML snippets are illustrative unless Appendix A says otherwise.
+**Design only (not built, not measured):** the re-export denial test and FIDL rights lint, Appendix C tests not listed above,
+Option B inside LoLa, rebirth/adoption wiring in LoLa (the broker only reannounces), scrub state, ASIL profile of the
+broker, incarnation PRs 3-13, hooking events into LoLa, QNX `flock` path, realm integration in `inc_ecu_model`.
+**lola is still not built for Fuchsia.** CML snippets are illustrative unless Appendix A says otherwise.
+**Not caused by these changes:** the 2 `validation_cli` errors for `message_passing_architectural_design` also occur on the base commit.
 
 ---
 
@@ -1138,10 +1270,15 @@ End-to-end latency:
 
 ### A.5 Not tested
 
-* Dynamic offers with instance filtering via `Realm.CreateChild`; non-eager start with an unrouted required `use`.
-* Scale tests with all apps looping beyond 30 apps.
+* Non-eager start with an unrouted required `use` is covered (immediate `PEER_CLOSED`); `renamed_instances` with instance filters is unreliable (E8, see 6.3).
+* Scale tests with all apps looping beyond 30 apps; realm generator beyond 20 apps.
 * Port-based subscribers and multi-slot rings in the notification path.
-* Anything about `Attach`, discovery, liveness, rights through FIDL and the broker (design only).
+* Option B on ARM64 and against the real LoLa classes.
+
+Later FEMU experiments (E1-E10, `exp/fuchsia-open-questions`, `5262d114`) are summarised in 6.3 and 6.5. Further results of E6:
+`socket(AF_UNIX)` fails (`EPROTONOSUPPORT`) but `socketpair(AF_UNIX)` works (no `SO_PEERCRED`); `AF_INET` needs
+`fuchsia.posix.socket.Provider`; `flock`, `fcntl` locks, inotify, `mkfifo`, `shm_open` and named semaphores are unavailable;
+there is no writable `/tmp`. So "no named `AF_UNIX`" is the correct statement, not "no `AF_UNIX`".
 
 ---
 
@@ -1163,7 +1300,10 @@ Condensed from the trust analysis (design-only, not yet in the project FMEA). Op
 
 ## C. Test matrix summary
 
-Design-only; none of these tests has been run. Layers: **U** unit (fake broker/authority), **F** FEMU integration, **B**
+Design matrix. Parts have since been run (see 6.2.2, 6.3, 6.5, Appendix D): rights, process/liveness death, epoch
+monotonicity and fencing, broker death and restart, identity types, discovery and Option B store+validate vs CAS (x86
+only). Not run: characterization of rollback re-runnability beyond slot granularity, rebirth/adoption with scrub, claim
+word, hot-path epoch check. Layers: **U** unit (fake broker/authority), **F** FEMU integration, **B**
 benchmark, **E** experiment.
 
 | Group | Tests | Layer |
@@ -1175,5 +1315,30 @@ benchmark, **E** experiment.
 | Rollback | claim word transitions, single executor, takeover of dead executor, live twin rejected | U |
 | Broker death | fail-static, restart reconcile, both-gone rebirth | F |
 | Identity | endpoint-derived identity, no application id parameter, principal/node split | U/F |
-| Discovery | E1-E7 (11.1), allow-table filtering | F/E |
+| Discovery | E1-E10 (6.3), allow-table filtering | F/E |
 | Performance | hot-path epoch check < 2 ns (T30), Option B store+validate vs CAS | B |
+
+---
+
+## D. Branches and commits
+
+All branches below are **local and unpushed** except this document's branch. Short hashes as reported by the work items.
+"Host" = Bazel unit tests; "FEMU" = ITF test on the emulator (single runs).
+
+| Branch | Commit | Content | Evidence |
+|---|---|---|---|
+| `feat/fuchsia-lock` | `fed9fe49` | `ILockProvider`, `PosixLockProvider`, Fuchsia `RegistryLockProvider` (eventpair-bound) | FEMU lock test incl. holder death |
+| `feat/fuchsia-attach` | `99bac535` | `score_mw_com.fidl`, `Attach` without application id, per-caller discovery, rights checks | FEMU `fuchsia_attach_itf_test` |
+| `feat/fuchsia-broker` | `5ad56a4b` | lease broker, epoch, tombstone, liveness + process watch | host 10 cases; FEMU `fuchsia_broker_itf_test` |
+| `feat/fuchsia-broker-hardening` | `1571950c` | `Reannounce`/adoption, lease leak fix, 100-cycle stress | host 12 cases; FEMU 414 checks |
+| `feat/fuchsia-events` | `2fba0b66` | `EventChannel` removed; notification eventpair | FEMU attach suite 4/4 (SMP=8) |
+| `feat/identity-split` | `9a86db64` | node vs principal split | host/FEMU |
+| `feat/identity-opaque` | `c1e6187c` | opaque `NodeId`/`PrincipalId` | host 227 pass (3 skipped); FEMU `message_passing_itf_test` |
+| `feat/incarnation-pr0-2` | `3aca6e1b` | incarnation PR 0-2 | host; `validation_cli` 2 errors pre-existing |
+| `feat/incarnation-pr3-7` | `684915c2` (`6121c192`, `67df8e4c`) | atomic `pid_`, `kQuarantine`, `Takeover`/`ReleaseIfOwner`; PR 3/4/5/7 not done | host 226/233 (1 flaky, passes isolated) |
+| `feat/datatype-generator-lowering` | `8b6f41c` | struct/enum/union/array lowering, `FixedLayoutValidator` (`inc_ecu_model` clone) | host; no maps |
+| `exp/realm-generator-femu` | `6bf59dec` | generated realm on FEMU (8 and 20 apps), generator fixes | FEMU; 29 Python tests |
+| `exp/fuchsia-open-questions` | `5262d114` | E1-E10 experiments | FEMU, single runs |
+| `exp/option-b-hold-regions` | `efdd3725` | Option B prototype and benchmark | host 10/10, TSan; FEMU; x86 benchmark |
+| fix branches | `ea8396f9`, `645b2a88` | registry start, engine writes | new tests fail on old code, pass on fix (FEMU) |
+| earlier | `400bc46b`, `313b0f73`, `dba39624`, `fe72722`, `0009b5db`, `023b6c77`, `42a73b23`, `45b8246e`, `d239a34b` | see section 13 | see section 13 |
