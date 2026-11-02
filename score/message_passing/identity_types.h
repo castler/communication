@@ -17,6 +17,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <ostream>
 #include <string>
 
 #include "score/message_passing/node_id.h"
@@ -59,6 +60,11 @@ class OpaqueId
     friend constexpr bool operator<(const OpaqueId lhs, const OpaqueId rhs) noexcept
     {
         return lhs.raw_ < rhs.raw_;
+    }
+
+    friend void PrintTo(const OpaqueId& id, std::ostream* os)
+    {
+        *os << id.ToString();
     }
 
   private:

@@ -17,6 +17,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <ostream>
 #include <string>
 #include <type_traits>
 
@@ -94,6 +95,11 @@ class NodeId
     friend constexpr bool operator<(const NodeId& lhs, const NodeId& rhs) noexcept
     {
         return lhs.value_ < rhs.value_;
+    }
+
+    friend void PrintTo(const NodeId& id, std::ostream* os)
+    {
+        *os << id.ToString();
     }
 
   private:
