@@ -24,3 +24,11 @@ def test_message_passing_echo_across_components_on_fuchsia(target):
     )
     assert "cross component echo OK" in result.output, result.output
     assert result.returncode == 0, result.output
+
+
+def test_message_passing_stalled_reader_on_fuchsia(target):
+    result = target.run_test_component(
+        "message_passing_stalled_reader_test#meta/stalled_reader_test.cm"
+    )
+    assert "stalled reader OK" in result.output, result.output
+    assert result.returncode == 0, result.output

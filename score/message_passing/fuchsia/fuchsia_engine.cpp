@@ -18,8 +18,11 @@
 #include <array>
 #include <cerrno>
 #include <future>
+#include <limits>
 #include <tuple>
 
+#include <fcntl.h>
+#include <poll.h>
 #include <unistd.h>
 
 namespace score::message_passing
@@ -29,25 +32,41 @@ namespace
 {
 
 // Zircon socket descriptors support read() and write(), but not sendmsg() and recvmsg()
-score::cpp::expected_blank<score::os::Error> WriteAll(const std::int32_t fd,
-                                                      const std::uint8_t* data,
-                                                      std::size_t size) noexcept
+
+// Writes as much as the socket accepts without blocking, requires O_NONBLOCK.
+// \return the number of bytes written; may be less than size if the socket is full
+score::cpp::expected<std::size_t, score::os::Error> WriteSome(const std::int32_t fd,
+                                                              const std::uint8_t* data,
+                                                              const std::size_t size) noexcept
 {
-    while (size > 0U)
+    std::size_t done = 0U;
+    while (done < size)
     {
-        const auto written = ::write(fd, data, size);
+        const auto written = ::write(fd, data + done, size - done);
         if (written < 0)
         {
             if (errno == EINTR)
             {
                 continue;
             }
+            if ((errno == EAGAIN) || (errno == EWOULDBLOCK))
+            {
+                break;
+            }
             return score::cpp::make_unexpected(score::os::Error::createFromErrno(errno));
         }
-        data += written;
-        size -= static_cast<std::size_t>(written);
+        done += static_cast<std::size_t>(written);
     }
-    return {};
+    return done;
+}
+
+void EnsureNonBlocking(const std::int32_t fd) noexcept
+{
+    const auto flags = ::fcntl(fd, F_GETFL);
+    if ((flags >= 0) && ((flags & O_NONBLOCK) == 0))
+    {
+        std::ignore = ::fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+    }
 }
 
 // \return the number of bytes read, which is less than size only if the peer has disconnected
@@ -63,6 +82,13 @@ score::cpp::expected<std::size_t, score::os::Error> ReadAll(const std::int32_t f
         {
             if (errno == EINTR)
             {
+                continue;
+            }
+            if ((errno == EAGAIN) || (errno == EWOULDBLOCK))
+            {
+                // descriptors are non-blocking for the sake of the writers; the peer is mid-frame, so wait for the rest
+                pollfd wait{fd, POLLIN, 0};
+                std::ignore = ::poll(&wait, 1, -1);
                 continue;
             }
             return score::cpp::make_unexpected(score::os::Error::createFromErrno(errno));
@@ -85,6 +111,7 @@ FuchsiaEngine::FuchsiaEngine(score::cpp::pmr::memory_resource* memory_resource, 
       quit_flag_{false},
       poll_fds_{memory_resource},
       poll_endpoints_{memory_resource},
+      poll_scratch_{memory_resource},
       posix_receive_buffer_{memory_resource}
 {
     std::ignore = os_resources_.unistd->pipe(pipe_fds_.data());
@@ -116,12 +143,15 @@ score::cpp::expected<std::int32_t, score::os::Error> FuchsiaEngine::TryOpenClien
 
 void FuchsiaEngine::CloseClientConnection(std::int32_t client_fd) noexcept
 {
+    DiscardSendQueue(client_fd);
     std::ignore = os_resources_.unistd->close(client_fd);
 }
 
 void FuchsiaEngine::RegisterPosixEndpoint(PosixEndpointEntry& endpoint) noexcept
 {
     SCORE_LANGUAGE_FUTURECPP_ASSERT_PRD(IsOnCallbackThread());
+
+    DiscardSendQueue(endpoint.fd);  // the descriptor number may be a reused one
 
     if (posix_receive_buffer_.size() < endpoint.max_receive_size)
     {
@@ -171,6 +201,7 @@ void FuchsiaEngine::UnpollEndpoint(const std::size_t index) noexcept
     PosixEndpointEntry& endpoint = *poll_endpoints_[index];
     std::ignore = posix_endpoint_list_.erase(posix_endpoint_list_.iterator_to(endpoint));
     poll_endpoints_[index] = nullptr;
+    DiscardSendQueue(endpoint.fd);
     poll_fds_[index] = {pipe_fds_[1], 0, 0};
     if (!endpoint.disconnect.empty())
     {
@@ -218,7 +249,11 @@ score::cpp::expected_blank<score::os::Error> FuchsiaEngine::SendProtocolMessage(
     std::uint8_t code,
     const score::cpp::span<const std::uint8_t> message) noexcept
 {
-    // frame: code, 16 bit little endian size, payload; written at once to keep concurrent senders from interleaving
+    // frame: code, 16 bit little endian size, payload
+    if (message.size() > std::numeric_limits<std::uint16_t>::max())
+    {
+        return score::cpp::make_unexpected(score::os::Error::createFromErrno(EMSGSIZE));
+    }
     const auto size = static_cast<std::uint16_t>(message.size());
     score::cpp::pmr::vector<std::uint8_t> frame{memory_resource_};
     frame.reserve(sizeof(code) + sizeof(size) + message.size());
@@ -226,7 +261,87 @@ score::cpp::expected_blank<score::os::Error> FuchsiaEngine::SendProtocolMessage(
     frame.push_back(static_cast<std::uint8_t>(size & 0xFFU));
     frame.push_back(static_cast<std::uint8_t>(size >> 8U));
     frame.insert(frame.end(), message.begin(), message.end());
-    return WriteAll(fd, frame.data(), frame.size());
+
+    // Writers never block: a frame is either fully accepted (written or queued) or fully rejected with EAGAIN, so
+    // the byte stream always consists of whole frames. The queue is bounded by kMaxPendingBytes; on overflow the new
+    // frame is dropped and reported to the caller, so that a stalled peer costs bounded memory and the connection
+    // stays usable. Writes are serialized by the mutex, which is held only for non-blocking operations.
+    std::lock_guard<std::mutex> guard{send_mutex_};
+    EnsureNonBlocking(fd);
+    auto& queue = send_queues_[fd];
+    const auto pending = queue.bytes.size() - queue.head;
+    if (pending > 0U)
+    {
+        if (pending + frame.size() > kMaxPendingBytes)
+        {
+            return score::cpp::make_unexpected(score::os::Error::createFromErrno(EAGAIN));
+        }
+        queue.bytes.insert(queue.bytes.end(), frame.begin(), frame.end());
+        return {};
+    }
+    const auto written = WriteSome(fd, frame.data(), frame.size());
+    if (!written.has_value())
+    {
+        std::ignore = send_queues_.erase(fd);
+        return score::cpp::make_unexpected(written.error());
+    }
+    if (written.value() < frame.size())
+    {
+        // kMaxPendingBytes is larger than any frame, so the remainder always fits
+        queue.bytes.assign(frame.begin() + static_cast<std::ptrdiff_t>(written.value()), frame.end());
+        queue.head = 0U;
+        SendPipeEvent(PipeEvent::TIMER);  // wake the engine thread to poll for POLLOUT
+    }
+    else
+    {
+        std::ignore = send_queues_.erase(fd);
+    }
+    return {};
+}
+
+void FuchsiaEngine::DiscardSendQueue(const std::int32_t fd) noexcept
+{
+    std::lock_guard<std::mutex> guard{send_mutex_};
+    std::ignore = send_queues_.erase(fd);
+}
+
+void FuchsiaEngine::FlushSendQueue(const std::int32_t fd, const bool failed) noexcept
+{
+    std::lock_guard<std::mutex> guard{send_mutex_};
+    const auto found = send_queues_.find(fd);
+    if (found == send_queues_.end())
+    {
+        return;
+    }
+    auto& queue = found->second;
+    const auto written =
+        failed ? score::cpp::expected<std::size_t, score::os::Error>{score::cpp::make_unexpected(
+                     score::os::Error::createFromErrno(EPIPE))}
+               : WriteSome(fd, queue.bytes.data() + queue.head, queue.bytes.size() - queue.head);
+    if (!written.has_value())
+    {
+        // the peer is gone; the reading side will notice the disconnect
+        send_queues_.erase(found);
+        return;
+    }
+    queue.head += written.value();
+    if (queue.head == queue.bytes.size())
+    {
+        send_queues_.erase(found);
+    }
+}
+
+void FuchsiaEngine::CollectPendingSendFds(score::cpp::pmr::vector<pollfd>& fds) noexcept
+{
+    std::lock_guard<std::mutex> guard{send_mutex_};
+    for (const auto& entry : send_queues_)
+    {
+        if (entry.second.bytes.size() > entry.second.head)
+        {
+            // NOLINTNEXTLINE(hicpp-signed-bitwise): POLL* are non-negative POSIX constants and pollfd::events is signed
+            std::ignore = fds.emplace_back(pollfd{entry.first, POLLOUT, 0});
+        }
+    }
 }
 
 score::cpp::expected<score::cpp::span<const std::uint8_t>, score::os::Error> FuchsiaEngine::ReceiveProtocolMessage(
@@ -308,12 +423,25 @@ void FuchsiaEngine::RunOnThread() noexcept
     while (!quit_flag_)
     {
         const std::int32_t timeout = ProcessTimerQueue();
-        const auto num_expected = os_resources_.poll->poll(poll_fds_.data(), poll_fds_.size(), timeout);
+        // connections with queued output are additionally polled for POLLOUT, even if not registered as endpoints
+        const auto endpoint_count = poll_fds_.size();
+        poll_scratch_.assign(poll_fds_.begin(), poll_fds_.end());
+        CollectPendingSendFds(poll_scratch_);
+        const auto num_expected = os_resources_.poll->poll(poll_scratch_.data(), poll_scratch_.size(), timeout);
         if ((num_expected.has_value()) && (num_expected.value() > 0))
         {
-            for (std::size_t i = 0; i < poll_fds_.size(); ++i)
+            for (std::size_t i = endpoint_count; i < poll_scratch_.size(); ++i)
             {
-                if ((poll_fds_[i].revents != 0) && (poll_endpoints_[i] != nullptr))
+                if (poll_scratch_[i].revents != 0)
+                {
+                    // NOLINTNEXTLINE(hicpp-signed-bitwise): POLL* are non-negative POSIX constants
+                    FlushSendQueue(poll_scratch_[i].fd, (poll_scratch_[i].revents & (POLLERR | POLLHUP | POLLNVAL)) != 0);
+                }
+            }
+            for (std::size_t i = 0; i < endpoint_count; ++i)
+            {
+                // an endpoint may get unregistered by a previous callback in this very iteration
+                if ((poll_scratch_[i].revents != 0) && (poll_endpoints_[i] != nullptr))
                 {
                     poll_endpoints_[i]->input();
                 }

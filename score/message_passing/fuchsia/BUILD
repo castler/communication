@@ -169,3 +169,24 @@ fuchsia_unittest_package(
     unit_tests = [":echo_test"],
     visibility = ["//quality/integration_testing:__subpackages__"],
 )
+
+# Slow subscriber: senders must not block on a peer that does not read, and framing must stay intact.
+fuchsia_cc_test(
+    name = "stalled_reader_test",
+    srcs = ["stalled_reader_test.cpp"],
+    tags = ["manual"],
+    deps = [
+        ":message_passing_fuchsia",
+        "@fuchsia_sdk//pkg/fdio",
+        "@fuchsia_sdk//pkg/syslog",
+        "@fuchsia_sdk//pkg/zx",
+    ],
+)
+
+fuchsia_unittest_package(
+    name = "stalled_reader_test_pkg",
+    package_name = "message_passing_stalled_reader_test",
+    tags = ["manual"],
+    unit_tests = [":stalled_reader_test"],
+    visibility = ["//quality/integration_testing:__subpackages__"],
+)
