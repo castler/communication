@@ -26,9 +26,35 @@ namespace score::mw::com::impl::lola::fuchsia
 class VmoShmRuntime::CompositeProvider final : public score::memory::shared::fuchsia::IVmoHandleProvider
 {
   public:
-    CompositeProvider(std::shared_ptr<FidlVmoHandleServer> server, EndpointConnector connector)
-        : IVmoHandleProvider{}, server_{std::move(server)}, connector_{std::move(connector)}
+    CompositeProvider(std::shared_ptr<FidlVmoHandleServer> server,
+                      EndpointConnector connector,
+                      FuchsiaEventNotifier& notifier)
+        : IVmoHandleProvider{}, server_{std::move(server)}, connector_{std::move(connector)}, notifier_{notifier}
     {
+    }
+
+    /// Attaches a new client for the instance (the skeleton restarted): used by the notifier to get a live eventpair.
+    std::shared_ptr<FidlVmoHandleClient> Reattach(const std::uint16_t service_id, const std::uint16_t instance_id)
+    {
+        const std::lock_guard<std::mutex> lock{mutex_};
+        for (auto& entry : clients_)
+        {
+            std::uint16_t service{};
+            std::uint16_t instance{};
+            if (!FuchsiaEventNotifier::ParseInstanceKey(entry.first, service, instance) || (service != service_id) ||
+                (instance != instance_id))
+            {
+                continue;
+            }
+            auto client = MakeClient();
+            if ((client == nullptr) || (client->Attach() != ZX_OK))
+            {
+                return nullptr;
+            }
+            entry.second = client;
+            return client;
+        }
+        return nullptr;
     }
 
     score::cpp::expected<zx::vmo, score::os::Error> Acquire(const std::string& key) noexcept override
@@ -50,7 +76,7 @@ class VmoShmRuntime::CompositeProvider final : public score::memory::shared::fuc
             }
             clients_.erase(it);
         }
-        auto client = MakeClient();
+        std::shared_ptr<FidlVmoHandleClient> client = MakeClient();
         if (client == nullptr)
         {
             return score::cpp::make_unexpected(score::os::Error::createFromErrno(ECONNREFUSED));
@@ -58,7 +84,13 @@ class VmoShmRuntime::CompositeProvider final : public score::memory::shared::fuc
         auto result = client->Acquire(key);
         if (client->attach_info().has_value())
         {
-            clients_[instance] = std::move(client);
+            clients_[instance] = client;
+            std::uint16_t service_id{};
+            std::uint16_t instance_id{};
+            if (FuchsiaEventNotifier::ParseInstanceKey(instance, service_id, instance_id))
+            {
+                notifier_.AddProvider(service_id, instance_id, std::move(client));
+            }
         }
         return result;
     }
@@ -74,7 +106,7 @@ class VmoShmRuntime::CompositeProvider final : public score::memory::shared::fuc
     }
 
   private:
-    std::unique_ptr<FidlVmoHandleClient> MakeClient()
+    std::shared_ptr<FidlVmoHandleClient> MakeClient()
     {
         if (!connector_)
         {
@@ -85,13 +117,14 @@ class VmoShmRuntime::CompositeProvider final : public score::memory::shared::fuc
         {
             return nullptr;
         }
-        return std::make_unique<FidlVmoHandleClient>(std::move(*endpoint));
+        return std::make_shared<FidlVmoHandleClient>(std::move(*endpoint));
     }
 
     std::shared_ptr<FidlVmoHandleServer> server_;
     EndpointConnector connector_;
+    FuchsiaEventNotifier& notifier_;
     std::mutex mutex_;
-    std::map<std::string, std::unique_ptr<FidlVmoHandleClient>> clients_;
+    std::map<std::string, std::shared_ptr<FidlVmoHandleClient>> clients_;
 };
 
 auto VmoShmRuntime::InstanceKeyOf(const std::string& region_key) -> std::string
@@ -131,8 +164,14 @@ VmoShmRuntime::VmoShmRuntime(async_dispatcher_t* dispatcher,
                              EndpointConnector connector,
                              score::memory::shared::ILockProvider* lock_provider)
     : server_{std::make_shared<FidlVmoHandleServer>(dispatcher)},
-      provider_{std::make_shared<CompositeProvider>(server_, std::move(connector))}
+      notifier_{std::make_unique<FuchsiaEventNotifier>()},
+      provider_{std::make_shared<CompositeProvider>(server_, std::move(connector), *notifier_)}
 {
+    notifier_->SetServer(server_.get());
+    notifier_->SetReattacher([provider = provider_.get()](const std::uint16_t service_id, const std::uint16_t instance_id) {
+        return provider->Reattach(service_id, instance_id);
+    });
+    IEventNotifier::SetCurrent(notifier_.get());
     factory_ = std::make_unique<score::memory::shared::fuchsia::VmoSharedMemoryFactory>(
         provider_, [](const std::string& key) { return IsConsumerWritable(key); });
     score::memory::shared::SharedMemoryFactory::InjectMock(factory_.get());
@@ -145,6 +184,7 @@ VmoShmRuntime::VmoShmRuntime(async_dispatcher_t* dispatcher,
 
 VmoShmRuntime::~VmoShmRuntime()
 {
+    IEventNotifier::SetCurrent(nullptr);
     score::memory::shared::SharedMemoryFactory::InjectMock(nullptr);
     if (lock_provider_installed_)
     {

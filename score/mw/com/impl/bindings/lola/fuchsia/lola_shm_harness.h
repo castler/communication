@@ -23,7 +23,7 @@ namespace score::mw::com::impl::lola::fuchsia::harness
 constexpr std::uint16_t kServiceId{0x1234U};
 constexpr std::uint16_t kInstanceId{1U};
 constexpr std::uint16_t kSlots{2U};
-constexpr std::uint8_t kMaxSubscribers{2U};
+constexpr std::uint8_t kMaxSubscribers{4U};
 constexpr std::int32_t kSkeletonPid{4242};
 
 struct SampleData
@@ -64,6 +64,10 @@ class SkeletonSide
     /// \brief Skeleton-side update of slot 0 (data region is written by the owner only).
     void WriteSample(const SampleData& sample);
 
+    /// \brief Publishes `counter` the way SkeletonEvent::Send does: EventDataControlComposite::AllocateNextSlot, write
+    ///        the sample into the slot, EventReady with an increasing timestamp. Retries while no slot is free.
+    bool Publish(const std::uint64_t counter);
+
     void Remove();
 
     std::string DataPath() const;
@@ -79,7 +83,9 @@ class SkeletonSide
 class ProxySide
 {
   public:
-    ProxySide();
+    /// \param transaction_log_id identifies the proxy in the transaction log set of the event (as the application id
+    ///        does in LoLa); must differ between the proxy processes of one instance.
+    explicit ProxySide(const std::uint32_t transaction_log_id = 1U);
     ~ProxySide();
     ProxySide(const ProxySide&) = delete;
     ProxySide& operator=(const ProxySide&) = delete;
@@ -91,6 +97,11 @@ class ProxySide
     bool ReadSample(SampleData& out) const;
     /// \brief Subscribes `slots` in the control region mapped by this proxy; returns the SubscribeResult as integer.
     int Subscribe(const std::uint16_t slots);
+
+    /// \brief What a receive handler does: references the newest slot newer than `last_timestamp` through
+    ///        ConsumerEventDataControlLocalView, copies the sample and releases the slot. Returns false if there is
+    ///        nothing new; otherwise `last_timestamp` is advanced and `counter` is the sample's counter.
+    bool ReceiveNewest(std::uint32_t& last_timestamp, std::uint64_t& counter);
 
   private:
     class Impl;

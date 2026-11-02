@@ -26,8 +26,28 @@
 
 #include "score/mw/com/impl/bindings/lola/messaging/message_passing_service_instance_factory.h"
 
+#ifdef __Fuchsia__
+#include "score/mw/com/impl/bindings/lola/fuchsia/event_notifying_service_instance.h"
+#endif
+
 namespace score::mw::com::impl::lola
 {
+
+namespace
+{
+
+std::unique_ptr<IMessagePassingServiceInstanceFactory> MakeMessagePassingServiceInstanceFactory()
+{
+#ifdef __Fuchsia__
+    // Event notification goes through the notification eventpair of Attach (transparent without a VmoShmRuntime).
+    return std::make_unique<fuchsia::EventNotifyingServiceInstanceFactory>(
+        std::make_unique<MessagePassingServiceInstanceFactory>());
+#else
+    return std::make_unique<MessagePassingServiceInstanceFactory>();
+#endif
+}
+
+}  // namespace
 
 /// \brief Determines the unique identifier for this application instance.
 /// \details This function implements the logic to select the application identifier. It prioritizes the
@@ -69,7 +89,7 @@ Runtime::Runtime(const Configuration& config,
                               Runtime::HasAsilBSupport()
                                   ? std::optional<AsilSpecificCfg>{Runtime::GetMessagePassingCfg(QualityType::kASIL_B)}
                                   : std::nullopt,
-                              std::make_unique<MessagePassingServiceInstanceFactory>()},
+                              MakeMessagePassingServiceInstanceFactory()},
       service_discovery_client_{long_running_threads_},
       tracing_runtime_{std::move(lola_tracing_runtime)},
       rollback_data_{},

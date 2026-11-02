@@ -103,6 +103,17 @@ auto FidlVmoHandleClient::EnsureAttached() -> zx_status_t
     return ZX_OK;
 }
 
+auto FidlVmoHandleClient::Attach() noexcept -> zx_status_t
+{
+    const std::lock_guard<std::mutex> lock{mutex_};
+    const zx_status_t status = EnsureAttached();
+    if (status != ZX_OK)
+    {
+        return status;
+    }
+    return attach_error_.has_value() ? ZX_ERR_ACCESS_DENIED : ZX_OK;
+}
+
 auto FidlVmoHandleClient::WaitForNotification(const zx::time deadline) noexcept -> zx_status_t
 {
     if (!notification_.is_valid())
