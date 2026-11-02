@@ -81,7 +81,7 @@ class TransactionLogRollbackExecutorFixture : public ::testing::Test
         unit_ = std::make_unique<TransactionLogRollbackExecutor>(*service_data_control_,
                                                                  kSkeletonInstanceIdentifier,
                                                                  kDummyQualityType,
-                                                                 kDummyProviderPid,
+                                                                 message_passing::NodeIdFromPid(kDummyProviderPid),
                                                                  kDummyTransactionLogId);
 
         return *this;
@@ -272,7 +272,7 @@ TEST_F(TransactionLogRollbackExecutorRollbackLogsFixture, QuarantinePolicyOfExec
     unit_ = std::make_unique<TransactionLogRollbackExecutor>(*service_data_control_,
                                                              kSkeletonInstanceIdentifier,
                                                              kDummyQualityType,
-                                                             kDummyProviderPid,
+                                                             message_passing::NodeIdFromPid(kDummyProviderPid),
                                                              kDummyTransactionLogId,
                                                              RollbackAmbiguityPolicy::kQuarantine);
     AddApplicationIdPidMapping(static_cast<std::uint32_t>(kDummyTransactionLogId), kDummyOldConsumerPid);

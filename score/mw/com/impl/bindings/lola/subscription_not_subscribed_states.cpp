@@ -117,9 +117,9 @@ void NotSubscribedState::StopOfferEvent() noexcept
     state_machine_.provider_service_instance_is_available_ = false;
 }
 
-void NotSubscribedState::ReOfferEvent(const pid_t new_event_source_pid) noexcept
+void NotSubscribedState::ReOfferEvent(const message_passing::NodeId new_event_source_node) noexcept
 {
-    state_machine_.event_receive_handler_manager_.UpdatePid(new_event_source_pid);
+    state_machine_.event_receive_handler_manager_.UpdateNode(new_event_source_node);
     state_machine_.provider_service_instance_is_available_ = true;
 }
 

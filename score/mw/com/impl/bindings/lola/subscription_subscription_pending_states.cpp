@@ -73,10 +73,10 @@ void SubscriptionPendingState::StopOfferEvent() noexcept
     std::terminate();
 }
 
-void SubscriptionPendingState::ReOfferEvent(const pid_t new_event_source_pid)
+void SubscriptionPendingState::ReOfferEvent(const message_passing::NodeId new_event_source_node)
 {
     state_machine_.provider_service_instance_is_available_ = true;
-    state_machine_.event_receive_handler_manager_.UpdatePid(new_event_source_pid);
+    state_machine_.event_receive_handler_manager_.UpdateNode(new_event_source_node);
     state_machine_.event_receive_handler_manager_.Reregister(state_machine_.event_receiver_handler_);
     state_machine_.event_receiver_handler_.reset();
     state_machine_.TransitionToState(SubscriptionStateMachineState::SUBSCRIBED_STATE);

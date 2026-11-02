@@ -37,7 +37,7 @@ ProxyEvent::ProxyEvent(Proxy& parent, const ElementFqId element_fq_id, const std
       transaction_log_set_{parent_.GetTransactionLogSet(event_fq_id_)},
       subscription_event_state_machine_{parent_.GetQualityType(),
                                         event_fq_id_,
-                                        parent_.GetSourcePid(),
+                                        parent_.GetProviderNode(),
                                         event_data_control_local_,
                                         subscription_control_.get(),
                                         transaction_log_set_.get(),
@@ -170,11 +170,11 @@ std::optional<std::uint16_t> ProxyEvent::GetMaxSampleCount() const noexcept
 }
 
 void ProxyEvent::NotifyServiceInstanceChangedAvailability(const bool is_available,
-                                                          const pid_t new_event_source_pid) noexcept
+                                                          const message_passing::NodeId new_event_source_node) noexcept
 {
     if (is_available)
     {
-        subscription_event_state_machine_.ReOfferEvent(new_event_source_pid);
+        subscription_event_state_machine_.ReOfferEvent(new_event_source_node);
     }
     else
     {

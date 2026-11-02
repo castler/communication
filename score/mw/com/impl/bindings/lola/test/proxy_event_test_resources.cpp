@@ -178,9 +178,9 @@ LolaProxyEventResources::~LolaProxyEventResources()
 }
 
 std::future<std::shared_ptr<ScopedEventReceiveHandler>> LolaProxyEventResources::ExpectRegisterEventNotification(
-    std::optional<pid_t> pid)
+    std::optional<message_passing::NodeId> node)
 {
-    const auto pid_to_use = pid.has_value() ? pid.value() : kDummyPid;
+    const auto node_to_use = node.has_value() ? node.value() : kDummyNode;
 
     // Since gtest currently seems to require that the provided lambdas are copyable, we can't move the
     // local_handler_promise into the state of the lambda using a generalized lambda captures. Instead, we pass it in
@@ -189,7 +189,7 @@ std::future<std::shared_ptr<ScopedEventReceiveHandler>> LolaProxyEventResources:
     auto local_handler_future = local_handler_promise->get_future();
 
     EXPECT_CALL(*mock_service_,
-                RegisterEventNotification(QualityType::kASIL_QM, element_fq_id_, ::testing::_, message_passing::NodeIdFromPid(pid_to_use)))
+                RegisterEventNotification(QualityType::kASIL_QM, element_fq_id_, ::testing::_, node_to_use))
         .WillOnce(::testing::Invoke(
             ::testing::WithArg<2>([local_handler_promise](std::weak_ptr<ScopedEventReceiveHandler> handler_weak_ptr)
                                       -> IMessagePassingService::HandlerRegistrationNoType {
@@ -203,18 +203,18 @@ std::future<std::shared_ptr<ScopedEventReceiveHandler>> LolaProxyEventResources:
     return local_handler_future;
 }
 
-void LolaProxyEventResources::ExpectReregisterEventNotification(std::optional<pid_t> pid)
+void LolaProxyEventResources::ExpectReregisterEventNotification(std::optional<message_passing::NodeId> node)
 {
-    const auto pid_to_use = pid.has_value() ? pid.value() : kDummyPid;
-    EXPECT_CALL(*mock_service_, ReregisterEventNotification(QualityType::kASIL_QM, element_fq_id_, message_passing::NodeIdFromPid(pid_to_use)))
+    const auto node_to_use = node.has_value() ? node.value() : kDummyNode;
+    EXPECT_CALL(*mock_service_, ReregisterEventNotification(QualityType::kASIL_QM, element_fq_id_, node_to_use))
         .RetiresOnSaturation();
 }
 
-void LolaProxyEventResources::ExpectUnregisterEventNotification(std::optional<pid_t> pid)
+void LolaProxyEventResources::ExpectUnregisterEventNotification(std::optional<message_passing::NodeId> node)
 {
-    const auto pid_to_use = pid.has_value() ? pid.value() : kDummyPid;
+    const auto node_to_use = node.has_value() ? node.value() : kDummyNode;
     EXPECT_CALL(*mock_service_,
-                UnregisterEventNotification(QualityType::kASIL_QM, element_fq_id_, ::testing::_, message_passing::NodeIdFromPid(pid_to_use)));
+                UnregisterEventNotification(QualityType::kASIL_QM, element_fq_id_, ::testing::_, node_to_use));
 }
 
 SlotIndexType LolaProxyEventResources::PutData(const std::uint32_t value,

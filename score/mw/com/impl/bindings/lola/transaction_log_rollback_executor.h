@@ -28,7 +28,7 @@ class TransactionLogRollbackExecutor
     /// \brief ctor of proxy instance specific TransactionLogRollbackExecutor
     /// \param service_data_control pointer to service instance specific control within shared-mem.
     /// \param asil_level asil level of the proxy instance owning this executor.
-    /// \param provider_pid pid/node-id of the service instance provider
+    /// \param provider_node node of the service instance provider
     /// \param transaction_log_id id of transaction logs to be rolled back.
     /// \param ambiguity_policy how to handle logs of a previous incarnation, which was interrupted while the effect of
     ///        a slot/subscription transaction is unknown. kFail (default) keeps such a log stuck and fails the rollback
@@ -36,7 +36,7 @@ class TransactionLogRollbackExecutor
     TransactionLogRollbackExecutor(ServiceDataControl& service_data_control,
                                    const SkeletonInstanceIdentifier skeleton_instance_identifier,
                                    const QualityType asil_level,
-                                   const pid_t provider_pid,
+                                   const message_passing::NodeId provider_node,
                                    const TransactionLogId transaction_log_id,
                                    const RollbackAmbiguityPolicy ambiguity_policy =
                                        RollbackAmbiguityPolicy::kFail) noexcept;
@@ -66,7 +66,7 @@ class TransactionLogRollbackExecutor
     /// asil level of the service_data_control_
     const QualityType asil_level_;
     /// pid of the provider of the service instance represented by service_data_control_
-    const pid_t provider_pid_;
+    const message_passing::NodeId provider_node_;
     TransactionLogId transaction_log_id_;
     SkeletonInstanceIdentifier skeleton_instance_identifier_;
     RollbackAmbiguityPolicy ambiguity_policy_;

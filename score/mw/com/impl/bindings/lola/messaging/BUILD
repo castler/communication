@@ -21,6 +21,7 @@ cc_library(
     hdrs = ["asil_specific_cfg.h"],
     features = COMPILER_WARNING_FEATURES,
     tags = ["FFI"],
+    deps = ["//score/message_passing:common_headers"],
 )
 
 cc_library(

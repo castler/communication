@@ -67,7 +67,7 @@ void SubscribedState::StopOfferEvent()
     state_machine_.TransitionToState(SubscriptionStateMachineState::SUBSCRIPTION_PENDING_STATE);
 }
 
-void SubscribedState::ReOfferEvent(const pid_t)
+void SubscribedState::ReOfferEvent(const message_passing::NodeId)
 {
     ::score::mw::log::LogWarn("lola") << CreateLoggingString("Service cannot be re-offered while already subscribed.",
                                                              state_machine_.GetElementFqId(),

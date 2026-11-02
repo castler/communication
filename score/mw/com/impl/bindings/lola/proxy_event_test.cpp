@@ -127,7 +127,7 @@ TEST_F(LolaProxyEventFixture,
     // When calling NotifyServiceInstanceChangedAvailability with is_available == true
     const bool is_available = true;
     this->test_proxy_event_->NotifyServiceInstanceChangedAvailability(is_available,
-                                                                      ProxyMockedMemoryFixture::kDummyPid);
+                                                                      ProxyMockedMemoryFixture::kDummyNode);
 
     // Then the subscription state will still be not subscribed
     const auto new_subscription_state = this->test_proxy_event_->GetSubscriptionState();
@@ -142,7 +142,7 @@ TEST_F(LolaProxyEventFixture, CallingNotifyServiceInstanceChangedAvailabilityWhe
     // When calling NotifyServiceInstanceChangedAvailability with is_available == false
     const bool is_available = false;
     this->test_proxy_event_->NotifyServiceInstanceChangedAvailability(is_available,
-                                                                      ProxyMockedMemoryFixture::kDummyPid);
+                                                                      ProxyMockedMemoryFixture::kDummyNode);
 
     // Then the subscription state will change to subscription pending
     const auto new_subscription_state = this->test_proxy_event_->GetSubscriptionState();
@@ -156,12 +156,12 @@ TEST_F(LolaProxyEventFixture,
     this->GivenAProxyEvent(this->element_fq_id_, this->event_name_).ThatIsSubscribedWithMaxSamples(kMaxSampleCount);
     const bool is_available = false;
     this->test_proxy_event_->NotifyServiceInstanceChangedAvailability(is_available,
-                                                                      ProxyMockedMemoryFixture::kDummyPid);
+                                                                      ProxyMockedMemoryFixture::kDummyNode);
 
     // When calling NotifyServiceInstanceChangedAvailability with is_available == true
     const bool new_is_available = true;
     this->test_proxy_event_->NotifyServiceInstanceChangedAvailability(new_is_available,
-                                                                      ProxyMockedMemoryFixture::kDummyPid);
+                                                                      ProxyMockedMemoryFixture::kDummyNode);
 
     // Then the subscription state will change to subscribed
     const auto new_subscription_state = this->test_proxy_event_->GetSubscriptionState();

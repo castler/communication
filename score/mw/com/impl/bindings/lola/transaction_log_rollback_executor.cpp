@@ -52,12 +52,12 @@ TransactionLogRollbackExecutor::TransactionLogRollbackExecutor(
     ServiceDataControl& service_data_control,
     const SkeletonInstanceIdentifier skeleton_instance_identifier,
     const QualityType asil_level,
-    pid_t provider_pid,
+    const message_passing::NodeId provider_node,
     const TransactionLogId transaction_log_id,
     const RollbackAmbiguityPolicy ambiguity_policy) noexcept
     : service_data_control_{service_data_control},
       asil_level_{asil_level},
-      provider_pid_{provider_pid},
+      provider_node_{provider_node},
       transaction_log_id_{transaction_log_id},
       skeleton_instance_identifier_{skeleton_instance_identifier},
       ambiguity_policy_{ambiguity_policy}
@@ -91,7 +91,7 @@ void TransactionLogRollbackExecutor::PrepareRollback(lola::IRuntime& lola_runtim
         // this pid is outdated.
         lola_runtime.GetLolaMessaging().NotifyOutdatedNodeId(asil_level_,
                                                                   message_passing::NodeIdFromPid(previous_pid.value()),
-                                                                  message_passing::NodeIdFromPid(provider_pid_));
+                                                                  provider_node_);
     }
 
     // Mark all TransactionLogs for each event that correspond to transaction_log_id as needing to be rolled back.

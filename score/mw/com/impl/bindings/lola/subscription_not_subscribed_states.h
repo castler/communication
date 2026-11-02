@@ -38,7 +38,7 @@ class NotSubscribedState final : public SubscriptionStateBase
     Result<void> SubscribeEvent(const std::size_t max_sample_count) override;
     void UnsubscribeEvent() noexcept override;
     void StopOfferEvent() noexcept override;
-    void ReOfferEvent(const pid_t new_event_source_pid) noexcept override;
+    void ReOfferEvent(const message_passing::NodeId new_event_source_node) noexcept override;
 
     void SetReceiveHandler(std::weak_ptr<ScopedEventReceiveHandler> handler) noexcept override;
     void UnsetReceiveHandler() override;

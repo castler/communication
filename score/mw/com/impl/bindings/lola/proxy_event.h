@@ -84,7 +84,7 @@ class ProxyEvent final : public GenericProxyEventBinding
     ///        SkeletonEvent) has changed its availability.
     /// \param is_available true if the provider service instance has changed from being unavailable to available.
     ///        false if the providing service instance has changed from being available to unavailable.
-    /// \param new_event_source_pid new pid of provider service instance.
+    /// \param new_event_source_node new node of provider service instance.
     ///
     /// This is called by the lola::Proxy which begins a StartFindService search on construction for the provider
     /// service instance. When the service instance changes availability, it triggers a callback that calls
@@ -94,7 +94,7 @@ class ProxyEvent final : public GenericProxyEventBinding
     /// identifying the (re-)connected provider service instance via its PID is a LoLa specific concept (e.g. a
     /// network based binding would never use an ECU local PID to identify a remote event source). It is therefore
     /// only used/called by lola::Proxy.
-    void NotifyServiceInstanceChangedAvailability(bool is_available, pid_t new_event_source_pid) noexcept;
+    void NotifyServiceInstanceChangedAvailability(bool is_available, message_passing::NodeId new_event_source_node) noexcept;
 
     memory::DataTypeSizeInfo GetDataTypeSizeInfo() const override
     {

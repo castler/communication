@@ -143,6 +143,7 @@ class ProxyMockedMemoryFixture : public ::testing::Test
 
   protected:
     static constexpr pid_t kDummyPid{123456};
+    static constexpr message_passing::NodeId kDummyNode{message_passing::NodeId::FromPid(kDummyPid)};
     static constexpr uid_t kDummyUid{2543};
     static constexpr GlobalConfiguration::ApplicationId kDummyApplicationId{6543};
 
@@ -213,9 +214,9 @@ class LolaProxyEventResources : public ProxyMockedMemoryFixture
     ~LolaProxyEventResources() override;
 
     std::future<std::shared_ptr<ScopedEventReceiveHandler>> ExpectRegisterEventNotification(
-        std::optional<pid_t> pid = {});
-    void ExpectReregisterEventNotification(std::optional<pid_t> pid = {});
-    void ExpectUnregisterEventNotification(std::optional<pid_t> pid = {});
+        std::optional<message_passing::NodeId> node = {});
+    void ExpectReregisterEventNotification(std::optional<message_passing::NodeId> node = {});
+    void ExpectUnregisterEventNotification(std::optional<message_passing::NodeId> node = {});
 
     SlotIndexType PutData(const std::uint32_t value = 42, const EventSlotStatus::EventTimeStamp timestamp = 1);
 

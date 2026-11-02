@@ -186,7 +186,7 @@ TEST_F(RuntimeFixture, GetMessagePassingCfgWithPredefinedTwoLolaServiceConfig)
     EXPECT_EQ(cfg_qm.allowed_user_ids_.size(), expected_userids_qm.size());
     for (auto id : cfg_qm.allowed_user_ids_)
     {
-        EXPECT_EQ(expected_userids_qm.count(id), 1);
+        EXPECT_EQ(expected_userids_qm.count(message_passing::PrincipalIdToUid(id)), 1);
     }
 
     // expect that the user_ids allowed as senders for the B receiver are the aggregation over all service instance
@@ -195,7 +195,7 @@ TEST_F(RuntimeFixture, GetMessagePassingCfgWithPredefinedTwoLolaServiceConfig)
     EXPECT_EQ(cfg_b.allowed_user_ids_.size(), expected_userids_b.size());
     for (auto id : cfg_b.allowed_user_ids_)
     {
-        EXPECT_EQ(expected_userids_b.count(id), 1);
+        EXPECT_EQ(expected_userids_b.count(message_passing::PrincipalIdToUid(id)), 1);
     }
 }
 
@@ -264,7 +264,7 @@ TEST_F(RuntimeFixture, GetMessagePassingCfgOneEmptyQMProvider)
     EXPECT_EQ(cfg_b.allowed_user_ids_.size(), expected_userids_b.size());
     for (auto id : cfg_b.allowed_user_ids_)
     {
-        EXPECT_EQ(expected_userids_b.count(id), 1);
+        EXPECT_EQ(expected_userids_b.count(message_passing::PrincipalIdToUid(id)), 1);
     }
 }
 
@@ -333,7 +333,7 @@ TEST_F(RuntimeFixture, GetMessagePassingCfgOneEmptyQMConsumer)
     EXPECT_EQ(cfg_b.allowed_user_ids_.size(), expected_userids_b.size());
     for (auto id : cfg_b.allowed_user_ids_)
     {
-        EXPECT_EQ(expected_userids_b.count(id), 1);
+        EXPECT_EQ(expected_userids_b.count(message_passing::PrincipalIdToUid(id)), 1);
     }
 }
 

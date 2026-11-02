@@ -40,7 +40,7 @@ class SubscribedState final : public SubscriptionStateBase
     Result<void> SubscribeEvent(const std::size_t) override;
     void UnsubscribeEvent() override;
     void StopOfferEvent() override;
-    void ReOfferEvent(const pid_t) override;
+    void ReOfferEvent(const message_passing::NodeId) override;
 
     void SetReceiveHandler(std::weak_ptr<ScopedEventReceiveHandler> handler) override;
     void UnsetReceiveHandler() override;

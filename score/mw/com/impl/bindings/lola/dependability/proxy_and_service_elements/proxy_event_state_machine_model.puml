@@ -11,7 +11,7 @@ class "lola::SubscriptionStateMachine" {
   +SetReceiveHandler(handler : EventReceiveHandler) : void
   +UnsetReceiveHandler() : void
   +MarkProxyForDestruction() : void
-  -SubscriptionStateMachine(Proxy&, ElementFqId, pid_t, std::function<void(SlotCollector&&)> set_slot_collector, std::function<void()> remove_slot_collector)
+  -SubscriptionStateMachine(Proxy&, ElementFqId, message_passing::NodeId, std::function<void(SlotCollector&&)> set_slot_collector, std::function<void()> remove_slot_collector)
   -states_ : std::array<std::unique_ptr<SubscriptionStateBase>, SubscriptionStateMachineState::STATE_COUNT)>
 }
 
@@ -91,11 +91,11 @@ class "lola::SubscriptionPendingAwaitSubscribeResultUpdatedMaxSamples" {
 }
 
 abstract class "lola::BaseMessagePassingManager" {
-  +BaseMessagePassingManager(QualityType, ElementFqId, pid_t)
+  +BaseMessagePassingManager(QualityType, ElementFqId, message_passing::NodeId)
 }
 
 class "lola::EventReceiveHandlerManager" {
-  +EventReceiveHandlerManager(QualityType, ElementFqId, pid_t)
+  +EventReceiveHandlerManager(QualityType, ElementFqId, message_passing::NodeId)
   +Register(EventReceiveHandler handler) : void
   +Unregister() : void
   +Reregister(EventReceiveHandler handler) : void

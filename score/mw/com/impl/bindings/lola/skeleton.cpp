@@ -632,9 +632,9 @@ auto Skeleton::RegisterMethodHandlers(const QualityType asil_level,
                                const IMessagePassingService::PrincipalId proxy_principal,
                                const IMessagePassingService::NodeId proxy_node) -> Result<void> {
                 return OnServiceMethodsSubscribed(proxy_instance_identifier,
-                                                  message_passing::PrincipalIdToUid(proxy_principal),
+                                                  proxy_principal,
                                                   asil_level,
-                                                  message_passing::NodeIdToPid(proxy_node));
+                                                  proxy_node);
             }},
         allowed_consumers);
     if (!subscription_result.has_value())
@@ -668,9 +668,9 @@ auto Skeleton::RegisterMethodHandlers(const QualityType asil_level,
 }
 
 Result<void> Skeleton::OnServiceMethodsSubscribed(const ProxyInstanceIdentifier& proxy_instance_identifier,
-                                                  const uid_t proxy_uid,
+                                                  const message_passing::PrincipalId proxy_principal,
                                                   const QualityType asil_level,
-                                                  const pid_t proxy_pid)
+                                                  const message_passing::NodeId proxy_node)
 {
     // Note. we currently call the entirety of the funcitonality within OnServiceMethodsSubscribed within the mutex.
     // We potentially could optimise this and call some functionality outside of the mutex. However, we haven't
@@ -678,10 +678,10 @@ Result<void> Skeleton::OnServiceMethodsSubscribed(const ProxyInstanceIdentifier&
     // synchronised. So, for the moment, we leave all actions within the mutex and will optimise in future if we
     // identify that this is a performance bottleneck.
     std::lock_guard lock{on_service_methods_subscribed_mutex_};
-    if (method_resources_.Contains(proxy_instance_identifier, proxy_pid))
+    if (method_resources_.Contains(proxy_instance_identifier, proxy_node))
     {
         score::mw::log::LogDebug("lola") << "Method" << proxy_instance_identifier.application_id << "/"
-                                         << proxy_instance_identifier.proxy_instance_counter << "with PID:" << proxy_pid
+                                         << proxy_instance_identifier.proxy_instance_counter << "with node:" << proxy_node.Raw()
                                          << "already subscribed. Not re-opening shared memory region";
         return {};
     }
@@ -690,9 +690,9 @@ Result<void> Skeleton::OnServiceMethodsSubscribed(const ProxyInstanceIdentifier&
         shm_path_builder_->GetMethodChannelShmName(lola_instance_id_, proxy_instance_identifier);
     const bool is_read_write{true};
 
-    std::ignore = method_resources_.CleanUpOldRegions(proxy_instance_identifier, proxy_pid);  // Per Proxy
+    std::ignore = method_resources_.CleanUpOldRegions(proxy_instance_identifier, proxy_node);  // Per Proxy
 
-    const std::vector<uid_t> allowed_providers{proxy_uid};
+    const std::vector<uid_t> allowed_providers{message_passing::PrincipalIdToUid(proxy_principal)};
     auto opened_shm_region =
         memory::shared::SharedMemoryFactory::Open(method_channel_shm_name, is_read_write, allowed_providers);
     if (opened_shm_region == nullptr)
@@ -701,12 +701,12 @@ Result<void> Skeleton::OnServiceMethodsSubscribed(const ProxyInstanceIdentifier&
         return MakeUnexpected(ComErrc::kBindingFailure);
     }
 
-    const auto resource_it = method_resources_.Insert(proxy_instance_identifier, proxy_pid, opened_shm_region);
+    const auto resource_it = method_resources_.Insert(proxy_instance_identifier, proxy_node, opened_shm_region);
 
     auto& method_data = GetMethodData(*(resource_it->second));
 
     const auto [subscription_result, method_ids_to_unsubscribe] =
-        SubscribeMethods(method_data, proxy_instance_identifier, proxy_uid, proxy_pid, asil_level);
+        SubscribeMethods(method_data, proxy_instance_identifier, proxy_principal, proxy_node, asil_level);
     if (!(subscription_result.has_value()))
     {
         UnsubscribeMethods(method_ids_to_unsubscribe, proxy_instance_identifier);
@@ -737,8 +737,8 @@ Result<void> Skeleton::OnServiceMethodsUnsubscribed(const ProxyInstanceIdentifie
 
 auto Skeleton::SubscribeMethods(const MethodData& method_data,
                                 const ProxyInstanceIdentifier proxy_instance_identifier,
-                                const uid_t proxy_uid,
-                                const pid_t proxy_pid,
+                                const message_passing::PrincipalId proxy_principal,
+                                const message_passing::NodeId proxy_node,
                                 const QualityType asil_level) -> std::pair<score::Result<void>, MethodIdsToUnsubscribe>
 {
     const auto& method_call_queues = method_data.method_call_queues_;
@@ -765,8 +765,8 @@ auto Skeleton::SubscribeMethods(const MethodData& method_data,
                                                                  type_erased_call_queue.GetReturnValueQueueStorage(),
                                                                  proxy_method_instance_identifier,
                                                                  method_call_handler_scope_,
-                                                                 proxy_uid,
-                                                                 proxy_pid,
+                                                                 proxy_principal,
+                                                                 proxy_node,
                                                                  asil_level);
         if (!(result.has_value()))
         {
@@ -825,7 +825,7 @@ IMessagePassingService::AllowedConsumerUids Skeleton::GetAllowedConsumers(const 
         }
     }
 
-    // Check if the proxy_uid is in the allowed consumer list for the specified quality
+    // Check if the proxy principal is in the allowed consumer list for the specified quality
     const auto& allowed_consumer_vector = allowed_consumer_list_it->second;
     std::set<IMessagePassingService::PrincipalId> principals{};
     for (const auto uid : allowed_consumer_vector)

@@ -13,6 +13,7 @@
 #ifndef SCORE_MW_COM_IMPL_BINDINGS_LOLA_SKELETON_METHOD_H
 #define SCORE_MW_COM_IMPL_BINDINGS_LOLA_SKELETON_METHOD_H
 
+#include "score/message_passing/identity_types.h"
 #include "score/mw/com/impl/bindings/lola/element_fq_id.h"
 #include "score/mw/com/impl/bindings/lola/messaging/method_call_registration_guard.h"
 #include "score/mw/com/impl/bindings/lola/methods/proxy_method_instance_identifier.h"
@@ -53,8 +54,8 @@ class SkeletonMethod : public SkeletonMethodBinding
         const std::optional<score::cpp::span<std::byte>> return_queue_storage,
         const ProxyMethodInstanceIdentifier proxy_method_instance_identifier,
         const safecpp::Scope<>& method_call_handler_scope,
-        uid_t allowed_proxy_uid,
-        pid_t proxy_pid,
+        const message_passing::PrincipalId allowed_proxy,
+        const message_passing::NodeId proxy_node,
         const QualityType asil_level);
 
     /// \brief Unregisters the method call handler corresponding to a given ProxyMethod which was registered with
@@ -71,13 +72,13 @@ class SkeletonMethod : public SkeletonMethodBinding
     void Call(QualityType quality_type,
               const std::optional<score::cpp::span<std::byte>> in_args,
               const std::optional<score::cpp::span<std::byte>> return_arg);
-    void CleanUpOldHandlers(const GlobalConfiguration::ApplicationId application_id, pid_t proxy_pid);
+    void CleanUpOldHandlers(const GlobalConfiguration::ApplicationId application_id, const message_passing::NodeId proxy_node);
 
     std::optional<memory::DataTypeSizeInfo> in_args_type_erased_info_;
     std::optional<memory::DataTypeSizeInfo> return_type_type_erased_info_;
     std::optional<SkeletonMethodBinding::TypeErasedHandler> type_erased_callback_;
 
-    std::unordered_map<ProxyMethodInstanceIdentifier, std::pair<pid_t, MethodCallRegistrationGuard>>
+    std::unordered_map<ProxyMethodInstanceIdentifier, std::pair<message_passing::NodeId, MethodCallRegistrationGuard>>
         registration_guards_;
 
     std::mutex registration_guards_mutex_;

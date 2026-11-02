@@ -40,10 +40,10 @@ class EventReceiveHandlerManager
   public:
     EventReceiveHandlerManager(const QualityType asil_level,
                                const ElementFqId element_fq_id,
-                               const pid_t event_source_pid) noexcept
+                               const message_passing::NodeId event_source_node) noexcept
         : asil_level_{asil_level},
           element_fq_id_{element_fq_id},
-          event_source_pid_{event_source_pid},
+          event_source_node_{event_source_node},
           registration_number_{}
     {
     }
@@ -52,15 +52,15 @@ class EventReceiveHandlerManager
     void Reregister(std::optional<std::weak_ptr<ScopedEventReceiveHandler>> new_event_receiver_handler);
     void Unregister();
 
-    void UpdatePid(pid_t new_event_source_pid) noexcept
+    void UpdateNode(message_passing::NodeId new_event_source_node) noexcept
     {
-        event_source_pid_ = new_event_source_pid;
+        event_source_node_ = new_event_source_node;
     }
 
   private:
     const QualityType asil_level_;
     const ElementFqId element_fq_id_;
-    pid_t event_source_pid_;
+    message_passing::NodeId event_source_node_;
     std::optional<IMessagePassingService::HandlerRegistrationNoType> registration_number_;
 };
 

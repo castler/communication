@@ -70,7 +70,7 @@ class "lola::Proxy" as LolaProxy {
   +GetEventControlLocal(element_fq_id : const ElementFqId) : ConsumerEventControlLocalView&
   +GetRawDataStorage(element_fq_id : const ElementFqId) : void*
   +GetQualityType() : QualityType
-  +GetSourcePid() : pid_t
+  +GetProviderNode() : message_passing::NodeId
   --
   -service_data_control_local_ : ProxyServiceDataControlLocalView
 }
