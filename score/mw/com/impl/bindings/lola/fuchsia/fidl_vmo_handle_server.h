@@ -72,6 +72,14 @@ class FidlVmoHandleServer final : public score::memory::shared::fuchsia::IVmoHan
     ///        nullopt if the region was not published or lacks the rights.
     std::optional<zx::vmo> DuplicateForBroker(const VmoRole role) const noexcept;
 
+    /// \brief Event notification: call after the slot was published in the data region (store, release-store of the
+    ///        index, then this). Signals USER_0 on every subscriber, never blocks and never waits for a subscriber;
+    ///        subscribers whose notification handle is closed are unsubscribed. Thread-safe. Returns the number of
+    ///        subscribers signalled.
+    std::size_t NotifySubscribers() noexcept;
+    /// \brief Number of live subscribers (sessions whose proxy still holds its notification handle).
+    std::size_t SubscriberCount() noexcept;
+
     /// \brief Number of successful Attach calls on the endpoint of `application_id` / of all endpoints.
     std::size_t AttachCount(const std::uint64_t application_id) const noexcept;
     std::size_t AttachCount() const noexcept;

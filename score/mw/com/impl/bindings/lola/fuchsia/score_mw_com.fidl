@@ -103,10 +103,11 @@ closed protocol Search {
 /// identified by the endpoint only, there is deliberately no application id in the request.
 /// Typed markers (`compose score.mw.com.Endpoint`) are generated per service type, see realm_generator.
 closed protocol Endpoint {
-    /// `events` is served by the skeleton (it sends the events), the proxy keeps the client end.
-    strict Attach(resource struct {
-        events server_end:EventChannel;
-    }) -> (resource struct {
+    /// Events are not a FIDL protocol: the skeleton publishes a slot in the shared data VMO and then signals
+    /// ZX_EVENTPAIR_SIGNAL USER_0 on the peer of `notification`. The signal carries no payload (it is level triggered
+    /// and coalescing, so a slow subscriber never blocks the publisher); what was published is read from the VMO.
+    /// A subscriber that prefers to poll the VMO closes `notification`, which unsubscribes it.
+    strict Attach() -> (resource struct {
         data_vmo zx.Handle:<VMO, zx.Rights.READ | zx.Rights.MAP | zx.Rights.GET_PROPERTY>;
         control_vmo zx.Handle:<VMO, zx.Rights.READ | zx.Rights.WRITE | zx.Rights.MAP | zx.Rights.GET_PROPERTY>;
         layout vector<uint8>:MAX_LAYOUT_SIZE;
@@ -116,20 +117,11 @@ closed protocol Endpoint {
         application_id uint64;
         /// Peer-closed means the skeleton is gone.
         liveness zx.Handle:<EVENTPAIR, zx.Rights.WAIT>;
+        /// Per-subscriber wake-up. Wait for USER_0 (clear it, then re-read the VMO); peer-closed means the skeleton is
+        /// gone. SIGNAL only allows clearing the own side, the skeleton's side cannot be signalled from here.
+        notification zx.Handle:<EVENTPAIR, zx.Rights.WAIT | zx.Rights.SIGNAL>;
     }) error AttachError;
 };
-
-closed protocol EventChannel {
-    strict -> OnEvent(struct {
-        element_index uint32;
-        slot uint32;
-        sequence uint64;
-    });
-    strict -> OnSkeletonRestart(struct {
-        epoch uint64;
-    });
-};
-
 type BrokerError = flexible enum : uint32 {
     /// The instance has no ACTIVE incarnation (or none with that epoch).
     NOT_ACTIVE = 1;

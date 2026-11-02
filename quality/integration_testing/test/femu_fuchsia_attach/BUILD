@@ -141,6 +141,38 @@ fuchsia_test_component(
 )
 
 fuchsia_cc_binary(
+    name = "events_test",
+    srcs = ["events_test.cc"],
+    tags = ["manual"],
+    deps = [
+        ":test_topology",
+        "//score/mw/com/impl/bindings/lola/fuchsia:fidl_vmo_handle_client",
+        "//score/mw/com/impl/bindings/lola/fuchsia:fidl_vmo_handle_server",
+        "@fuchsia_sdk//pkg/async-loop-cpp",
+        "@fuchsia_sdk//pkg/async-loop-default",
+        "@fuchsia_sdk//pkg/fdio",
+        "@fuchsia_sdk//pkg/syslog",
+    ],
+)
+
+fuchsia_component_manifest(
+    name = "events_test_manifest",
+    src = "meta/events_test.cml",
+    includes = [
+        "@fuchsia_sdk//pkg/sys/testing:elf_test_runner",
+        "@fuchsia_sdk//pkg/syslog:client",
+    ],
+    tags = ["manual"],
+)
+
+fuchsia_test_component(
+    name = "events_test_component",
+    manifest = ":events_test_manifest",
+    tags = ["manual"],
+    deps = [":events_test"],
+)
+
+fuchsia_cc_binary(
     name = "discovery_service_test",
     srcs = ["discovery_service_test.cc"],
     tags = ["manual"],
@@ -256,6 +288,7 @@ fuchsia_test_package(
     test_components = [
         ":attach_test_component",
         ":discovery_service_test_component",
+        ":events_test_component",
         ":rights_test_component",
     ],
 )

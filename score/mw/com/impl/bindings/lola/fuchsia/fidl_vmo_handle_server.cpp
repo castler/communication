@@ -64,10 +64,32 @@ struct FidlVmoHandleServer::State
     struct Session
     {
         zx::eventpair local_liveness;
-        fidl::ServerEnd<score_mw_com::EventChannel> events;
+        zx::eventpair local_notification;
     };
 
     explicit State(KeyClassifier key_classifier) : classifier{std::move(key_classifier)} {}
+
+    /// Caller holds `mutex`. Drops the sessions whose proxy closed its notification handle (died or opted out).
+    std::size_t PruneLocked()
+    {
+        std::size_t removed{0U};
+        for (auto it = sessions.begin(); it != sessions.end();)
+        {
+            zx_signals_t observed{0U};
+            const zx_status_t status =
+                it->local_notification.wait_one(ZX_EVENTPAIR_PEER_CLOSED, zx::time::infinite_past(), &observed);
+            if ((status == ZX_OK) || ((observed & ZX_EVENTPAIR_PEER_CLOSED) != 0U))
+            {
+                it = sessions.erase(it);
+                ++removed;
+            }
+            else
+            {
+                ++it;
+            }
+        }
+        return removed;
+    }
 
     mutable std::mutex mutex;
     KeyClassifier classifier;
@@ -87,7 +109,7 @@ class FidlVmoHandleServer::Connection final : public fidl::Server<score_mw_com::
     {
     }
 
-    void Attach(AttachRequest& request, AttachCompleter::Sync& completer) override
+    void Attach(AttachCompleter::Sync& completer) override
     {
         // At most one Attach per connection: a second one would hand out a further set of handles to the same peer.
         if (attached_)
@@ -114,8 +136,12 @@ class FidlVmoHandleServer::Connection final : public fidl::Server<score_mw_com::
         auto control_copy = DuplicateForSending(control->second.handle, kControlRights);
         zx::eventpair local;
         zx::eventpair remote;
+        zx::eventpair notify_local;
+        zx::eventpair notify_remote;
         if (!data_copy.has_value() || !control_copy.has_value() || (zx::eventpair::create(0U, &local, &remote) != ZX_OK) ||
-            (remote.replace(kLivenessRights | ZX_RIGHT_TRANSFER, &remote) != ZX_OK))
+            (remote.replace(kLivenessRights | ZX_RIGHT_TRANSFER, &remote) != ZX_OK) ||
+            (zx::eventpair::create(0U, &notify_local, &notify_remote) != ZX_OK) ||
+            (notify_remote.replace(kNotificationRights | ZX_RIGHT_TRANSFER, &notify_remote) != ZX_OK))
         {
             score::mw::log::LogError(kLogContext) << "Attach: published handles lack the rights that Endpoint declares.";
             completer.Reply(fit::error(score_mw_com::AttachError::kNotFound));
@@ -124,13 +150,15 @@ class FidlVmoHandleServer::Connection final : public fidl::Server<score_mw_com::
 
         attached_ = true;
         ++state_->attach_counts[application_id_];
-        state_->sessions.push_back(State::Session{std::move(local), std::move(request.events())});
+        state_->PruneLocked();
+        state_->sessions.push_back(State::Session{std::move(local), std::move(notify_local)});
         completer.Reply(fit::ok(score_mw_com::EndpointAttachResponse{std::move(data_copy).value(),
                                                                      std::move(control_copy).value(),
                                                                      state_->layout,
                                                                      state_->epoch,
                                                                      application_id_,
-                                                                     std::move(remote)}));
+                                                                     std::move(remote),
+                                                                     std::move(notify_remote)}));
     }
 
   private:
@@ -221,6 +249,36 @@ auto FidlVmoHandleServer::DuplicateForBroker(const VmoRole role) const noexcept 
         return std::nullopt;
     }
     return std::move(copy).value();
+}
+
+auto FidlVmoHandleServer::NotifySubscribers() noexcept -> std::size_t
+{
+    const std::lock_guard<std::mutex> lock{state_->mutex};
+    std::size_t signalled{0U};
+    for (auto it = state_->sessions.begin(); it != state_->sessions.end();)
+    {
+        // Never blocks: a signal is a level that coalesces, a subscriber that has not consumed the last one simply
+        // sees one wake-up for several publications.
+        const zx_status_t status = it->local_notification.signal_peer(0U, ZX_USER_SIGNAL_0);
+        if (status == ZX_ERR_PEER_CLOSED)
+        {
+            it = state_->sessions.erase(it);
+            continue;
+        }
+        if (status == ZX_OK)
+        {
+            ++signalled;
+        }
+        ++it;
+    }
+    return signalled;
+}
+
+auto FidlVmoHandleServer::SubscriberCount() noexcept -> std::size_t
+{
+    const std::lock_guard<std::mutex> lock{state_->mutex};
+    state_->PruneLocked();
+    return state_->sessions.size();
 }
 
 auto FidlVmoHandleServer::AttachCount(const std::uint64_t application_id) const noexcept -> std::size_t

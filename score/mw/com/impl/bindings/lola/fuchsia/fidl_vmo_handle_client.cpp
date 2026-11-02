@@ -68,13 +68,7 @@ auto FidlVmoHandleClient::EnsureAttached() -> zx_status_t
     }
     attach_done_ = true;
 
-    auto events = fidl::CreateEndpoints<score_mw_com::EventChannel>();
-    if (events.is_error())
-    {
-        transport_status_ = events.status_value();
-        return *transport_status_;
-    }
-    auto result = client_->Attach(score_mw_com::EndpointAttachRequest{std::move(events->server)});
+    auto result = client_->Attach();
     if (result.is_error())
     {
         if (result.error_value().is_framework_error())
@@ -101,8 +95,35 @@ auto FidlVmoHandleClient::EnsureAttached() -> zx_status_t
     handles_.emplace(VmoRole::kData, std::move(response.data_vmo()));
     handles_.emplace(VmoRole::kControl, std::move(response.control_vmo()));
     liveness_ = std::move(response.liveness());
-    events_ = std::move(events->client);
+    notification_ = std::move(response.notification());
     return ZX_OK;
+}
+
+auto FidlVmoHandleClient::WaitForNotification(const zx::time deadline) noexcept -> zx_status_t
+{
+    if (!notification_.is_valid())
+    {
+        return ZX_ERR_BAD_STATE;
+    }
+    zx_signals_t observed{0U};
+    const zx_status_t status =
+        notification_.wait_one(ZX_USER_SIGNAL_0 | ZX_EVENTPAIR_PEER_CLOSED, deadline, &observed);
+    if ((status != ZX_OK) && (status != ZX_ERR_TIMED_OUT))
+    {
+        return status;
+    }
+    if ((observed & ZX_USER_SIGNAL_0) != 0U)
+    {
+        // Clear before the caller reads the VMO: a publication after the clear raises the signal again.
+        const zx_status_t clear = notification_.signal(ZX_USER_SIGNAL_0, 0U);
+        return (clear == ZX_OK) ? ZX_OK : clear;
+    }
+    return ((observed & ZX_EVENTPAIR_PEER_CLOSED) != 0U) ? ZX_ERR_PEER_CLOSED : ZX_ERR_TIMED_OUT;
+}
+
+auto FidlVmoHandleClient::ReleaseNotification() noexcept -> void
+{
+    notification_.reset();
 }
 
 auto FidlVmoHandleClient::Acquire(const std::string& key) noexcept -> score::cpp::expected<zx::vmo, score::os::Error>

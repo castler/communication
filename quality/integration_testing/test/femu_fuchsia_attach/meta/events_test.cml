@@ -1,0 +1,15 @@
+{
+    include: [
+        "sys/testing/elf_test_runner.shard.cml",
+        "syslog/client.shard.cml",
+    ],
+
+    program: {
+        binary: "bin/events_test",
+    },
+
+    // Subscribers are spawned as processes of the test.
+    use: [
+        { protocol: "fuchsia.process.Launcher" },
+    ],
+}

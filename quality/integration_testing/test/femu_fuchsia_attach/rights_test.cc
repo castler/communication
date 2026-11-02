@@ -51,6 +51,7 @@ struct Scenario
     zx_rights_t data;
     zx_rights_t control;
     zx_rights_t liveness;
+    zx_rights_t notification = score::mw::com::impl::lola::fuchsia::kNotificationRights | ZX_RIGHT_TRANSFER;
 };
 
 class RogueServer final : public fidl::Server<score_mw_com::Endpoint>
@@ -58,7 +59,7 @@ class RogueServer final : public fidl::Server<score_mw_com::Endpoint>
   public:
     explicit RogueServer(const Scenario& scenario) : scenario_{scenario} {}
 
-    void Attach(AttachRequest&, AttachCompleter::Sync& completer) override
+    void Attach(AttachCompleter::Sync& completer) override
     {
         zx::vmo data;
         zx::vmo control;
@@ -70,12 +71,19 @@ class RogueServer final : public fidl::Server<score_mw_com::Endpoint>
         zx::eventpair remote;
         zx::eventpair::create(0U, &local, &remote);
         zx::eventpair remote_out;
+        zx::eventpair notify_out;
         data.duplicate(scenario_.data, &data_out);
         control.duplicate(scenario_.control, &control_out);
         remote.duplicate(scenario_.liveness, &remote_out);
+        remote.duplicate(scenario_.notification, &notify_out);
         kept_.push_back(std::move(local));
-        completer.Reply(fit::ok(score_mw_com::EndpointAttachResponse{
-            std::move(data_out), std::move(control_out), std::vector<std::uint8_t>{}, 1U, 2U, std::move(remote_out)}));
+        completer.Reply(fit::ok(score_mw_com::EndpointAttachResponse{std::move(data_out),
+                                                                     std::move(control_out),
+                                                                     std::vector<std::uint8_t>{},
+                                                                     1U,
+                                                                     2U,
+                                                                     std::move(remote_out),
+                                                                     std::move(notify_out)}));
     }
 
   private:
@@ -98,6 +106,7 @@ struct Outcome
     zx_rights_t data;
     zx_rights_t control;
     zx_rights_t liveness;
+    zx_rights_t notification;
 };
 
 Outcome Run(async::Loop& loop, const Scenario& scenario)
@@ -106,14 +115,13 @@ Outcome Run(async::Loop& loop, const Scenario& scenario)
     auto server = std::make_unique<RogueServer>(scenario);
     fidl::BindServer(loop.dispatcher(), std::move(endpoints->server), std::move(server));
     fidl::SyncClient<score_mw_com::Endpoint> client{std::move(endpoints->client)};
-    auto events = fidl::CreateEndpoints<score_mw_com::EventChannel>();
-    auto result = client->Attach(score_mw_com::EndpointAttachRequest{std::move(events->server)});
+    auto result = client->Attach();
     if (result.is_error())
     {
-        return {false, result.error_value().FormatDescription(), 0U, 0U, 0U};
+        return {false, result.error_value().FormatDescription(), 0U, 0U, 0U, 0U};
     }
     auto& response = result.value();
-    return {true, "accepted", RightsOf(response.data_vmo()), RightsOf(response.control_vmo()), RightsOf(response.liveness())};
+    return {true, "accepted", RightsOf(response.data_vmo()), RightsOf(response.control_vmo()), RightsOf(response.liveness()), RightsOf(response.notification())};
 }
 }  // namespace
 
@@ -133,6 +141,7 @@ int main()
     CHECK(exact.data == kDataRights);
     CHECK(exact.control == kControlRights);
     CHECK(exact.liveness == kLivenessRights);
+    CHECK(exact.notification == score::mw::com::impl::lola::fuchsia::kNotificationRights);
 
     const auto extra = Run(loop, {"extra", kAll, kAll, kAll});
     std::printf("extra rights   : %s data=0x%x control=0x%x liveness=0x%x\n", extra.description.c_str(), extra.data, extra.control, extra.liveness);
