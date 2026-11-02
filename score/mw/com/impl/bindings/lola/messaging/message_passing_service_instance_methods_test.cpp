@@ -1003,7 +1003,7 @@ TEST_F(MessagePassingServiceInstanceHandleCallMethodMessageTest, ReturnsSuccessW
     // Expecting that GetClientIdentity will be called which returns a uid different to the one registered in
     // RegisterMethodCallHandler
     const auto invalid_client_identity = ClientIdentity::FromCredentials(
-        client_identity_->GetNodeId(), client_identity_->GetPrincipalId() + 30, kLocalGid);
+        client_identity_->GetNodeId().ToPid(), client_identity_->GetPrincipalId() + 30, kLocalGid);
     EXPECT_CALL(server_connection_mock_, GetClientIdentity()).WillOnce(ReturnRef(invalid_client_identity));
 
     // Expecting that the registered method call handler will not be called
@@ -1025,7 +1025,7 @@ TEST_F(MessagePassingServiceInstanceHandleCallMethodMessageTest, RepliesErrorWhe
     // Expecting that GetClientIdentity will be called which returns a uid different to the one registered in
     // RegisterMethodCallHandler
     const auto invalid_client_identity = ClientIdentity::FromCredentials(
-        client_identity_->GetNodeId(), client_identity_->GetPrincipalId() + 30, kLocalGid);
+        client_identity_->GetNodeId().ToPid(), client_identity_->GetPrincipalId() + 30, kLocalGid);
     EXPECT_CALL(server_connection_mock_, GetClientIdentity()).WillOnce(ReturnRef(invalid_client_identity));
 
     // Expecting that a reply will be sent containing an unknown proxy error
@@ -1205,7 +1205,7 @@ TEST_F(MessagePassingServiceInstanceHandleSubscribeMethodMessageTest,
     // Expecting that GetClientIdentity will be called which returns a uid different to the one registered in
     // RegisterOnServiceMethodSubscribedHandler
     const auto invalid_client_identity = ClientIdentity::FromCredentials(
-        client_identity_->GetNodeId(), client_identity_->GetPrincipalId() + 30, kLocalGid);
+        client_identity_->GetNodeId().ToPid(), client_identity_->GetPrincipalId() + 30, kLocalGid);
     EXPECT_CALL(server_connection_mock_, GetClientIdentity()).WillOnce(ReturnRef(invalid_client_identity));
 
     // Expecting that the registered subscribe method handler will not be called
@@ -1228,7 +1228,7 @@ TEST_F(MessagePassingServiceInstanceHandleSubscribeMethodMessageTest,
     // Expecting that GetClientIdentity will be called which returns a uid different to the one registered in
     // RegisterOnServiceMethodSubscribedHandler
     const auto invalid_client_identity = ClientIdentity::FromCredentials(
-        client_identity_->GetNodeId(), client_identity_->GetPrincipalId() + 30, kLocalGid);
+        client_identity_->GetNodeId().ToPid(), client_identity_->GetPrincipalId() + 30, kLocalGid);
     EXPECT_CALL(server_connection_mock_, GetClientIdentity()).WillOnce(ReturnRef(invalid_client_identity));
 
     // Expecting that a reply will be sent containing an unknown proxy error
@@ -1253,13 +1253,13 @@ TEST_F(MessagePassingServiceInstanceHandleSubscribeMethodMessageTest,
 
     // Expecting that GetClientIdentity will be called which returns a random uid
     const auto invalid_client_identity = ClientIdentity::FromCredentials(
-        client_identity_->GetNodeId(), client_identity_->GetPrincipalId() + 30, kLocalGid);
+        client_identity_->GetNodeId().ToPid(), client_identity_->GetPrincipalId() + 30, kLocalGid);
     EXPECT_CALL(server_connection_mock_, GetClientIdentity()).WillOnce(ReturnRef(invalid_client_identity));
 
     // Expecting that the registered subscribe method handler will be called with the uid and pid returned by
     // GetClientIdentity()
     EXPECT_CALL(mock_subscribe_method_handler_,
-                Call(kProxyInstanceIdentifier, invalid_client_identity.GetPrincipalId(), invalid_client_identity.GetNodeId()));
+                Call(kProxyInstanceIdentifier, invalid_client_identity.GetPrincipalId(), invalid_client_identity.GetNodeId().ToPid()));
 
     // When a valid MessageWithReply message is received of type kSubscribeServiceMethod
     const auto result =
@@ -1278,7 +1278,7 @@ TEST_F(MessagePassingServiceInstanceHandleSubscribeMethodMessageTest,
 
     // Expecting that GetClientIdentity will be called which returns a random uid
     const auto invalid_client_identity = ClientIdentity::FromCredentials(
-        client_identity_->GetNodeId(), client_identity_->GetPrincipalId() + 30, kLocalGid);
+        client_identity_->GetNodeId().ToPid(), client_identity_->GetPrincipalId() + 30, kLocalGid);
     EXPECT_CALL(server_connection_mock_, GetClientIdentity()).WillOnce(ReturnRef(invalid_client_identity));
 
     // Expecting that a reply will be sent containing success

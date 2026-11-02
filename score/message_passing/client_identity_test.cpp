@@ -24,8 +24,18 @@ namespace
 TEST(ClientIdentityTest, CredentialsExposeNodeAndPrincipal)
 {
     const auto identity = ClientIdentity::FromCredentials(10, 20, 30);
-    EXPECT_EQ(identity.GetNodeId(), 10);
+    EXPECT_EQ(identity.GetNodeId(), NodeId::FromPid(10));
+    EXPECT_EQ(identity.GetNodeId().ToPid(), 10);
     EXPECT_EQ(identity.GetPrincipalId(), 20U);
+}
+
+TEST(ClientIdentityTest, EndpointNodeCanBeSetIndependentlyOfPrincipal)
+{
+    const auto identity = ClientIdentity::FromEndpoint(5, NodeId::FromWire(77));
+    EXPECT_EQ(identity.GetPrincipalId(), 5U);
+    EXPECT_EQ(identity.GetNodeId(), NodeId::FromWire(77));
+    EXPECT_NE(identity, ClientIdentity::FromEndpoint(5, NodeId::FromWire(78)));
+    EXPECT_EQ(ClientIdentity::FromEndpoint(5).GetNodeId(), NodeId::FromWire(5));
 }
 
 TEST(ClientIdentityTest, EqualityComparesAllCredentials)

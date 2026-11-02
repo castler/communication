@@ -160,7 +160,7 @@ TEST_F(MessagePassingServiceInstanceTest, ConnectCallbackReturnsClientPid)
 
     // Expect return value contains user pid
     ASSERT_TRUE(pid_result.has_value());
-    EXPECT_EQ(std::get<uintptr_t>(pid_result.value()), client_identity_.GetNodeId());
+    EXPECT_EQ(std::get<uintptr_t>(pid_result.value()), client_identity_.GetNodeId().ToPid());
 }
 
 TEST_F(MessagePassingServiceInstanceTest, DisconnectCallbackSuccessfullyExecuted)

@@ -245,7 +245,7 @@ MessagePassingServiceInstance::MessagePassingServiceInstance(
     server_ = server_factory.Create(protocol_config, server_config);
 
     auto connect_callback = [](score::message_passing::IServerConnection& connection) noexcept -> std::uintptr_t {
-        const pid_t client_pid = connection.GetClientIdentity().GetNodeId();
+        const pid_t client_pid = connection.GetClientIdentity().GetNodeId().ToPid();
         return static_cast<std::uintptr_t>(client_pid);
     };
     auto disconnect_callback = [](score::message_passing::IServerConnection& /*connection*/) noexcept {
@@ -323,7 +323,7 @@ message_passing::MessageCallback MessagePassingServiceInstance::CreateSendMessag
             score::message_passing::IServerConnection& connection,
             score::cpp::span<const std::uint8_t> message) -> score::cpp::expected_blank<score::os::Error> {
         const auto client_identity = connection.GetClientIdentity();
-        const pid_t client_pid = client_identity.GetNodeId();
+        const pid_t client_pid = client_identity.GetNodeId().ToPid();
 
         SCORE_LANGUAGE_FUTURECPP_PRECONDITION_PRD_MESSAGE(
             message_callback_with_reply_scoped_function != nullptr,
@@ -417,7 +417,7 @@ score::Result<void> MessagePassingServiceInstance::MessageCallbackWithReply(
     const score::message_passing::ClientIdentity& sender,
     const score::cpp::span<const std::uint8_t> message)
 {
-    const pid_t sender_pid = sender.GetNodeId();
+    const pid_t sender_pid = sender.GetNodeId().ToPid();
     if (message.empty())
     {
         score::mw::log::LogError("lola") << "MessagePassingService: Empty message received from " << sender_pid;
@@ -687,8 +687,8 @@ score::Result<void> MessagePassingServiceInstance::CallSubscribeServiceMethodLoc
                                      "subscribe is not in allowed_consumers list.";
         return MakeUnexpected(MethodErrc::kUnknownProxy);
     }
-    const auto invocation_result =
-        std::invoke(method_subscribed_handler_copy, proxy_instance_identifier, proxy.GetPrincipalId(), proxy.GetNodeId());
+    const auto invocation_result = std::invoke(
+        method_subscribed_handler_copy, proxy_instance_identifier, proxy.GetPrincipalId(), proxy.GetNodeId().ToPid());
     if (!(invocation_result.has_value()))
     {
         mw::log::LogError("lola")

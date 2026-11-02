@@ -21,6 +21,7 @@ test_suite(
     tests = [
         ":client_connection_test",
         ":client_identity_test",
+        ":node_id_test",
         # Enable once the dependable_element can deal with QNX only unit tests
         #":qnx_dispatch_test",
         ":qnx_resource_path_test",
@@ -66,6 +67,7 @@ cc_library(
         "i_server_connection.h",
         "i_server_factory.h",
         "i_shared_resource_engine.h",
+        "node_id.h",
         "server_types.h",
         "service_protocol_config.h",
         "timed_command_queue_entry.h",
@@ -279,6 +281,17 @@ cc_unit_test(
     name = "client_identity_test",
     srcs = [
         "client_identity_test.cpp",
+    ],
+    features = COMPILER_WARNING_FEATURES,
+    deps = [
+        ":common_headers",
+    ],
+)
+
+cc_unit_test(
+    name = "node_id_test",
+    srcs = [
+        "node_id_test.cpp",
     ],
     features = COMPILER_WARNING_FEATURES,
     deps = [

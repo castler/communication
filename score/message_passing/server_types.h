@@ -14,6 +14,7 @@
 #define SCORE_LIB_MESSAGE_PASSING_SERVER_TYPES_H
 
 #include "score/message_passing/i_connection_handler.h"
+#include "score/message_passing/node_id.h"
 
 #include <score/callback.hpp>
 #include <score/memory.hpp>
@@ -48,18 +49,25 @@ class ClientIdentity
 {
   public:
     using PrincipalId = uid_t;
-    using NodeId = pid_t;
+    using NodeId = score::message_passing::NodeId;
     using AllowedPrincipals = std::optional<std::set<PrincipalId>>;
 
     static ClientIdentity FromCredentials(const pid_t pid, const uid_t uid, const gid_t gid) noexcept
     {
-        return ClientIdentity{Kind::kCredentials, pid, uid, gid};
+        return ClientIdentity{Kind::kCredentials, NodeId::FromPid(pid), uid, gid};
     }
 
     /// \brief Identity derived from the endpoint (per-consumer id assigned at registration), used on Fuchsia.
     static ClientIdentity FromEndpoint(const std::uint32_t consumer_id) noexcept
     {
-        return ClientIdentity{Kind::kEndpoint, static_cast<pid_t>(consumer_id), static_cast<uid_t>(consumer_id), 0};
+        return FromEndpoint(consumer_id, NodeId::FromWire(consumer_id));
+    }
+
+    /// \brief Identity derived from the endpoint, with the node (incarnation) given independently of the principal
+    /// (per-consumer id used for permission checks).
+    static ClientIdentity FromEndpoint(const std::uint32_t consumer_id, const NodeId node) noexcept
+    {
+        return ClientIdentity{Kind::kEndpoint, node, static_cast<uid_t>(consumer_id), 0};
     }
 
     /// \brief Checks the identity against a configured list of allowed principals; no list means everybody is allowed.
@@ -73,7 +81,8 @@ class ClientIdentity
         return principal_ == allowed;
     }
 
-    /// \brief Key identifying the peer as a communication partner (pid on Linux/QNX, consumer id on Fuchsia).
+    /// \brief Key identifying the peer as a communication partner (derived from the pid on Linux/QNX, consumer id on
+    /// Fuchsia).
     NodeId GetNodeId() const noexcept
     {
         return node_;
@@ -91,7 +100,7 @@ class ClientIdentity
         const auto combine = [&result](const std::size_t value) noexcept {
             result ^= value + 0x9e3779b9U + (result << 6U) + (result >> 2U);
         };
-        combine(std::hash<std::uint64_t>{}(static_cast<std::uint64_t>(node_)));
+        combine(std::hash<std::uint64_t>{}(node_.ToWire()));
         combine(std::hash<std::uint64_t>{}(static_cast<std::uint64_t>(principal_)));
         combine(std::hash<std::uint64_t>{}(static_cast<std::uint64_t>(group_)));
         return result;
@@ -103,7 +112,7 @@ class ClientIdentity
         {
             return "consumer=" + std::to_string(principal_);
         }
-        return "pid=" + std::to_string(node_) + ", uid=" + std::to_string(principal_) +
+        return "pid=" + std::to_string(node_.ToPid()) + ", uid=" + std::to_string(principal_) +
                ", gid=" + std::to_string(group_);
     }
 
@@ -125,13 +134,13 @@ class ClientIdentity
         kEndpoint,
     };
 
-    ClientIdentity(const Kind kind, const pid_t node, const uid_t principal, const gid_t group) noexcept
+    ClientIdentity(const Kind kind, const NodeId node, const uid_t principal, const gid_t group) noexcept
         : kind_{kind}, node_{node}, principal_{principal}, group_{group}
     {
     }
 
     Kind kind_;
-    pid_t node_;
+    NodeId node_;
     uid_t principal_;
     gid_t group_;
 };

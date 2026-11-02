@@ -138,7 +138,7 @@ class ServerToClientQnxFixture : public ::testing::Test, public testing::WithPar
         auto connect_callback = [this](IServerConnection& connection) -> std::uintptr_t {
             std::cout << "EchoConnectCallback " << &connection << std::endl;
             ++server_connections_started_;
-            const pid_t client_pid = connection.GetClientIdentity().GetNodeId();
+            const pid_t client_pid = connection.GetClientIdentity().GetNodeId().ToPid();
             return static_cast<std::uintptr_t>(client_pid);
         };
         auto disconnect_callback = [this](IServerConnection& connection) {
@@ -216,7 +216,7 @@ class ServerToClientQnxFixture : public ::testing::Test, public testing::WithPar
         auto connect_callback = [this](IServerConnection& connection) -> std::uintptr_t {
             ++server_connections_started_;
             connection.Notify({});
-            const pid_t client_pid = connection.GetClientIdentity().GetNodeId();
+            const pid_t client_pid = connection.GetClientIdentity().GetNodeId().ToPid();
             return static_cast<std::uintptr_t>(client_pid);
         };
         auto disconnect_callback = [this](IServerConnection&) {

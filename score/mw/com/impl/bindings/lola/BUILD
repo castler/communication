@@ -73,6 +73,15 @@ cc_library(
 )
 
 cc_library(
+    name = "incarnation",
+    hdrs = ["incarnation.h"],
+    features = COMPILER_WARNING_FEATURES,
+    tags = ["FFI"],
+    visibility = ["//score/mw/com/impl:__subpackages__"],
+    deps = ["//score/message_passing:common_headers"],
+)
+
+cc_library(
     name = "i_runtime",
     srcs = ["i_runtime.cpp"],
     hdrs = ["i_runtime.h"],
@@ -1200,6 +1209,17 @@ cc_unit_test(
         "//score/mw/com/impl/bindings/lola/messaging:message_passing_service_mock",
         "//score/mw/com/impl/bindings/lola/test:transaction_log_test_resources",
         "//score/mw/com/impl/test:runtime_mock_guard",
+    ],
+)
+
+cc_unit_test(
+    name = "incarnation_test",
+    srcs = [
+        "incarnation_test.cpp",
+    ],
+    features = COMPILER_WARNING_FEATURES,
+    deps = [
+        ":incarnation",
     ],
 )
 
