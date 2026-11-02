@@ -30,11 +30,16 @@ class TransactionLogRollbackExecutor
     /// \param asil_level asil level of the proxy instance owning this executor.
     /// \param provider_pid pid/node-id of the service instance provider
     /// \param transaction_log_id id of transaction logs to be rolled back.
+    /// \param ambiguity_policy how to handle logs of a previous incarnation, which was interrupted while the effect of
+    ///        a slot/subscription transaction is unknown. kFail (default) keeps such a log stuck and fails the rollback
+    ///        with kCouldNotRestartProxy; kQuarantine resolves it (see RollbackAmbiguityPolicy).
     TransactionLogRollbackExecutor(ServiceDataControl& service_data_control,
                                    const SkeletonInstanceIdentifier skeleton_instance_identifier,
                                    const QualityType asil_level,
                                    const pid_t provider_pid,
-                                   const TransactionLogId transaction_log_id) noexcept;
+                                   const TransactionLogId transaction_log_id,
+                                   const RollbackAmbiguityPolicy ambiguity_policy =
+                                       RollbackAmbiguityPolicy::kFail) noexcept;
 
     /// \brief Does a rollback of all transaction logs (log per service element) related to service_data_control/
     ///        transaction_log_id specific to a proxy instance given in the ctor.
@@ -64,6 +69,7 @@ class TransactionLogRollbackExecutor
     const pid_t provider_pid_;
     TransactionLogId transaction_log_id_;
     SkeletonInstanceIdentifier skeleton_instance_identifier_;
+    RollbackAmbiguityPolicy ambiguity_policy_;
 };
 
 }  // namespace score::mw::com::impl::lola

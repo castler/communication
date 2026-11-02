@@ -203,7 +203,8 @@ class TransactionLogSet
     Result<void> RollbackProxyTransactions(
         const TransactionLogId& transaction_log_id,
         const TransactionLogLocalView::DereferenceSlotCallback dereference_slot_callback,
-        const TransactionLogLocalView::DereferenceSlotCallback unsubscribe_callback);
+        const TransactionLogLocalView::DereferenceSlotCallback unsubscribe_callback,
+        const RollbackAmbiguityPolicy ambiguity_policy = RollbackAmbiguityPolicy::kFail);
 
     /// \brief If a Skeleton TransactionLog exists, performs a rollback on it.
     Result<void> RollbackSkeletonTracingTransactions(

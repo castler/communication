@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
+#include <string_view>
 #include <thread>
 
 #include "score/mw/com/impl/com_error.h"
@@ -169,7 +170,8 @@ void TransactionLogLocalView::DereferenceTransactionCommit(SlotIndexType slot_in
 }
 
 Result<void> TransactionLogLocalView::RollbackProxyElementLog(const DereferenceSlotCallback& dereference_slot_callback,
-                                                              const UnsubscribeCallback& unsubscribe_callback)
+                                                              const UnsubscribeCallback& unsubscribe_callback,
+                                                              const RollbackAmbiguityPolicy ambiguity_policy)
 {
     const bool was_no_subscribe_recorded{!subscribe_transactions_.get().GetTransactionBegin() &&
                                          !subscribe_transactions_.get().GetTransactionEnd()};
@@ -182,13 +184,15 @@ Result<void> TransactionLogLocalView::RollbackProxyElementLog(const DereferenceS
             "All slot increment transactions should be reversed before calling unsubscribe");
     }
 
-    const auto rollback_increment_transactions_result = RollbackIncrementTransactions(dereference_slot_callback);
+    const auto rollback_increment_transactions_result =
+        RollbackIncrementTransactions(dereference_slot_callback, ambiguity_policy);
     if (!rollback_increment_transactions_result.has_value())
     {
         return rollback_increment_transactions_result;
     }
 
-    const auto rollback_subscribe_transactions_result = RollbackSubscribeTransactions(unsubscribe_callback);
+    const auto rollback_subscribe_transactions_result =
+        RollbackSubscribeTransactions(unsubscribe_callback, ambiguity_policy);
     return rollback_subscribe_transactions_result;
 }
 
@@ -205,7 +209,8 @@ Result<void> TransactionLogLocalView::RollbackSkeletonTracingElementLog(
 // leds to calling std::terminate().
 // coverity[autosar_cpp14_a15_5_3_violation : FALSE]
 Result<void> TransactionLogLocalView::RollbackIncrementTransactions(
-    const DereferenceSlotCallback& dereference_slot_callback) noexcept
+    const DereferenceSlotCallback& dereference_slot_callback,
+    const RollbackAmbiguityPolicy ambiguity_policy) noexcept
 {
     for (SlotIndexType slot_idx = 0U; slot_idx < reference_count_slots_local_.size(); ++slot_idx)
     {
@@ -220,25 +225,33 @@ Result<void> TransactionLogLocalView::RollbackIncrementTransactions(
             dereference_slot_callback(slot_idx);
             DereferenceTransactionCommit(slot_idx);
         }
-        else if (did_program_crash_while_incrementing_slot)
+        else if (did_program_crash_while_incrementing_slot || did_program_crash_while_decrementing_slot)
         {
-            score::mw::log::LogError("lola")
-                << "Could not rollback transaction log as previous service element crashed while "
-                   "incrementing a control slot.";
-            return MakeUnexpected(ComErrc::kCouldNotRestartProxy);
-        }
-        else if (did_program_crash_while_decrementing_slot)
-        {
-            score::mw::log::LogError("lola")
-                << "Could not rollback transaction log as previous service element crashed while "
-                   "decrementing a control slot.";
-            return MakeUnexpected(ComErrc::kCouldNotRestartProxy);
+            const std::string_view crashed_operation{did_program_crash_while_incrementing_slot ? "incrementing"
+                                                                                               : "decrementing"};
+            if (ambiguity_policy == RollbackAmbiguityPolicy::kQuarantine)
+            {
+                score::mw::log::LogWarn("lola")
+                    << "Quarantining control slot" << static_cast<std::uint32_t>(slot_idx)
+                    << "of transaction log: previous service element crashed while" << crashed_operation
+                    << "it. The slot reference count is not modified, at most one reference stays accounted to it.";
+                slot.SetTransactionBegin(false);
+                slot.SetTransactionEnd(false);
+            }
+            else
+            {
+                score::mw::log::LogError("lola")
+                    << "Could not rollback transaction log as previous service element crashed while"
+                    << crashed_operation << "a control slot.";
+                return MakeUnexpected(ComErrc::kCouldNotRestartProxy);
+            }
         }
     }
     return {};
 }
 
-Result<void> TransactionLogLocalView::RollbackSubscribeTransactions(const UnsubscribeCallback& unsubscribe_callback)
+Result<void> TransactionLogLocalView::RollbackSubscribeTransactions(const UnsubscribeCallback& unsubscribe_callback,
+                                                                    const RollbackAmbiguityPolicy ambiguity_policy)
 {
     const bool was_subscribe_succesfully_recorded{subscribe_transactions_.get().GetTransactionBegin() &&
                                                   subscribe_transactions_.get().GetTransactionEnd()};
@@ -252,17 +265,25 @@ Result<void> TransactionLogLocalView::RollbackSubscribeTransactions(const Unsubs
         unsubscribe_callback(subscription_max_sample_count_.get().value());
         UnsubscribeTransactionCommit();
     }
-    else if (did_program_crash_while_subscribing)
+    else if (did_program_crash_while_subscribing || did_program_crash_while_unsubscribing)
     {
-        score::mw::log::LogError("lola")
-            << "Could not rollback transaction log as previous service element crashed while calling Subscribe.";
-        return MakeUnexpected(ComErrc::kCouldNotRestartProxy);
-    }
-    else if (did_program_crash_while_unsubscribing)
-    {
-        score::mw::log::LogError("lola")
-            << "Could not rollback transaction log as previous service element crashed while calling Unsubscribe.";
-        return MakeUnexpected(ComErrc::kCouldNotRestartProxy);
+        const std::string_view crashed_call{did_program_crash_while_subscribing ? "Subscribe" : "Unsubscribe"};
+        if (ambiguity_policy == RollbackAmbiguityPolicy::kQuarantine)
+        {
+            score::mw::log::LogWarn("lola")
+                << "Quarantining subscription of transaction log: previous service element crashed while calling"
+                << crashed_call << ". The subscription is not modified, at most one subscription stays accounted to it.";
+            subscribe_transactions_.get().SetTransactionBegin(false);
+            subscribe_transactions_.get().SetTransactionEnd(false);
+            subscription_max_sample_count_.get().reset();
+        }
+        else
+        {
+            score::mw::log::LogError("lola")
+                << "Could not rollback transaction log as previous service element crashed while calling"
+                << crashed_call;
+            return MakeUnexpected(ComErrc::kCouldNotRestartProxy);
+        }
     }
     return {};
 }

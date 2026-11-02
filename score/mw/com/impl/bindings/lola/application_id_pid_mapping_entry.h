@@ -47,7 +47,10 @@ class ApplicationIdPidMappingEntry
     // coverity[autosar_cpp14_m11_0_1_violation]
     std::atomic<key_type> key_application_id_status_{};
     // coverity[autosar_cpp14_m11_0_1_violation]
-    pid_t pid_{};
+    // The pid is accessed by multiple proxy processes taking over the same application id; it therefore must be
+    // atomic and may only be modified via atomic read-modify-write operations.
+    std::atomic<pid_t> pid_{};
+    static_assert(std::atomic<pid_t>::is_always_lock_free);
 };
 
 }  // namespace score::mw::com::impl::lola

@@ -14,6 +14,10 @@
 
 #include "score/mw/log/logging.h"
 
+#include <score/assert.hpp>
+
+#include <limits>
+
 namespace score::mw::com::impl::lola
 {
 
@@ -57,9 +61,9 @@ std::optional<pid_t> TryUpdatePidForExistingId(
         {
             // application ID already exists. It is "owned" by us, so we can directly update pid, without atomic state
             // changes ...
-            pid_t old_pid = it->pid_;
-            it->pid_ = pid;
-            return old_pid;
+            // The exchange is a single atomic step: of several concurrent takers exactly one observes each previous
+            // value, none can lose or tear it.
+            return it->pid_.exchange(pid, std::memory_order_acq_rel);
         }
         else if ((entry_status == ApplicationIdPidMappingEntry::MappingEntryStatus::kUpdating) &&
                  (entry_applicationid == application_id))
@@ -70,7 +74,7 @@ std::optional<pid_t> TryUpdatePidForExistingId(
             score::mw::log::LogWarn("lola")
                 << "ApplicationIdPidMapping: Found mapping entry for own application ID in state kUpdating. Maybe we "
                    "crashed before!? Now taking over entry and updating with current PID.";
-            it->pid_ = pid;
+            it->pid_.store(pid, std::memory_order_release);
             it->SetStatusAndApplicationIdAtomic(ApplicationIdPidMappingEntry::MappingEntryStatus::kUsed,
                                                 application_id);
             return pid;
@@ -129,7 +133,7 @@ std::optional<pid_t> RegisterPid(score::containers::DynamicArray<ApplicationIdPi
                 if (AtomicIndirectorType<ApplicationIdPidMappingEntry::key_type>::compare_exchange_weak(
                         it->key_application_id_status_, current_entry_key, new_entry_key, std::memory_order_acq_rel))
                 {
-                    it->pid_ = pid;
+                    it->pid_.store(pid, std::memory_order_release);
                     it->SetStatusAndApplicationIdAtomic(ApplicationIdPidMappingEntry::MappingEntryStatus::kUsed,
                                                         application_id);
                     return pid;
@@ -139,6 +143,151 @@ std::optional<pid_t> RegisterPid(score::containers::DynamicArray<ApplicationIdPi
     }
     return {};
 }
+
+namespace
+{
+
+constexpr std::size_t kMaxTakeoverRetries{50U};
+
+/// \brief Takes over an entry of the own application id which is in state kUsed.
+template <template <class> class AtomicIndirectorType>
+TakeoverOutcome TakeoverUsedEntry(ApplicationIdPidMappingEntry& entry,
+                                  const pid_t incarnation_word,
+                                  const IIncarnationAuthority& authority)
+{
+    pid_t previous_word = entry.pid_.load(std::memory_order_acquire);
+    for (std::size_t retry = 0U; retry < kMaxTakeoverRetries; ++retry)
+    {
+        if (previous_word == incarnation_word)
+        {
+            return {TakeoverResult::kSame, IncarnationId::FromPid(previous_word)};
+        }
+        const IncarnationId previous = IncarnationId::FromPid(previous_word);
+        const bool is_previous_owner_present = (previous_word != 0);
+        if (is_previous_owner_present && (authority.GetTakeoverPolicy() == TakeoverPolicy::kRequireDead) &&
+            (authority.Query(previous) != Liveness::kDead))
+        {
+            return {TakeoverResult::kRefusedLive, previous};
+        }
+        // On failure someone else changed the owner in between, previous_word then holds the new owner and we
+        // re-evaluate against it.
+        if (AtomicIndirectorType<pid_t>::compare_exchange_strong(
+                entry.pid_, previous_word, incarnation_word, std::memory_order_acq_rel))
+        {
+            if (is_previous_owner_present)
+            {
+                return {TakeoverResult::kTookOver, previous};
+            }
+            return {TakeoverResult::kFresh, IncarnationId::None()};
+        }
+    }
+    return {TakeoverResult::kContended, IncarnationId::None()};
+}
+
+}  // namespace
+
+// coverity[autosar_cpp14_m3_2_3_violation]
+// coverity[autosar_cpp14_a8_4_10_violation]
+template <template <class> class AtomicIndirectorType>
+TakeoverOutcome Takeover(score::containers::DynamicArray<ApplicationIdPidMappingEntry>::iterator entries_begin,
+                         score::containers::DynamicArray<ApplicationIdPidMappingEntry>::iterator entries_end,
+                         const std::uint32_t application_id,
+                         const IncarnationId incarnation,
+                         const IIncarnationAuthority& authority)
+{
+    SCORE_LANGUAGE_FUTURECPP_ASSERT_PRD_MESSAGE(incarnation.IsValid() && (incarnation.Raw() <= static_cast<std::uint64_t>(
+                                                                              std::numeric_limits<pid_t>::max())),
+                                                "Incarnation must be valid and fit the 32 bit owner word.");
+    const pid_t incarnation_word = incarnation.ToPid();
+
+    for (std::size_t retry = 0U; retry < kMaxTakeoverRetries; ++retry)
+    {
+        // coverity[autosar_cpp14_m5_0_15_violation]
+        for (auto* it = entries_begin; it != entries_end; it++)
+        {
+            const auto [entry_status, entry_application_id] = it->GetStatusAndApplicationIdAtomic();
+            if (entry_application_id != application_id)
+            {
+                continue;
+            }
+            if (entry_status == ApplicationIdPidMappingEntry::MappingEntryStatus::kUsed)
+            {
+                return TakeoverUsedEntry<AtomicIndirectorType>(*it, incarnation_word, authority);
+            }
+            if (entry_status == ApplicationIdPidMappingEntry::MappingEntryStatus::kUpdating)
+            {
+                // Left half written by an earlier incarnation of the same application which crashed while registering.
+                score::mw::log::LogWarn("lola")
+                    << "ApplicationIdPidMapping: Found mapping entry for own application ID in state kUpdating. Maybe "
+                       "we crashed before!? Now taking over entry.";
+                it->pid_.store(incarnation_word, std::memory_order_release);
+                it->SetStatusAndApplicationIdAtomic(ApplicationIdPidMappingEntry::MappingEntryStatus::kUsed,
+                                                    application_id);
+                return {TakeoverResult::kFresh, IncarnationId::None()};
+            }
+        }
+
+        // coverity[autosar_cpp14_m5_0_15_violation]
+        for (auto* it = entries_begin; it != entries_end; it++)
+        {
+            const auto [entry_status, entry_application_id] = it->GetStatusAndApplicationIdAtomic();
+            if (entry_status != ApplicationIdPidMappingEntry::MappingEntryStatus::kUnused)
+            {
+                continue;
+            }
+            auto current_entry_key = ApplicationIdPidMappingEntry::CreateKey(entry_status, entry_application_id);
+            const auto new_entry_key = ApplicationIdPidMappingEntry::CreateKey(
+                ApplicationIdPidMappingEntry::MappingEntryStatus::kUpdating, application_id);
+            if (AtomicIndirectorType<ApplicationIdPidMappingEntry::key_type>::compare_exchange_weak(
+                    it->key_application_id_status_, current_entry_key, new_entry_key, std::memory_order_acq_rel))
+            {
+                it->pid_.store(incarnation_word, std::memory_order_release);
+                it->SetStatusAndApplicationIdAtomic(ApplicationIdPidMappingEntry::MappingEntryStatus::kUsed,
+                                                    application_id);
+                return {TakeoverResult::kFresh, IncarnationId::None()};
+            }
+        }
+    }
+    return {TakeoverResult::kContended, IncarnationId::None()};
+}
+
+bool ReleaseIfOwner(score::containers::DynamicArray<ApplicationIdPidMappingEntry>::iterator entries_begin,
+                    score::containers::DynamicArray<ApplicationIdPidMappingEntry>::iterator entries_end,
+                    const std::uint32_t application_id,
+                    const IncarnationId expected_owner)
+{
+    if (!expected_owner.IsValid() ||
+        (expected_owner.Raw() > static_cast<std::uint64_t>(std::numeric_limits<pid_t>::max())))
+    {
+        return false;
+    }
+    // coverity[autosar_cpp14_m5_0_15_violation]
+    for (auto* it = entries_begin; it != entries_end; it++)
+    {
+        const auto [entry_status, entry_application_id] = it->GetStatusAndApplicationIdAtomic();
+        if ((entry_status == ApplicationIdPidMappingEntry::MappingEntryStatus::kUsed) &&
+            (entry_application_id == application_id))
+        {
+            pid_t expected_word = expected_owner.ToPid();
+            return it->pid_.compare_exchange_strong(expected_word, 0, std::memory_order_acq_rel);
+        }
+    }
+    return false;
+}
+
+/// Instantiate the method templates once for AtomicIndirectorReal (production use) and AtomicIndirectorMock (testing)
+template TakeoverOutcome Takeover<concurrency::AtomicIndirectorMock>(
+    score::containers::DynamicArray<ApplicationIdPidMappingEntry>::iterator entries_begin,
+    score::containers::DynamicArray<ApplicationIdPidMappingEntry>::iterator entries_end,
+    const std::uint32_t application_id,
+    const IncarnationId incarnation,
+    const IIncarnationAuthority& authority);
+template TakeoverOutcome Takeover<concurrency::AtomicIndirectorReal>(
+    score::containers::DynamicArray<ApplicationIdPidMappingEntry>::iterator entries_begin,
+    score::containers::DynamicArray<ApplicationIdPidMappingEntry>::iterator entries_end,
+    const std::uint32_t application_id,
+    const IncarnationId incarnation,
+    const IIncarnationAuthority& authority);
 
 /// Instantiate the method templates once for AtomicIndirectorReal (production use) and AtomicIndirectorMock (testing)
 /// Those are all instantiations we need, so we are able to put the template definitions into the .cpp file.

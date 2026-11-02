@@ -569,6 +569,8 @@ cc_library(
     visibility = ["//score/mw/com/impl/bindings/lola:__subpackages__"],
     deps = [
         ":application_id_pid_mapping_entry",
+        ":i_incarnation_authority",
+        ":incarnation",
         ":register_pid_fake",
         "@score_baselibs//score/concurrency:atomic_indirector",
         "@score_baselibs//score/containers:dynamic_array",
@@ -970,6 +972,8 @@ cc_unit_test(
     features = COMPILER_WARNING_FEATURES,
     deps = [
         ":application_id_pid_mapping",
+        ":incarnation_authority_mock",
+        ":pid_incarnation_authority",
         "@score_baselibs//score/concurrency:atomic_indirector",
         "@score_baselibs//score/concurrency:atomic_indirector_mock_binding",
     ],

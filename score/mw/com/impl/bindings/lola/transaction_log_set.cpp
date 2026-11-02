@@ -83,7 +83,8 @@ void TransactionLogSet::MarkTransactionLogsNeedRollback(const TransactionLogId& 
 Result<void> TransactionLogSet::RollbackProxyTransactions(
     const TransactionLogId& transaction_log_id,
     const TransactionLogLocalView::DereferenceSlotCallback dereference_slot_callback,
-    const TransactionLogLocalView::DereferenceSlotCallback unsubscribe_callback)
+    const TransactionLogLocalView::DereferenceSlotCallback unsubscribe_callback,
+    const RollbackAmbiguityPolicy ambiguity_policy)
 {
     const auto transaction_log_node_iterators_to_be_rolled_back =
         FindTransactionLogNodesToBeRolledBack(transaction_log_id);
@@ -95,7 +96,7 @@ Result<void> TransactionLogSet::RollbackProxyTransactions(
     for (auto* const transaction_log_node_it : transaction_log_node_iterators_to_be_rolled_back)
     {
         rollback_result = transaction_log_node_it->GetTransactionLogLocalView().RollbackProxyElementLog(
-            dereference_slot_callback, unsubscribe_callback);
+            dereference_slot_callback, unsubscribe_callback, ambiguity_policy);
         if (rollback_result.has_value())
         {
             transaction_log_node_it->Reset();

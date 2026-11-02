@@ -266,6 +266,26 @@ TEST_F(TransactionLogRollbackExecutorRollbackLogsFixture, TakesOverMappingOfPrev
               kDummyCurrentConsumerPid);
 }
 
+TEST_F(TransactionLogRollbackExecutorRollbackLogsFixture, QuarantinePolicyOfExecutorResolvesLogOfCrashedSubscribe)
+{
+    WithTransactionLogRollbackExecutor();
+    unit_ = std::make_unique<TransactionLogRollbackExecutor>(*service_data_control_,
+                                                             kSkeletonInstanceIdentifier,
+                                                             kDummyQualityType,
+                                                             kDummyProviderPid,
+                                                             kDummyTransactionLogId,
+                                                             RollbackAmbiguityPolicy::kQuarantine);
+    AddApplicationIdPidMapping(static_cast<std::uint32_t>(kDummyTransactionLogId), kDummyOldConsumerPid);
+    auto& transaction_log_node = RegisterProxyElementWithTransactionLogSet(kDummyElementFqId, kDummyTransactionLogId);
+    TransactionLogLocalView{transaction_log_node.GetTransactionLog()}.SubscribeTransactionBegin(kNumberOfSlots);
+    EXPECT_CALL(message_passing_service_mock_, NotifyOutdatedNodeId(_, _, _)).Times(1);
+
+    // the same log, which cannot be rolled back with the default policy, is resolved
+    EXPECT_TRUE(unit_->RollbackTransactionLogs().has_value());
+    EXPECT_FALSE(transaction_log_node.IsActive());
+    EXPECT_FALSE(transaction_log_node.NeedsRollback());
+}
+
 TEST_F(TransactionLogRollbackExecutorRollbackLogsFixture, OnlyLogsOfOwnApplicationIdAreMarkedAndRolledBack)
 {
     WithTransactionLogRollbackExecutor();
@@ -307,7 +327,7 @@ class TransactionLogRollbackRerunFixture : public TransactionLogRollbackExecutor
         return node;
     }
 
-    Result<void> RunRollback() noexcept
+    Result<void> RunRollback(const RollbackAmbiguityPolicy policy = RollbackAmbiguityPolicy::kFail) noexcept
     {
         return GetTransactionLogSet(kDummyElementFqId)
             .RollbackProxyTransactions(
@@ -317,7 +337,8 @@ class TransactionLogRollbackRerunFixture : public TransactionLogRollbackExecutor
                 },
                 [this](const TransactionLog::MaxSampleCountType max_sample_count) noexcept {
                     unsubscribed_with_.push_back(max_sample_count);
-                });
+                },
+                policy);
     }
 
     std::vector<TransactionLog::SlotIndexType> dereferenced_slots_{};
@@ -399,6 +420,85 @@ TEST_F(TransactionLogRollbackRerunFixture, RerunAfterStopInsideSlotDereferenceFa
     // and a further re-run yields the same result (idempotent failure, no side effects)
     EXPECT_FALSE(RunRollback().has_value());
     EXPECT_TRUE(dereferenced_slots_.empty());
+}
+
+TEST_F(TransactionLogRollbackRerunFixture, QuarantineResolvesStopInsideSlotDereferenceAndFinishesRollback)
+{
+    auto& node = SetupLogWithReferencedSlotsAndSubscription({0U, 1U, 2U});
+    TransactionLogLocalView view{node.GetTransactionLog()};
+    view.DereferenceTransactionBegin(0U);
+    view.DereferenceTransactionCommit(0U);
+    view.DereferenceTransactionBegin(1U);
+
+    // when the rollback is re-run with the quarantine policy
+    ASSERT_TRUE(RunRollback(RollbackAmbiguityPolicy::kQuarantine).has_value());
+
+    // then slot 1 is not dereferenced again (its decrement may already have happened), the remaining slot and the
+    // subscription are rolled back and the log is released
+    EXPECT_EQ(dereferenced_slots_, (std::vector<TransactionLog::SlotIndexType>{2U}));
+    EXPECT_EQ(unsubscribed_with_.size(), 1U);
+    EXPECT_FALSE(node.IsActive());
+    EXPECT_FALSE(node.NeedsRollback());
+}
+
+TEST_F(TransactionLogRollbackRerunFixture, QuarantineResolvesStopInsideSlotIncrement)
+{
+    auto& node = SetupLogWithReferencedSlotsAndSubscription({0U});
+    TransactionLogLocalView view{node.GetTransactionLog()};
+    view.ReferenceTransactionBegin(3U);
+
+    ASSERT_TRUE(RunRollback(RollbackAmbiguityPolicy::kQuarantine).has_value());
+
+    EXPECT_EQ(dereferenced_slots_, (std::vector<TransactionLog::SlotIndexType>{0U}));
+    EXPECT_EQ(unsubscribed_with_.size(), 1U);
+    EXPECT_FALSE(node.IsActive());
+}
+
+TEST_F(TransactionLogRollbackRerunFixture, QuarantineResolvesStopInsideUnsubscribe)
+{
+    auto& node = SetupLogWithReferencedSlotsAndSubscription({});
+    TransactionLogLocalView{node.GetTransactionLog()}.UnsubscribeTransactionBegin();
+
+    ASSERT_TRUE(RunRollback(RollbackAmbiguityPolicy::kQuarantine).has_value());
+
+    EXPECT_TRUE(unsubscribed_with_.empty());
+    EXPECT_FALSE(node.IsActive());
+    EXPECT_FALSE(node.NeedsRollback());
+}
+
+TEST_F(TransactionLogRollbackRerunFixture, QuarantineResolvesStopInsideSubscribe)
+{
+    WithTransactionLogRollbackExecutor();
+    auto& node = RegisterProxyElementWithTransactionLogSet(kDummyElementFqId, kDummyTransactionLogId);
+    TransactionLogLocalView{node.GetTransactionLog()}.SubscribeTransactionBegin(kSubscriptionMaxSampleCount);
+    GetTransactionLogSet(kDummyElementFqId).MarkTransactionLogsNeedRollback(kDummyTransactionLogId);
+
+    ASSERT_TRUE(RunRollback(RollbackAmbiguityPolicy::kQuarantine).has_value());
+
+    EXPECT_TRUE(unsubscribed_with_.empty());
+    EXPECT_FALSE(node.IsActive());
+}
+
+TEST_F(TransactionLogRollbackRerunFixture, QuarantinePolicyDoesNotChangeUninterruptedRollback)
+{
+    auto& node = SetupLogWithReferencedSlotsAndSubscription({0U, 3U});
+
+    ASSERT_TRUE(RunRollback(RollbackAmbiguityPolicy::kQuarantine).has_value());
+
+    EXPECT_EQ(dereferenced_slots_, (std::vector<TransactionLog::SlotIndexType>{0U, 3U}));
+    EXPECT_EQ(unsubscribed_with_.size(), 1U);
+    EXPECT_FALSE(node.IsActive());
+}
+
+TEST_F(TransactionLogRollbackRerunFixture, FailPolicyRemainsDefaultAndKeepsLogStuck)
+{
+    auto& node = SetupLogWithReferencedSlotsAndSubscription({0U});
+    TransactionLogLocalView view{node.GetTransactionLog()};
+    view.DereferenceTransactionBegin(0U);
+
+    EXPECT_FALSE(RunRollback().has_value());
+    EXPECT_FALSE(RunRollback(RollbackAmbiguityPolicy::kFail).has_value());
+    EXPECT_TRUE(node.IsActive());
 }
 
 TEST_F(TransactionLogRollbackRerunFixture, RerunAfterStopInsideUnsubscribeFailsWithoutUnsubscribingAgain)
