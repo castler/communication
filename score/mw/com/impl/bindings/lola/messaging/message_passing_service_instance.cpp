@@ -233,20 +233,20 @@ MessagePassingServiceInstance::MessagePassingServiceInstance(
       call_method_handlers_mutex_{},
       executor_{local_event_executor},
       message_callback_scope_{},
-      self_pid_{os::Unistd::instance().getpid()},
+      self_node_{score::message_passing::NodeIdFromPid(os::Unistd::instance().getpid())},
       self_identity_{score::message_passing::ClientIdentity::FromCredentials(
-          self_pid_, os::Unistd::instance().getuid(), 0)}
+          score::message_passing::NodeIdToPid(self_node_), os::Unistd::instance().getuid(), 0)}
 {
     // TODO: PMR
 
-    auto service_identifier = MessagePassingClientCache::CreateMessagePassingName(asil_level, self_pid_);
+    auto service_identifier = MessagePassingClientCache::CreateMessagePassingName(asil_level, self_node_);
     score::message_passing::ServiceProtocolConfig protocol_config{service_identifier, kMaxSendSize, kMaxReplySize, 0U};
     score::message_passing::IServerFactory::ServerConfig server_config{};
     server_ = server_factory.Create(protocol_config, server_config);
 
     auto connect_callback = [](score::message_passing::IServerConnection& connection) noexcept -> std::uintptr_t {
-        const pid_t client_pid = connection.GetClientIdentity().GetNodeId();
-        return static_cast<std::uintptr_t>(client_pid);
+        const auto client_node = connection.GetClientIdentity().GetNodeId();
+        return static_cast<std::uintptr_t>(client_node.Raw());
     };
     auto disconnect_callback = [](score::message_passing::IServerConnection& /*connection*/) noexcept {
         // TODO: outdated node id?
@@ -254,10 +254,10 @@ MessagePassingServiceInstance::MessagePassingServiceInstance(
     };
 
     auto message_callback_scoped_function =
-        std::make_shared<score::safecpp::MoveOnlyScopedFunction<void(pid_t, score::cpp::span<const std::uint8_t>)>>(
+        std::make_shared<score::safecpp::MoveOnlyScopedFunction<void(NodeId, score::cpp::span<const std::uint8_t>)>>(
             message_callback_scope_,
-            [this](pid_t sender_pid, score::cpp::span<const std::uint8_t> message) noexcept -> void {
-                this->MessageCallback(sender_pid, message);
+            [this](NodeId sender_node, score::cpp::span<const std::uint8_t> message) noexcept -> void {
+                this->MessageCallback(sender_node, message);
             });
     // Suppress autosar_cpp14_a15_5_3_violation: False Positive
     // Rationale: Passing an argument by reference cannot throw
@@ -272,16 +272,17 @@ MessagePassingServiceInstance::MessagePassingServiceInstance(
         // coverity[autosar_cpp14_a15_5_3_violation]
         auto UserDataUintPtr = std::get<std::uintptr_t>(connection.GetUserData());
 
-        const auto client_pid = score::safe_math::Cast<pid_t>(UserDataUintPtr);
-        SCORE_LANGUAGE_FUTURECPP_PRECONDITION_PRD_MESSAGE(
-            client_pid.has_value(), "Message Passing : Message Passing: PID is bigger than pid_t::max()");
-        auto executed = (*scoped_function)(client_pid.value(), message);
+        const auto client_raw = score::safe_math::Cast<std::uint64_t>(UserDataUintPtr);
+        SCORE_LANGUAGE_FUTURECPP_PRECONDITION_PRD_MESSAGE(client_raw.has_value(),
+                                                          "Message Passing : Node id does not fit into 64 bit");
+        const NodeId client_node{client_raw.value()};
+        auto executed = (*scoped_function)(client_node, message);
 
         if (!executed.has_value())
         {
             score::mw::log::LogInfo("lola") << "MessagePassingServiceInstance: Message callback scope invalidated, "
                                                "skipping message processing for client "
-                                            << client_pid.value();
+                                            << client_node.Raw();
         }
 
         return {};
@@ -323,7 +324,7 @@ message_passing::MessageCallback MessagePassingServiceInstance::CreateSendMessag
             score::message_passing::IServerConnection& connection,
             score::cpp::span<const std::uint8_t> message) -> score::cpp::expected_blank<score::os::Error> {
         const auto client_identity = connection.GetClientIdentity();
-        const pid_t client_pid = client_identity.GetNodeId();
+        const auto client_node = client_identity.GetNodeId();
 
         SCORE_LANGUAGE_FUTURECPP_PRECONDITION_PRD_MESSAGE(
             message_callback_with_reply_scoped_function != nullptr,
@@ -333,7 +334,7 @@ message_passing::MessageCallback MessagePassingServiceInstance::CreateSendMessag
         if (!(function_invocation_result.has_value()))
         {
             score::mw::log::LogError("lola")
-                << "Calling message_callback_with_reply_scoped_function failed because scope expired" << client_pid;
+                << "Calling message_callback_with_reply_scoped_function failed because scope expired" << client_node.Raw();
             const auto reply = SerializeToMethodReplyMessage(MakeUnexpected(MethodErrc::kSkeletonAlreadyDestroyed));
             const auto reply_result = connection.Reply(reply);
             if (!(reply_result.has_value()))
@@ -378,12 +379,12 @@ message_passing::MessageCallback MessagePassingServiceInstance::CreateSendMessag
     return received_send_message_with_reply_callback;
 }
 
-void MessagePassingServiceInstance::MessageCallback(const pid_t sender_pid,
+void MessagePassingServiceInstance::MessageCallback(const NodeId sender_node,
                                                     const score::cpp::span<const std::uint8_t> message) noexcept
 {
     if (message.empty())
     {
-        score::mw::log::LogError("lola") << "MessagePassingService: Empty message received from " << sender_pid;
+        score::mw::log::LogError("lola") << "MessagePassingService: Empty message received from " << sender_node.Raw();
         return;
     }
     const auto payload = message.subspan(1U);
@@ -392,23 +393,23 @@ void MessagePassingServiceInstance::MessageCallback(const pid_t sender_pid,
     {
         // Deviation of MISRA RULE-7-0-5: codeql::misra_deviation_next_line(switch-enum-underlying-type-discriminant)
         case score::cpp::to_underlying(MessageType::kRegisterEventNotifier):
-            HandleRegisterNotificationMsg(payload, sender_pid);
+            HandleRegisterNotificationMsg(payload, sender_node);
             break;
         // Deviation of MISRA RULE-7-0-5: codeql::misra_deviation_next_line(switch-enum-underlying-type-discriminant)
         case score::cpp::to_underlying(MessageType::kUnregisterEventNotifier):
-            HandleUnregisterNotificationMsg(payload, sender_pid);
+            HandleUnregisterNotificationMsg(payload, sender_node);
             break;
         // Deviation of MISRA RULE-7-0-5: codeql::misra_deviation_next_line(switch-enum-underlying-type-discriminant)
         case score::cpp::to_underlying(MessageType::kNotifyEvent):
-            HandleNotifyEventMsg(payload, sender_pid);
+            HandleNotifyEventMsg(payload, sender_node);
             break;
         // Deviation of MISRA RULE-7-0-5: codeql::misra_deviation_next_line(switch-enum-underlying-type-discriminant)
         case score::cpp::to_underlying(MessageType::kOutdatedNodeId):
-            HandleOutdatedNodeIdMsg(payload, sender_pid);
+            HandleOutdatedNodeIdMsg(payload, sender_node);
             break;
         default:
             score::mw::log::LogError("lola")
-                << "MessagePassingService: Unsupported MessageType received from " << sender_pid;
+                << "MessagePassingService: Unsupported MessageType received from " << sender_node.Raw();
             break;
     }
 }
@@ -417,10 +418,10 @@ score::Result<void> MessagePassingServiceInstance::MessageCallbackWithReply(
     const score::message_passing::ClientIdentity& sender,
     const score::cpp::span<const std::uint8_t> message)
 {
-    const pid_t sender_pid = sender.GetNodeId();
+    const NodeId sender_node = sender.GetNodeId();
     if (message.empty())
     {
-        score::mw::log::LogError("lola") << "MessagePassingService: Empty message received from " << sender_pid;
+        score::mw::log::LogError("lola") << "MessagePassingService: Empty message received from " << sender_node.Raw();
         return MakeUnexpected(MethodErrc::kUnexpectedMessageSize);
     }
     const auto payload = message.subspan(1U);
@@ -435,7 +436,7 @@ score::Result<void> MessagePassingServiceInstance::MessageCallbackWithReply(
         // Deviation of MISRA RULE-7-0-5: codeql::misra_deviation_next_line(switch-enum-underlying-type-discriminant)
         case score::cpp::to_underlying(MessageWithReplyType::kUnsubscribeServiceMethod):
         {
-            return HandleUnsubscribeServiceMethodMsg(payload, sender_pid);
+            return HandleUnsubscribeServiceMethodMsg(payload, sender_node);
         }
         // Deviation of MISRA RULE-7-0-5: codeql::misra_deviation_next_line(switch-enum-underlying-type-discriminant)
         case score::cpp::to_underlying(MessageWithReplyType::kCallMethod):
@@ -445,7 +446,7 @@ score::Result<void> MessagePassingServiceInstance::MessageCallbackWithReply(
         default:
         {
             score::mw::log::LogError("lola")
-                << "MessagePassingService: Unsupported MessageWithReplyType received from " << sender_pid;
+                << "MessagePassingService: Unsupported MessageWithReplyType received from " << sender_node.Raw();
             break;
         }
     }
@@ -454,7 +455,7 @@ score::Result<void> MessagePassingServiceInstance::MessageCallbackWithReply(
 }
 
 void MessagePassingServiceInstance::HandleNotifyEventMsg(const score::cpp::span<const std::uint8_t> payload,
-                                                         const pid_t sender_node_id) noexcept
+                                                         const NodeId sender_node_id) noexcept
 {
     // TODO: make proper serialization
     ElementFqId elementFqId{};
@@ -466,14 +467,14 @@ void MessagePassingServiceInstance::HandleNotifyEventMsg(const score::cpp::span<
     {
         score::mw::log::LogWarn("lola")
             << "MessagePassingService: Received NotifyEventUpdateMessage for event: " << elementFqId.ToString()
-            << " from node " << sender_node_id
+            << " from node " << sender_node_id.Raw()
             << " although we don't have currently any registered handlers. Might be an acceptable "
                "race, if it happens seldom!";
     }
 }
 
 void MessagePassingServiceInstance::HandleRegisterNotificationMsg(const score::cpp::span<const std::uint8_t> payload,
-                                                                  const pid_t sender_node_id) noexcept
+                                                                  const NodeId sender_node_id) noexcept
 {
     // TODO: make proper serialization
     ElementFqId elementFqId{};
@@ -503,7 +504,7 @@ void MessagePassingServiceInstance::HandleRegisterNotificationMsg(const score::c
     }
     else
     {
-        auto emplaced = event_update_interested_nodes_.emplace(elementFqId, std::set<pid_t>{});
+        auto emplaced = event_update_interested_nodes_.emplace(elementFqId, std::set<NodeId>{});
         score::cpp::ignore = emplaced.first->second.insert(sender_node_id);
         notify_status_change = true;  // First remote handler
     }
@@ -516,7 +517,7 @@ void MessagePassingServiceInstance::HandleRegisterNotificationMsg(const score::c
     {
         score::mw::log::LogWarn("lola")
             << "MessagePassingService: Received redundant RegisterEventNotificationMessage for event: "
-            << elementFqId.ToString() << " from node " << sender_node_id;
+            << elementFqId.ToString() << " from node " << sender_node_id.Raw();
     }
 
     // Notify SkeletonEvent that the first handler (remote) has been registered.
@@ -533,7 +534,7 @@ void MessagePassingServiceInstance::HandleRegisterNotificationMsg(const score::c
 }
 
 void MessagePassingServiceInstance::HandleUnregisterNotificationMsg(const score::cpp::span<const std::uint8_t> payload,
-                                                                    const pid_t sender_node_id) noexcept
+                                                                    const NodeId sender_node_id) noexcept
 {
     // TODO: make proper serialization
     ElementFqId elementFqId{};
@@ -571,7 +572,7 @@ void MessagePassingServiceInstance::HandleUnregisterNotificationMsg(const score:
     {
         score::mw::log::LogWarn("lola")
             << "MessagePassingService: Received UnregisterEventNotificationMessage for event: "
-            << elementFqId.ToString() << " from node " << sender_node_id << ", but there was no registration!";
+            << elementFqId.ToString() << " from node " << sender_node_id.Raw() << ", but there was no registration!";
     }
 
     // Notify SkeletonEvent that the last handler (remote) has been unregistered.
@@ -588,31 +589,33 @@ void MessagePassingServiceInstance::HandleUnregisterNotificationMsg(const score:
 }
 
 void MessagePassingServiceInstance::HandleOutdatedNodeIdMsg(const score::cpp::span<const std::uint8_t> payload,
-                                                            const pid_t sender_node_id) noexcept
+                                                            const NodeId sender_node_id) noexcept
 {
-    pid_t pid_to_unregister{};
+    // The wire format of this message carries the pid (4 byte) of the outdated node.
+    pid_t outdated_pid{};
 
-    if (!DeserializeFromPayload(payload, pid_to_unregister))
+    if (!DeserializeFromPayload(payload, outdated_pid))
     {
         return;
     }
+    const auto node_to_unregister = score::message_passing::NodeIdFromPid(outdated_pid);
 
     EventUpdateNodeIdMapType::size_type remove_count{0U};
     std::unique_lock<std::shared_mutex> write_lock(event_update_interested_nodes_mutex_);
     for (auto& element : event_update_interested_nodes_)
     {
-        remove_count += element.second.erase(pid_to_unregister);
+        remove_count += element.second.erase(node_to_unregister);
     }
     write_lock.unlock();
 
     if (remove_count == 0U)
     {
         score::mw::log::LogInfo("lola") << "MessagePassingService: HandleOutdatedNodeIdMsg for outdated node id:"
-                                        << pid_to_unregister << "from node" << sender_node_id
+                                        << node_to_unregister.Raw() << "from node" << sender_node_id.Raw()
                                         << ". No update notifications for outdated node existed.";
     }
 
-    client_cache_.RemoveMessagePassingClient(pid_to_unregister);
+    client_cache_.RemoveMessagePassingClient(node_to_unregister);
 }
 
 score::Result<void> MessagePassingServiceInstance::HandleSubscribeServiceMethodMsg(
@@ -632,7 +635,7 @@ score::Result<void> MessagePassingServiceInstance::HandleSubscribeServiceMethodM
 
 score::Result<void> MessagePassingServiceInstance::HandleUnsubscribeServiceMethodMsg(
     const score::cpp::span<const std::uint8_t> payload,
-    const pid_t /*sender_node_id*/)
+    const NodeId /*sender_node_id*/)
 {
     UnsubscribeServiceMethodUnserializedPayload unserialized_payload{};
     if (!DeserializeFromPayload(payload, unserialized_payload))
@@ -772,7 +775,7 @@ score::Result<void> MessagePassingServiceInstance::CallServiceMethodLocally(
 Result<void> MessagePassingServiceInstance::CallSubscribeServiceMethodRemotely(
     const SkeletonInstanceIdentifier& skeleton_instance_identifier,
     const ProxyInstanceIdentifier& proxy_instance_identifier,
-    const pid_t target_node_id)
+    const NodeId target_node_id)
 {
     SubscribeServiceMethodUnserializedPayload unserialized_payload{skeleton_instance_identifier,
                                                                    proxy_instance_identifier};
@@ -786,7 +789,7 @@ Result<void> MessagePassingServiceInstance::CallSubscribeServiceMethodRemotely(
     if (!method_reply_result.has_value())
     {
         score::mw::log::LogError("lola")
-            << "MessagePassingServiceInstance: Sending SubscribeServiceMethodMessage to node_id " << target_node_id
+            << "MessagePassingServiceInstance: Sending SubscribeServiceMethodMessage to node_id " << target_node_id.Raw()
             << " failed with error: " << method_reply_result.error();
         return MakeUnexpected(MethodErrc::kMessagePassingError);
     }
@@ -795,7 +798,7 @@ Result<void> MessagePassingServiceInstance::CallSubscribeServiceMethodRemotely(
     if (!(deserialization_result.has_value()))
     {
         score::mw::log::LogError("lola")
-            << "MessagePassingService: Parsing SubscribeServiceMethodMessage reply from node_id " << target_node_id
+            << "MessagePassingService: Parsing SubscribeServiceMethodMessage reply from node_id " << target_node_id.Raw()
             << "failed during deserialization";
         return MakeUnexpected<void>(deserialization_result.error());
     }
@@ -805,7 +808,7 @@ Result<void> MessagePassingServiceInstance::CallSubscribeServiceMethodRemotely(
 Result<void> MessagePassingServiceInstance::CallUnsubscribeServiceMethodRemotely(
     const SkeletonInstanceIdentifier& skeleton_instance_identifier,
     const ProxyInstanceIdentifier& proxy_instance_identifier,
-    const pid_t target_node_id)
+    const NodeId target_node_id)
 {
     UnsubscribeServiceMethodUnserializedPayload unserialized_payload{skeleton_instance_identifier,
                                                                      proxy_instance_identifier};
@@ -819,7 +822,7 @@ Result<void> MessagePassingServiceInstance::CallUnsubscribeServiceMethodRemotely
     if (!method_reply_result.has_value())
     {
         score::mw::log::LogError("lola")
-            << "MessagePassingServiceInstance: Sending UnsubscribeServiceMethodMessage to node_id " << target_node_id
+            << "MessagePassingServiceInstance: Sending UnsubscribeServiceMethodMessage to node_id " << target_node_id.Raw()
             << " failed with error: " << method_reply_result.error();
         return MakeUnexpected(MethodErrc::kMessagePassingError);
     }
@@ -828,7 +831,7 @@ Result<void> MessagePassingServiceInstance::CallUnsubscribeServiceMethodRemotely
     if (!(deserialization_result.has_value()))
     {
         score::mw::log::LogError("lola")
-            << "MessagePassingService: Parsing UnsubscribeServiceMethodMessage reply from node_id " << target_node_id
+            << "MessagePassingService: Parsing UnsubscribeServiceMethodMessage reply from node_id " << target_node_id.Raw()
             << "failed during deserialization";
         return MakeUnexpected<void>(deserialization_result.error());
     }
@@ -838,7 +841,7 @@ Result<void> MessagePassingServiceInstance::CallUnsubscribeServiceMethodRemotely
 Result<void> MessagePassingServiceInstance::CallServiceMethodRemotely(
     const ProxyMethodInstanceIdentifier& proxy_method_instance_identifier,
     const std::size_t queue_position,
-    const pid_t target_node_id)
+    const NodeId target_node_id)
 {
     const MethodCallUnserializedPayload unserialized_payload{proxy_method_instance_identifier, queue_position};
     const auto message =
@@ -851,7 +854,7 @@ Result<void> MessagePassingServiceInstance::CallServiceMethodRemotely(
     if (!(send_wait_reply_result.has_value()))
     {
         score::mw::log::LogError("lola") << "MessagePassingService: Sending CallServiceMethodMessage to node_id "
-                                         << target_node_id << " failed with error: " << send_wait_reply_result.error();
+                                         << target_node_id.Raw() << " failed with error: " << send_wait_reply_result.error();
         return MakeUnexpected(MethodErrc::kMessagePassingError);
     }
     const auto reply_payload = send_wait_reply_result.value();
@@ -860,7 +863,7 @@ Result<void> MessagePassingServiceInstance::CallServiceMethodRemotely(
     if (!(method_call_deserialization_result.has_value()))
     {
         score::mw::log::LogError("lola")
-            << "MessagePassingService: Parsing CallServiceMethodMessage reply from node_id " << target_node_id
+            << "MessagePassingService: Parsing CallServiceMethodMessage reply from node_id " << target_node_id.Raw()
             << "failed during deserialization";
         return MakeUnexpected(MethodErrc::kUnexpectedMessageSize);
     }
@@ -869,7 +872,7 @@ Result<void> MessagePassingServiceInstance::CallServiceMethodRemotely(
     if (!(method_call_result.has_value()))
     {
         score::mw::log::LogError("lola") << "MessagePassingService: CallServiceMethodMessage reply from node_id "
-                                         << target_node_id << "returned failure";
+                                         << target_node_id.Raw() << "returned failure";
         return MakeUnexpected<void>(method_call_result.error());
     }
     return {};
@@ -883,7 +886,7 @@ Result<void> MessagePassingServiceInstance::CallServiceMethodRemotely(
 void MessagePassingServiceInstance::NotifyEventRemote(const ElementFqId event_id) noexcept
 {
     NodeIdTmpBufferType nodeIdentifiersTmp;
-    pid_t start_node_id{0};
+    NodeId start_node_id{0U};
     const auto message = SerializeToMessage(score::cpp::to_underlying(MessageType::kNotifyEvent), event_id);
     std::pair<std::uint32_t, bool> num_ids_copied;
     std::uint8_t loop_count{0U};
@@ -912,9 +915,9 @@ void MessagePassingServiceInstance::NotifyEventRemote(const ElementFqId event_id
         {
             // Suppress "AUTOSAR C++14 M5-0-3" rule findings. This rule states: "A cvalue expression shall
             // not be implicitly converted to a different underlying type"
-            // False positive, nodeIdentifiersTmp is an array of `pid_t`.
+            // False positive, nodeIdentifiersTmp is an array of `NodeId`.
             // coverity[autosar_cpp14_m5_0_3_violation]
-            const pid_t node_identifier = nodeIdentifiersTmp.at(i);
+            const NodeId node_identifier = nodeIdentifiersTmp.at(i);
             // Suppress "AUTOSAR C++14 A18-5-8" rule finding. This rule states: "Objects that do not outlive a function
             // shall have automatic storage duration". The object is a shared_ptr which is allocated in the heap.
             // coverity[autosar_cpp14_a18_5_8_violation]
@@ -923,7 +926,7 @@ void MessagePassingServiceInstance::NotifyEventRemote(const ElementFqId event_id
             if (!result.has_value())
             {
                 score::mw::log::LogError("lola")
-                    << "MessagePassingService: Sending NotifyEventUpdateMessage to node_id " << node_identifier
+                    << "MessagePassingService: Sending NotifyEventUpdateMessage to node_id " << node_identifier.Raw()
                     << " failed with error: " << result.error();
             }
         }
@@ -934,14 +937,14 @@ void MessagePassingServiceInstance::NotifyEventRemote(const ElementFqId event_id
             // previous condition will be true only if the distance between current node id and last node id in the map
             // is more than one. So, no way for overflow.
             // coverity[autosar_cpp14_a4_7_1_violation]
-            const pid_t last_node_id = nodeIdentifiersTmp.back();
-            if (last_node_id < std::numeric_limits<pid_t>::max())
+            const NodeId last_node_id = nodeIdentifiersTmp.back();
+            if (last_node_id.Raw() < std::numeric_limits<std::uint64_t>::max())
             {
-                start_node_id = last_node_id + 1;
+                start_node_id = NodeId{last_node_id.Raw() + 1U};
             }
             else
             {
-                // last_node_id already holds the maximum representable pid_t; no larger node id can exist, so
+                // last_node_id already holds the maximum representable node id; no larger node id can exist, so
                 // there is nothing left to copy in a further iteration.
                 break;
             }
@@ -1048,7 +1051,7 @@ void MessagePassingServiceInstance::NotifyEvent(const ElementFqId event_id) noex
 IMessagePassingService::HandlerRegistrationNoType MessagePassingServiceInstance::RegisterEventNotification(
     const ElementFqId event_id,
     std::weak_ptr<ScopedEventReceiveHandler> callback,
-    const pid_t target_node_id) noexcept
+    const NodeId target_node_id) noexcept
 {
     bool notify_status_change = false;
 
@@ -1090,7 +1093,7 @@ IMessagePassingService::HandlerRegistrationNoType MessagePassingServiceInstance:
 
     write_lock.unlock();
 
-    if (target_node_id != self_pid_)
+    if (target_node_id != self_node_)
     {
         RegisterEventNotificationRemote(event_id, target_node_id);
     }
@@ -1111,7 +1114,7 @@ IMessagePassingService::HandlerRegistrationNoType MessagePassingServiceInstance:
 }
 
 void MessagePassingServiceInstance::ReregisterEventNotification(const ElementFqId event_id,
-                                                                const pid_t target_node_id) noexcept
+                                                                const NodeId target_node_id) noexcept
 {
     std::shared_lock<std::shared_mutex> read_lock(event_update_handlers_mutex_);
     auto search = event_update_handlers_.find(event_id);
@@ -1126,7 +1129,7 @@ void MessagePassingServiceInstance::ReregisterEventNotification(const ElementFqI
     read_lock.unlock();
 
     // we only do re-register activity, if it is a remote node
-    const auto is_target_remote_node = (target_node_id != self_pid_);
+    const auto is_target_remote_node = (target_node_id != self_node_);
     if (is_target_remote_node)
     {
         std::unique_lock<std::shared_mutex> remote_reg_write_lock(event_update_remote_registrations_mutex_);
@@ -1165,7 +1168,7 @@ void MessagePassingServiceInstance::ReregisterEventNotification(const ElementFqI
 void MessagePassingServiceInstance::UnregisterEventNotification(
     const ElementFqId event_id,
     const IMessagePassingService::HandlerRegistrationNoType registration_no,
-    const pid_t target_node_id) noexcept
+    const NodeId target_node_id) noexcept
 {
     bool found{false};
     bool notify_status_change = false;
@@ -1214,7 +1217,7 @@ void MessagePassingServiceInstance::UnregisterEventNotification(
         return;
     }
 
-    if (target_node_id != self_pid_)
+    if (target_node_id != self_node_)
     {
         UnregisterEventNotificationRemote(event_id, registration_no, target_node_id);
     }
@@ -1274,7 +1277,7 @@ Result<void> MessagePassingServiceInstance::RegisterOnServiceMethodUnsubscribedH
 Result<void> MessagePassingServiceInstance::RegisterMethodCallHandler(
     const ProxyMethodInstanceIdentifier proxy_method_instance_identifier,
     IMessagePassingService::MethodCallHandler method_call_callback,
-    const uid_t allowed_proxy_uid)
+    const PrincipalId allowed_proxy_uid)
 {
     std::unique_lock<std::shared_mutex> write_lock(call_method_handlers_mutex_);
 
@@ -1318,10 +1321,11 @@ void MessagePassingServiceInstance::UnregisterMethodCallHandler(
         "Function must only be called when a method call handler was successfully registered!");
 }
 
-void MessagePassingServiceInstance::NotifyOutdatedNodeId(const pid_t outdated_node_id,
-                                                         const pid_t target_node_id) noexcept
+void MessagePassingServiceInstance::NotifyOutdatedNodeId(const NodeId outdated_node_id,
+                                                         const NodeId target_node_id) noexcept
 {
-    const auto message = SerializeToMessage(score::cpp::to_underlying(MessageType::kOutdatedNodeId), outdated_node_id);
+    const auto message = SerializeToMessage(score::cpp::to_underlying(MessageType::kOutdatedNodeId),
+                                            score::message_passing::NodeIdToPid(outdated_node_id));
 
     // Suppress "AUTOSAR C++14 A18-5-8" rule finding. This rule states: "Objects that do not outlive a function shall
     // have automatic storage duration".
@@ -1332,12 +1336,12 @@ void MessagePassingServiceInstance::NotifyOutdatedNodeId(const pid_t outdated_no
     if (!result.has_value())
     {
         score::mw::log::LogError("lola") << "MessagePassingService: Sending OutdatedNodeIdMessage to node_id "
-                                         << target_node_id << " failed with error: " << result.error();
+                                         << target_node_id.Raw() << " failed with error: " << result.error();
     }
 }
 
 void MessagePassingServiceInstance::RegisterEventNotificationRemote(const ElementFqId event_id,
-                                                                    const pid_t target_node_id) noexcept
+                                                                    const NodeId target_node_id) noexcept
 {
     std::unique_lock<std::shared_mutex> remote_reg_write_lock(event_update_remote_registrations_mutex_);
     const auto registration_count_inserted =
@@ -1350,8 +1354,8 @@ void MessagePassingServiceInstance::RegisterEventNotificationRemote(const Elemen
         {
             score::mw::log::LogError("lola")
                 << "MessagePassingService: RegisterEventNotificationRemote called for event" << event_id.ToString()
-                << "and node_id" << target_node_id << "although event is currently located at node"
-                << registration_count_inserted.first->second.node_id;
+                << "and node_id" << target_node_id.Raw() << "although event is currently located at node"
+                << registration_count_inserted.first->second.node_id.Raw();
             registration_count_inserted.first->second.node_id = target_node_id;
             registration_count_inserted.first->second.counter = 1U;
         }
@@ -1377,7 +1381,7 @@ void MessagePassingServiceInstance::RegisterEventNotificationRemote(const Elemen
 void MessagePassingServiceInstance::UnregisterEventNotificationRemote(
     const ElementFqId event_id,
     const IMessagePassingService::HandlerRegistrationNoType registration_no,
-    const pid_t target_node_id) noexcept
+    const NodeId target_node_id) noexcept
 {
     bool send_message{false};
     std::unique_lock<std::shared_mutex> remote_reg_write_lock(event_update_remote_registrations_mutex_);
@@ -1400,9 +1404,9 @@ void MessagePassingServiceInstance::UnregisterEventNotificationRemote(
             remote_reg_write_lock.unlock();
             score::mw::log::LogError("lola")
                 << "MessagePassingService: UnregisterEventNotification called with register_no " << registration_no
-                << " for a remote event " << event_id.ToString() << " for target_node_id" << target_node_id
+                << " for a remote event " << event_id.ToString() << " for target_node_id" << target_node_id.Raw()
                 << ", which is not the node_id, by which this event is currently provided:"
-                << registration_count->second.node_id;
+                << registration_count->second.node_id.Raw();
             return;
         }
 
@@ -1440,7 +1444,7 @@ void MessagePassingServiceInstance::UnregisterEventNotificationRemote(
         if ((sender == nullptr) || (sender->GetState() != message_passing::IClientConnection::State::kReady))
         {
             score::mw::log::LogInfo("lola")
-                << "MessagePassingService: Skipping UnregisterEventNotificationMessage to node_id " << target_node_id
+                << "MessagePassingService: Skipping UnregisterEventNotificationMessage to node_id " << target_node_id.Raw()
                 << " because message passing client is not ready.";
             return;
         }
@@ -1449,14 +1453,14 @@ void MessagePassingServiceInstance::UnregisterEventNotificationRemote(
         if (!result.has_value())
         {
             score::mw::log::LogError("lola")
-                << "MessagePassingService: Sending UnregisterEventNotificationMessage to node_id " << target_node_id
+                << "MessagePassingService: Sending UnregisterEventNotificationMessage to node_id " << target_node_id.Raw()
                 << " failed with error: " << result.error();
         }
     }
 }
 
 void MessagePassingServiceInstance::SendRegisterEventNotificationMessage(const ElementFqId event_id,
-                                                                         const pid_t target_node_id) noexcept
+                                                                         const NodeId target_node_id) noexcept
 {
     const auto message = SerializeToMessage(score::cpp::to_underlying(MessageType::kRegisterEventNotifier), event_id);
     // Suppress "AUTOSAR C++14 A18-5-8" rule finding. This rule states: "Objects that do not outlive a function shall
@@ -1468,7 +1472,7 @@ void MessagePassingServiceInstance::SendRegisterEventNotificationMessage(const E
     if (!result.has_value())
     {
         score::mw::log::LogError("lola")
-            << "MessagePassingService: Sending RegisterEventNotificationMessage to node_id " << target_node_id
+            << "MessagePassingService: Sending RegisterEventNotificationMessage to node_id " << target_node_id.Raw()
             << " failed with error: " << result.error();
     }
 }
@@ -1547,9 +1551,9 @@ QualityType MessagePassingServiceInstance::GetPartnerQualityType() const
 Result<void> MessagePassingServiceInstance::SubscribeServiceMethod(
     const SkeletonInstanceIdentifier& skeleton_instance_identifier,
     const ProxyInstanceIdentifier& proxy_instance_identifier,
-    const pid_t target_node_id)
+    const NodeId target_node_id)
 {
-    const auto are_skeleton_and_proxy_in_same_process = (target_node_id == self_pid_);
+    const auto are_skeleton_and_proxy_in_same_process = (target_node_id == self_node_);
     if (are_skeleton_and_proxy_in_same_process)
     {
         const auto result = CallSubscribeServiceMethodLocally(
@@ -1575,9 +1579,9 @@ Result<void> MessagePassingServiceInstance::SubscribeServiceMethod(
 Result<void> MessagePassingServiceInstance::UnsubscribeServiceMethod(
     const SkeletonInstanceIdentifier& skeleton_instance_identifier,
     const ProxyInstanceIdentifier& proxy_instance_identifier,
-    const pid_t target_node_id)
+    const NodeId target_node_id)
 {
-    const auto are_skeleton_and_proxy_in_same_process = (target_node_id == self_pid_);
+    const auto are_skeleton_and_proxy_in_same_process = (target_node_id == self_node_);
     if (are_skeleton_and_proxy_in_same_process)
     {
         const auto result =
@@ -1603,9 +1607,9 @@ Result<void> MessagePassingServiceInstance::UnsubscribeServiceMethod(
 Result<void> MessagePassingServiceInstance::CallMethod(
     const ProxyMethodInstanceIdentifier& proxy_method_instance_identifier,
     std::size_t queue_position,
-    const pid_t target_node_id)
+    const NodeId target_node_id)
 {
-    const auto are_skeleton_and_proxy_in_same_process = (target_node_id == self_pid_);
+    const auto are_skeleton_and_proxy_in_same_process = (target_node_id == self_node_);
     if (are_skeleton_and_proxy_in_same_process)
     {
         const auto result = CallServiceMethodLocally(proxy_method_instance_identifier, queue_position, self_identity_);

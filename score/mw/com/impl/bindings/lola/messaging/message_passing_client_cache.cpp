@@ -58,7 +58,7 @@ MessagePassingClientCache::MessagePassingClientCache(const ClientQualityType asi
 }
 
 std::shared_ptr<score::message_passing::IClientConnection>
-MessagePassingClientCache::UnlockedGetCachedMessagePassingClient(const pid_t target_node_id) noexcept
+MessagePassingClientCache::UnlockedGetCachedMessagePassingClient(const NodeId target_node_id) noexcept
 {
     auto search = clients_.find(target_node_id);
     if (search != clients_.end())
@@ -70,14 +70,14 @@ MessagePassingClientCache::UnlockedGetCachedMessagePassingClient(const pid_t tar
 }
 
 std::shared_ptr<score::message_passing::IClientConnection> MessagePassingClientCache::GetCachedMessagePassingClient(
-    const pid_t target_node_id) noexcept
+    const NodeId target_node_id) noexcept
 {
     std::lock_guard<std::mutex> lck(mutex_);
     return UnlockedGetCachedMessagePassingClient(target_node_id);
 }
 
 std::shared_ptr<score::message_passing::IClientConnection> MessagePassingClientCache::GetMessagePassingClient(
-    const pid_t target_node_id) noexcept
+    const NodeId target_node_id) noexcept
 {
     std::lock_guard<std::mutex> lck(mutex_);
 
@@ -93,7 +93,7 @@ std::shared_ptr<score::message_passing::IClientConnection> MessagePassingClientC
         // - kStopped/kStopping: connection was lost (e.g. peer was SIGKILL'd)
         // - kStarting: connection was cached after CreateNewClient's 500ms timeout but never became ready
         score::mw::log::LogWarn("lola") << "MessagePassingClientCache: Evicting non-ready client for node "
-                                        << target_node_id
+                                        << target_node_id.Raw()
                                         << " (state=" << static_cast<std::uint32_t>(score::cpp::to_underlying(state))
                                         << ", reason="
                                         << static_cast<std::uint32_t>(
@@ -115,7 +115,7 @@ std::shared_ptr<score::message_passing::IClientConnection> MessagePassingClientC
 }
 
 std::shared_ptr<score::message_passing::IClientConnection> MessagePassingClientCache::CreateNewClient(
-    const pid_t target_node_id) noexcept
+    const NodeId target_node_id) noexcept
 {
     const std::string service_identifier = CreateMessagePassingName(asil_level_, target_node_id);
 
@@ -166,7 +166,7 @@ std::shared_ptr<score::message_passing::IClientConnection> MessagePassingClientC
     return new_sender;
 }
 
-void MessagePassingClientCache::RemoveMessagePassingClient(const pid_t target_node_id) noexcept
+void MessagePassingClientCache::RemoveMessagePassingClient(const NodeId target_node_id) noexcept
 {
     std::lock_guard<std::mutex> lck(mutex_);
 
@@ -181,7 +181,7 @@ void MessagePassingClientCache::RemoveMessagePassingClient(const pid_t target_no
             if (try_attempt >= kStateTryAttempts)
             {
                 score::mw::log::LogFatal("lola") << "MessagePassingClientCache: Cannot close connection to target "
-                                                 << target_node_id << " in reasonable time";
+                                                 << target_node_id.Raw() << " in reasonable time";
                 std::terminate();
             }
             std::this_thread::sleep_for(kStateRetryDelay);
@@ -191,10 +191,10 @@ void MessagePassingClientCache::RemoveMessagePassingClient(const pid_t target_no
 }
 
 std::string MessagePassingClientCache::CreateMessagePassingName(const ClientQualityType asil_level,
-                                                                const pid_t node_id) noexcept
+                                                                const NodeId node_id) noexcept
 {
     std::stringstream identifier;
-    identifier << mq_name_prefix_mpcc << node_id;
+    identifier << mq_name_prefix_mpcc << score::message_passing::NodeIdToPid(node_id);
     if (asil_level != ClientQualityType::kASIL_B)
     {
         identifier << mq_name_qm_postfix_mpcc;

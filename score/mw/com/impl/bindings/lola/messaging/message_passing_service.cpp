@@ -87,7 +87,7 @@ IMessagePassingService::HandlerRegistrationNoType MessagePassingService::Registe
     const QualityType asil_level,
     const ElementFqId event_id,
     std::weak_ptr<ScopedEventReceiveHandler> callback,
-    const pid_t target_node_id) noexcept
+    const NodeId target_node_id) noexcept
 {
     auto& instance = GetMessagePassingServiceInstance(asil_level);
 
@@ -96,7 +96,7 @@ IMessagePassingService::HandlerRegistrationNoType MessagePassingService::Registe
 
 void MessagePassingService::ReregisterEventNotification(const QualityType asil_level,
                                                         const ElementFqId event_id,
-                                                        const pid_t target_node_id) noexcept
+                                                        const NodeId target_node_id) noexcept
 {
     auto& instance = GetMessagePassingServiceInstance(asil_level);
 
@@ -107,7 +107,7 @@ void MessagePassingService::UnregisterEventNotification(
     const QualityType asil_level,
     const ElementFqId event_id,
     const IMessagePassingService::HandlerRegistrationNoType registration_no,
-    const pid_t target_node_id) noexcept
+    const NodeId target_node_id) noexcept
 {
     auto& instance = GetMessagePassingServiceInstance(asil_level);
 
@@ -115,8 +115,8 @@ void MessagePassingService::UnregisterEventNotification(
 }
 
 void MessagePassingService::NotifyOutdatedNodeId(const QualityType asil_level,
-                                                 const pid_t outdated_node_id,
-                                                 const pid_t target_node_id) noexcept
+                                                 const NodeId outdated_node_id,
+                                                 const NodeId target_node_id) noexcept
 {
     auto& instance = GetMessagePassingServiceInstance(asil_level);
 
@@ -182,7 +182,7 @@ Result<MethodCallRegistrationGuard> MessagePassingService::RegisterMethodCallHan
     const QualityType asil_level,
     ProxyMethodInstanceIdentifier proxy_method_instance_identifier,
     MethodCallHandler method_call_callback,
-    uid_t allowed_proxy_uid)
+    PrincipalId allowed_proxy_uid)
 {
     auto& instance = GetMessagePassingServiceInstance(asil_level);
 
@@ -218,7 +218,7 @@ Result<void> MessagePassingService::SubscribeServiceMethod(
     const QualityType asil_level,
     const SkeletonInstanceIdentifier& skeleton_instance_identifier,
     const ProxyInstanceIdentifier& proxy_instance_identifier,
-    const pid_t target_node_id)
+    const NodeId target_node_id)
 {
     auto& instance = GetMessagePassingServiceInstance(asil_level);
 
@@ -229,7 +229,7 @@ Result<void> MessagePassingService::UnsubscribeServiceMethod(
     const QualityType asil_level,
     const SkeletonInstanceIdentifier& skeleton_instance_identifier,
     const ProxyInstanceIdentifier& proxy_instance_identifier,
-    const pid_t target_node_id)
+    const NodeId target_node_id)
 {
     auto& instance = GetMessagePassingServiceInstance(asil_level);
 
@@ -239,7 +239,7 @@ Result<void> MessagePassingService::UnsubscribeServiceMethod(
 Result<void> MessagePassingService::CallMethod(const QualityType asil_level,
                                                const ProxyMethodInstanceIdentifier& proxy_method_instance_identifier,
                                                std::size_t queue_position,
-                                               const pid_t target_node_id)
+                                               const NodeId target_node_id)
 {
     auto& instance = GetMessagePassingServiceInstance(asil_level);
 

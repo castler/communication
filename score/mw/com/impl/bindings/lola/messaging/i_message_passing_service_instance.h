@@ -27,6 +27,9 @@ namespace score::mw::com::impl::lola
 class IMessagePassingServiceInstance
 {
   public:
+    using NodeId = IMessagePassingService::NodeId;
+    using PrincipalId = IMessagePassingService::PrincipalId;
+
     IMessagePassingServiceInstance() noexcept = default;
 
     IMessagePassingServiceInstance(const IMessagePassingServiceInstance&) = delete;
@@ -41,13 +44,13 @@ class IMessagePassingServiceInstance
     virtual IMessagePassingService::HandlerRegistrationNoType RegisterEventNotification(
         const ElementFqId event_id,
         std::weak_ptr<ScopedEventReceiveHandler> callback,
-        const pid_t target_node_id) noexcept = 0;
+        const NodeId target_node_id) noexcept = 0;
 
-    virtual void ReregisterEventNotification(const ElementFqId event_id, const pid_t target_node_id) noexcept = 0;
+    virtual void ReregisterEventNotification(const ElementFqId event_id, const NodeId target_node_id) noexcept = 0;
 
     virtual void UnregisterEventNotification(const ElementFqId event_id,
                                              const IMessagePassingService::HandlerRegistrationNoType registration_no,
-                                             const pid_t target_node_id) noexcept = 0;
+                                             const NodeId target_node_id) noexcept = 0;
 
     virtual Result<void> RegisterOnServiceMethodSubscribedHandler(
         const SkeletonInstanceIdentifier skeleton_instance_identifier,
@@ -60,7 +63,7 @@ class IMessagePassingServiceInstance
 
     virtual Result<void> RegisterMethodCallHandler(const ProxyMethodInstanceIdentifier proxy_method_instance_identifier,
                                                    IMessagePassingService::MethodCallHandler method_call_callback,
-                                                   const uid_t allowed_proxy_uid) = 0;
+                                                   const PrincipalId allowed_proxy_uid) = 0;
 
     virtual void UnregisterOnServiceMethodSubscribedHandler(
         SkeletonInstanceIdentifier skeleton_instance_identifier) = 0;
@@ -70,7 +73,7 @@ class IMessagePassingServiceInstance
 
     virtual void UnregisterMethodCallHandler(ProxyMethodInstanceIdentifier proxy_method_instance_identifier) = 0;
 
-    virtual void NotifyOutdatedNodeId(const pid_t outdated_node_id, const pid_t target_node_id) noexcept = 0;
+    virtual void NotifyOutdatedNodeId(const NodeId outdated_node_id, const NodeId target_node_id) noexcept = 0;
 
     virtual void RegisterEventNotificationExistenceChangedCallback(
         const ElementFqId event_id,
@@ -80,15 +83,15 @@ class IMessagePassingServiceInstance
 
     virtual Result<void> SubscribeServiceMethod(const SkeletonInstanceIdentifier& skeleton_instance_identifier,
                                                 const ProxyInstanceIdentifier& proxy_instance_identifier,
-                                                const pid_t target_node_id) = 0;
+                                                const NodeId target_node_id) = 0;
 
     virtual Result<void> UnsubscribeServiceMethod(const SkeletonInstanceIdentifier& skeleton_instance_identifier,
                                                   const ProxyInstanceIdentifier& proxy_instance_identifier,
-                                                  const pid_t target_node_id) = 0;
+                                                  const NodeId target_node_id) = 0;
 
     virtual Result<void> CallMethod(const ProxyMethodInstanceIdentifier& proxy_method_instance_identifier,
                                     const std::size_t queue_position,
-                                    const pid_t target_node_id) = 0;
+                                    const NodeId target_node_id) = 0;
 };
 
 }  // namespace score::mw::com::impl::lola

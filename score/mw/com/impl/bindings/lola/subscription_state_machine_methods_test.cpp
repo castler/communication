@@ -10,6 +10,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  ********************************************************************************/
+#include "score/message_passing/identity_types.h"
 #include "score/mw/com/impl/bindings/lola/subscription_state_machine.h"
 #include "score/mw/com/impl/bindings/lola/subscription_state_machine_states.h"
 #include "score/mw/com/impl/bindings/lola/test/proxy_event_test_resources.h"
@@ -205,7 +206,7 @@ TEST_F(StateMachineMethodsNotSubscribedStateFixture, CallingSubscribeAfterUnsett
     StrictMock<MockFunction<void()>> receive_handler{};
 
     EXPECT_CALL(*mock_service_,
-                RegisterEventNotification(QualityType::kASIL_QM, element_fq_id_, ::testing::_, kDummyPid))
+                RegisterEventNotification(QualityType::kASIL_QM, element_fq_id_, ::testing::_, message_passing::NodeIdFromPid(kDummyPid)))
         .Times(0);
 
     state_machine_.SetReceiveHandler(CreateMockScopedEventReceiveHandler(receive_handler));
@@ -268,7 +269,7 @@ TEST_F(StateMachineMethodsNotSubscribedStateFixture, AvailableProviderRegistersI
 
     // Expecting that the handler registration will be called immediately when provider is available
     EXPECT_CALL(*mock_service_,
-                RegisterEventNotification(QualityType::kASIL_QM, element_fq_id_, ::testing::_, kDummyPid))
+                RegisterEventNotification(QualityType::kASIL_QM, element_fq_id_, ::testing::_, message_passing::NodeIdFromPid(kDummyPid)))
         .Times(1);
 
     // When we set a handler and subscribe with available provider
@@ -420,10 +421,10 @@ TEST_F(StateMachineMethodsSubscriptionPendingStateFixture, CallingSetReceiveHand
 
     // Expecting that the handler will never be Registered or Unregistered
     EXPECT_CALL(*mock_service_,
-                RegisterEventNotification(QualityType::kASIL_QM, element_fq_id_, ::testing::_, kDummyPid))
+                RegisterEventNotification(QualityType::kASIL_QM, element_fq_id_, ::testing::_, message_passing::NodeIdFromPid(kDummyPid)))
         .Times(0);
     EXPECT_CALL(*mock_service_,
-                UnregisterEventNotification(QualityType::kASIL_QM, element_fq_id_, ::testing::_, kDummyPid))
+                UnregisterEventNotification(QualityType::kASIL_QM, element_fq_id_, ::testing::_, message_passing::NodeIdFromPid(kDummyPid)))
         .Times(0);
 
     // and that the receive handler registered while in SubsriptionPending state will never be called
@@ -520,7 +521,7 @@ TEST_F(StateMachineMethodsSubscriptionPendingStateFixture,
 
     // Expecting that the an event notification handler will never be registered
     EXPECT_CALL(*mock_service_,
-                RegisterEventNotification(QualityType::kASIL_QM, element_fq_id_, ::testing::_, kDummyPid))
+                RegisterEventNotification(QualityType::kASIL_QM, element_fq_id_, ::testing::_, message_passing::NodeIdFromPid(kDummyPid)))
         .Times(0);
 
     EnterSubscriptionPending(max_num_slots_);

@@ -10,6 +10,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  ********************************************************************************/
+#include "score/message_passing/identity_types.h"
 #include "score/mw/com/impl/bindings/lola/proxy.h"
 #include "score/mw/com/impl/bindings/lola/element_fq_id.h"
 #include "score/mw/com/impl/bindings/lola/proxy_event.h"
@@ -720,7 +721,7 @@ TEST_F(ProxyUidPidRegistrationFixture, OutdatedPidNotificationWillBeSent)
     ON_CALL(binding_runtime_, GetPid()).WillByDefault(Return(new_pid));
 
     // we expect that IMessagePassingService::NotifyOutdatedNodeId() will get called to notify about an outdated pid!
-    EXPECT_CALL(*mock_service_, NotifyOutdatedNodeId(_, old_pid, _)).Times(1);
+    EXPECT_CALL(*mock_service_, NotifyOutdatedNodeId(_, message_passing::NodeIdFromPid(old_pid), _)).Times(1);
 
     // When creating a proxy
     InitialiseProxyWithCreate(instance_identifier_);

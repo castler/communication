@@ -11,6 +11,7 @@
  * SPDX-License-Identifier: Apache-2.0
  ********************************************************************************/
 #include "score/filesystem/error.h"
+#include "score/message_passing/identity_types.h"
 #include "score/mw/com/impl/bindings/lola/methods/type_erased_call_queue.h"
 #include "score/mw/com/impl/bindings/lola/proxy.h"
 
@@ -1326,7 +1327,7 @@ TEST_F(ProxyCleanupMethodsFixture, DestroyingProxyCallsUnsubscribeServiceMethodW
     // Expecting that UnsubscribeServiceMethod is called with the SkeletonInstanceIdentifier derived from the
     // configuration (service_id = kLolaServiceId, instance_id = kLolaInstanceId) and the skeleton pid from shared
     // memory (kDummyPid)
-    EXPECT_CALL(*mock_service_, UnsubscribeServiceMethod(_, _, _, kDummyPid))
+    EXPECT_CALL(*mock_service_, UnsubscribeServiceMethod(_, _, _, message_passing::NodeIdFromPid(kDummyPid)))
         .WillOnce(WithArg<1>(Invoke([](auto skeleton_instance_identifier) -> Result<void> {
             EXPECT_EQ(skeleton_instance_identifier.service_id, kLolaServiceId);
             EXPECT_EQ(skeleton_instance_identifier.instance_id, kLolaInstanceId);

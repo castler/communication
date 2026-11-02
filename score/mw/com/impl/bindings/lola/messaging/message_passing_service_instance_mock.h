@@ -27,14 +27,14 @@ class MessagePassingServiceInstanceMock : public IMessagePassingServiceInstance
 
     MOCK_METHOD(IMessagePassingService::HandlerRegistrationNoType,
                 RegisterEventNotification,
-                (const ElementFqId, std::weak_ptr<ScopedEventReceiveHandler>, const pid_t),
+                (const ElementFqId, std::weak_ptr<ScopedEventReceiveHandler>, const NodeId),
                 (noexcept, override));
 
-    MOCK_METHOD(void, ReregisterEventNotification, (const ElementFqId, const pid_t), (noexcept, override));
+    MOCK_METHOD(void, ReregisterEventNotification, (const ElementFqId, const NodeId), (noexcept, override));
 
     MOCK_METHOD(void,
                 UnregisterEventNotification,
-                (const ElementFqId, const IMessagePassingService::HandlerRegistrationNoType, const pid_t),
+                (const ElementFqId, const IMessagePassingService::HandlerRegistrationNoType, const NodeId),
                 (noexcept, override));
 
     MOCK_METHOD(Result<void>,
@@ -51,10 +51,10 @@ class MessagePassingServiceInstanceMock : public IMessagePassingServiceInstance
 
     MOCK_METHOD(Result<void>,
                 RegisterMethodCallHandler,
-                (ProxyMethodInstanceIdentifier, IMessagePassingService::MethodCallHandler, uid_t),
+                (ProxyMethodInstanceIdentifier, IMessagePassingService::MethodCallHandler, PrincipalId),
                 (override));
 
-    MOCK_METHOD(void, NotifyOutdatedNodeId, (const pid_t, const pid_t), (noexcept, override));
+    MOCK_METHOD(void, NotifyOutdatedNodeId, (const NodeId, const NodeId), (noexcept, override));
 
     MOCK_METHOD(void,
                 RegisterEventNotificationExistenceChangedCallback,
@@ -65,15 +65,15 @@ class MessagePassingServiceInstanceMock : public IMessagePassingServiceInstance
 
     MOCK_METHOD(Result<void>,
                 SubscribeServiceMethod,
-                (const SkeletonInstanceIdentifier&, const ProxyInstanceIdentifier&, pid_t),
+                (const SkeletonInstanceIdentifier&, const ProxyInstanceIdentifier&, NodeId),
                 (override));
 
     MOCK_METHOD(Result<void>,
                 UnsubscribeServiceMethod,
-                (const SkeletonInstanceIdentifier&, const ProxyInstanceIdentifier&, pid_t),
+                (const SkeletonInstanceIdentifier&, const ProxyInstanceIdentifier&, NodeId),
                 (override));
 
-    MOCK_METHOD(Result<void>, CallMethod, (const ProxyMethodInstanceIdentifier&, std::size_t, pid_t), (override));
+    MOCK_METHOD(Result<void>, CallMethod, (const ProxyMethodInstanceIdentifier&, std::size_t, NodeId), (override));
 
     MOCK_METHOD(void, UnregisterOnServiceMethodSubscribedHandler, (SkeletonInstanceIdentifier), (override));
 

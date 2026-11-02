@@ -14,6 +14,7 @@
 
 #include <gtest/gtest.h>
 
+#include <type_traits>
 #include <unordered_set>
 
 namespace score::message_passing
@@ -21,11 +22,36 @@ namespace score::message_passing
 namespace
 {
 
+TEST(OpaqueIdTest, NodeAndPrincipalAreDistinctNonConvertibleTypes)
+{
+    static_assert(!std::is_convertible_v<NodeId, PrincipalId>);
+    static_assert(!std::is_convertible_v<PrincipalId, NodeId>);
+    static_assert(!std::is_convertible_v<pid_t, NodeId>);
+    static_assert(!std::is_convertible_v<NodeId, pid_t>);
+    static_assert(!std::is_convertible_v<uid_t, PrincipalId>);
+    static_assert(!std::is_convertible_v<PrincipalId, uid_t>);
+}
+
+TEST(OpaqueIdTest, PidAndUidRoundTrip)
+{
+    EXPECT_EQ(NodeIdToPid(NodeIdFromPid(1234)), 1234);
+    EXPECT_EQ(NodeIdToPid(NodeIdFromPid(-1)), -1);
+    EXPECT_EQ(PrincipalIdToUid(PrincipalIdFromUid(4321U)), 4321U);
+    EXPECT_EQ(NodeIdFromPid(1234).Raw(), 1234U);
+}
+
+TEST(OpaqueIdTest, HashAndOrderingFollowRawValue)
+{
+    EXPECT_EQ(std::hash<NodeId>{}(NodeId{7U}), std::hash<NodeId>{}(NodeId{7U}));
+    EXPECT_LT(NodeId{1U}, NodeId{2U});
+    EXPECT_NE(NodeId{1U}, NodeId{2U});
+}
+
 TEST(ClientIdentityTest, CredentialsExposeNodeAndPrincipal)
 {
     const auto identity = ClientIdentity::FromCredentials(10, 20, 30);
-    EXPECT_EQ(identity.GetNodeId(), 10);
-    EXPECT_EQ(identity.GetPrincipalId(), 20U);
+    EXPECT_EQ(identity.GetNodeId(), NodeIdFromPid(10));
+    EXPECT_EQ(identity.GetPrincipalId(), PrincipalIdFromUid(20U));
 }
 
 TEST(ClientIdentityTest, EqualityComparesAllCredentials)
@@ -48,9 +74,9 @@ TEST(ClientIdentityTest, EndpointIdentityDiffersFromCredentialIdentity)
 TEST(ClientIdentityTest, EndpointIdentitySeparatesNodeFromPrincipal)
 {
     const auto identity = ClientIdentity::FromEndpoint(11, 5);
-    EXPECT_EQ(identity.GetNodeId(), 11);
-    EXPECT_EQ(identity.GetPrincipalId(), 5U);
-    EXPECT_NE(static_cast<std::uint32_t>(identity.GetNodeId()), identity.GetPrincipalId());
+    EXPECT_EQ(identity.GetNodeId(), NodeId{11U});
+    EXPECT_EQ(identity.GetPrincipalId(), PrincipalId{5U});
+    EXPECT_NE(identity.GetNodeId().Raw(), identity.GetPrincipalId().Raw());
 }
 
 TEST(ClientIdentityTest, ReconnectOfSameConsumerKeepsPrincipalButChangesNode)
@@ -86,23 +112,23 @@ TEST(ClientIdentityTest, IsAllowedWithoutListAllowsEverybody)
 TEST(ClientIdentityTest, IsAllowedChecksMembershipInList)
 {
     const auto identity = ClientIdentity::FromCredentials(10, 20, 30);
-    EXPECT_TRUE(identity.IsAllowed(ClientIdentity::AllowedPrincipals{{1U, 20U}}));
-    EXPECT_FALSE(identity.IsAllowed(ClientIdentity::AllowedPrincipals{{1U, 2U}}));
-    EXPECT_FALSE(identity.IsAllowed(ClientIdentity::AllowedPrincipals{std::set<uid_t>{}}));
+    EXPECT_TRUE(identity.IsAllowed(ClientIdentity::AllowedPrincipals{{PrincipalId{1U}, PrincipalId{20U}}}));
+    EXPECT_FALSE(identity.IsAllowed(ClientIdentity::AllowedPrincipals{{PrincipalId{1U}, PrincipalId{2U}}}));
+    EXPECT_FALSE(identity.IsAllowed(ClientIdentity::AllowedPrincipals{std::set<PrincipalId>{}}));
 }
 
 TEST(ClientIdentityTest, IsAllowedSinglePrincipal)
 {
     const auto identity = ClientIdentity::FromCredentials(10, 20, 30);
-    EXPECT_TRUE(identity.IsAllowed(20U));
-    EXPECT_FALSE(identity.IsAllowed(21U));
+    EXPECT_TRUE(identity.IsAllowed(PrincipalId{20U}));
+    EXPECT_FALSE(identity.IsAllowed(PrincipalId{21U}));
 }
 
 TEST(ClientIdentityTest, EndpointIdentityIsAllowedByConsumerId)
 {
     const auto identity = ClientIdentity::FromEndpoint(9, 5);
-    EXPECT_TRUE(identity.IsAllowed(ClientIdentity::AllowedPrincipals{{5U}}));
-    EXPECT_FALSE(identity.IsAllowed(ClientIdentity::AllowedPrincipals{{6U}}));
+    EXPECT_TRUE(identity.IsAllowed(ClientIdentity::AllowedPrincipals{{PrincipalId{5U}}}));
+    EXPECT_FALSE(identity.IsAllowed(ClientIdentity::AllowedPrincipals{{PrincipalId{6U}}}));
 }
 
 }  // namespace

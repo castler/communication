@@ -10,6 +10,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  ********************************************************************************/
+#include "score/message_passing/identity_types.h"
 #include "score/mw/com/impl/bindings/lola/proxy.h"
 
 #include "score/mw/com/impl/bindings/lola/element_fq_id.h"
@@ -530,7 +531,7 @@ void Proxy::ServiceAvailabilityChangeHandler(const bool is_service_available)
             LolaServiceInstanceId{GetLoLaInstanceDeployment(handle_).instance_id_.value()}.GetId()};
 
         const auto subscribe_service_method_result = lola_message_passing.SubscribeServiceMethod(
-            quality_type_, skeleton_instance_identifier, proxy_instance_identifier_, GetSourcePid());
+            quality_type_, skeleton_instance_identifier, proxy_instance_identifier_, message_passing::NodeIdFromPid(GetSourcePid()));
         if (!(subscribe_service_method_result.has_value()))
         {
             // This SubscribeServiceMethod call can only be called after SetupMethods() has been called (so the methods
@@ -720,7 +721,7 @@ score::Result<void> Proxy::SetupMethods(const std::size_t additional_shm_size_by
     // ProxyMethods are only marked as subscribed if SubscribeServiceMethod succeeded.
     are_proxy_methods_setup_.store(true);
     const auto subscription_result = lola_message_passing.SubscribeServiceMethod(
-        quality_type_, skeleton_instance_identifier, proxy_instance_identifier_, GetSourcePid());
+        quality_type_, skeleton_instance_identifier, proxy_instance_identifier_, message_passing::NodeIdFromPid(GetSourcePid()));
     if (subscription_result.has_value())
     {
         std::lock_guard lock{proxy_method_registration_mutex_};
@@ -754,7 +755,7 @@ void Proxy::CleanupMethods()
             GetLoLaServiceTypeDeployment(handle_).service_id_,
             LolaServiceInstanceId{GetLoLaInstanceDeployment(handle_).instance_id_.value()}.GetId()};
         const auto result = lola_message_passing.UnsubscribeServiceMethod(
-            quality_type_, skeleton_instance_identifier, proxy_instance_identifier_, GetSourcePid());
+            quality_type_, skeleton_instance_identifier, proxy_instance_identifier_, message_passing::NodeIdFromPid(GetSourcePid()));
         if (!(result.has_value()))
         {
             score::mw::log::LogWarn("lola")

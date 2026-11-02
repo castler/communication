@@ -11,6 +11,7 @@
  * SPDX-License-Identifier: Apache-2.0
  ********************************************************************************/
 #include "score/memory/shared/i_shared_memory_resource.h"
+#include "score/message_passing/identity_types.h"
 #include "score/mw/com/impl/binding_type.h"
 #include "score/mw/com/impl/bindings/lola/element_fq_id.h"
 #include "score/mw/com/impl/bindings/lola/messaging/i_message_passing_service.h"
@@ -527,8 +528,8 @@ TEST_F(SkeletonPrepareStopOfferFixture, PrepareStopOfferExpiresScopeOfMethodCall
     ASSERT_TRUE(captured_method_subscribed_handler_qm_.has_value());
     score::cpp::ignore = std::invoke(captured_method_subscribed_handler_qm_.value(),
                                      proxy_instance_identifier_qm_,
-                                     test::kAllowedQmMethodConsumer,
-                                     kDummyPid);
+                                     message_passing::PrincipalIdFromUid(test::kAllowedQmMethodConsumer),
+                                     message_passing::NodeIdFromPid(kDummyPid));
 
     // and given that PrepareStopOffer was called
     PrepareStopOffer();
@@ -553,8 +554,8 @@ TEST_F(SkeletonPrepareStopOfferFixture, PrepareStopOfferExpiresScopeOfSubscribeM
     ASSERT_TRUE(captured_method_subscribed_handler_qm_.has_value());
     const auto subscribe_handler_result = std::invoke(captured_method_subscribed_handler_qm_.value(),
                                                       proxy_instance_identifier_qm_,
-                                                      test::kAllowedQmMethodConsumer,
-                                                      kDummyPid);
+                                                      message_passing::PrincipalIdFromUid(test::kAllowedQmMethodConsumer),
+                                                      message_passing::NodeIdFromPid(kDummyPid));
 
     // Then the result will contain an error indicating that the scope has expired
     EXPECT_FALSE(subscribe_handler_result.has_value());
@@ -568,8 +569,8 @@ TEST_F(SkeletonPrepareStopOfferFixture, PrepareStopOfferDestroysPointerToSharedM
     ASSERT_TRUE(captured_method_subscribed_handler_qm_.has_value());
     score::cpp::ignore = std::invoke(captured_method_subscribed_handler_qm_.value(),
                                      proxy_instance_identifier_qm_,
-                                     test::kAllowedQmMethodConsumer,
-                                     kDummyPid);
+                                     message_passing::PrincipalIdFromUid(test::kAllowedQmMethodConsumer),
+                                     message_passing::NodeIdFromPid(kDummyPid));
 
     // When calling PrepareStopOffer
     const auto shm_resource_ref_counter_after_opening = mock_method_memory_resource_qm_.use_count();
@@ -613,13 +614,13 @@ TEST_F(SkeletonPrepareStopOfferFixture, UnregistersAllRegisteredMethodCallHandle
     ASSERT_TRUE(captured_method_subscribed_handler_b_.has_value());
     const auto scoped_handler_result = std::invoke(captured_method_subscribed_handler_qm_.value(),
                                                    proxy_instance_identifier_qm_,
-                                                   test::kAllowedAsilBMethodConsumer,
-                                                   kDummyPid);
+                                                   message_passing::PrincipalIdFromUid(test::kAllowedAsilBMethodConsumer),
+                                                   message_passing::NodeIdFromPid(kDummyPid));
     EXPECT_TRUE(scoped_handler_result.has_value());
     const auto scoped_handler_result_2 = std::invoke(captured_method_subscribed_handler_b_.value(),
                                                      proxy_instance_identifier_b_,
-                                                     test::kAllowedAsilBMethodConsumer,
-                                                     kDummyPid);
+                                                     message_passing::PrincipalIdFromUid(test::kAllowedAsilBMethodConsumer),
+                                                     message_passing::NodeIdFromPid(kDummyPid));
     EXPECT_TRUE(scoped_handler_result_2.has_value());
 
     // When calling PrepareStopOffer
@@ -636,17 +637,17 @@ TEST_F(SkeletonOnServiceMethodsSubscribedFixture,
     // results
     EXPECT_CALL(message_passing_mock_,
                 RegisterMethodCallHandler(
-                    QualityType::kASIL_QM, foo_proxy_method_identifier_qm_, _, test::kAllowedQmMethodConsumer));
+                    QualityType::kASIL_QM, foo_proxy_method_identifier_qm_, _, message_passing::PrincipalIdFromUid(test::kAllowedQmMethodConsumer)));
     EXPECT_CALL(message_passing_mock_,
                 RegisterMethodCallHandler(
-                    QualityType::kASIL_QM, dumb_proxy_method_identifier_qm_, _, test::kAllowedQmMethodConsumer));
+                    QualityType::kASIL_QM, dumb_proxy_method_identifier_qm_, _, message_passing::PrincipalIdFromUid(test::kAllowedQmMethodConsumer)));
 
     // When calling the registered Qm method subscribed handler
     ASSERT_TRUE(captured_method_subscribed_handler_qm_.has_value());
     const auto scoped_handler_result = std::invoke(captured_method_subscribed_handler_qm_.value(),
                                                    proxy_instance_identifier_qm_,
-                                                   test::kAllowedQmMethodConsumer,
-                                                   kDummyPid);
+                                                   message_passing::PrincipalIdFromUid(test::kAllowedQmMethodConsumer),
+                                                   message_passing::NodeIdFromPid(kDummyPid));
 
     // Then the handler should return a valid result
     ASSERT_TRUE(scoped_handler_result.has_value());
@@ -662,29 +663,29 @@ TEST_F(SkeletonOnServiceMethodsSubscribedFixture,
     // return valid results
     EXPECT_CALL(message_passing_mock_,
                 RegisterMethodCallHandler(
-                    QualityType::kASIL_QM, foo_proxy_method_identifier_qm_, _, test::kAllowedQmMethodConsumer));
+                    QualityType::kASIL_QM, foo_proxy_method_identifier_qm_, _, message_passing::PrincipalIdFromUid(test::kAllowedQmMethodConsumer)));
     EXPECT_CALL(message_passing_mock_,
                 RegisterMethodCallHandler(
-                    QualityType::kASIL_QM, dumb_proxy_method_identifier_qm_, _, test::kAllowedQmMethodConsumer));
+                    QualityType::kASIL_QM, dumb_proxy_method_identifier_qm_, _, message_passing::PrincipalIdFromUid(test::kAllowedQmMethodConsumer)));
 
     EXPECT_CALL(message_passing_mock_,
                 RegisterMethodCallHandler(
-                    QualityType::kASIL_B, foo_proxy_method_identifier_b_, _, test::kAllowedAsilBMethodConsumer));
+                    QualityType::kASIL_B, foo_proxy_method_identifier_b_, _, message_passing::PrincipalIdFromUid(test::kAllowedAsilBMethodConsumer)));
     EXPECT_CALL(message_passing_mock_,
                 RegisterMethodCallHandler(
-                    QualityType::kASIL_B, dumb_proxy_method_identifier_b_, _, test::kAllowedAsilBMethodConsumer));
+                    QualityType::kASIL_B, dumb_proxy_method_identifier_b_, _, message_passing::PrincipalIdFromUid(test::kAllowedAsilBMethodConsumer)));
 
     // When calling the registered Qm and ASIL-B method subscribed handlers
     ASSERT_TRUE(captured_method_subscribed_handler_qm_.has_value());
     const auto scoped_handler_result_qm = std::invoke(captured_method_subscribed_handler_qm_.value(),
                                                       proxy_instance_identifier_qm_,
-                                                      test::kAllowedQmMethodConsumer,
-                                                      kDummyPid);
+                                                      message_passing::PrincipalIdFromUid(test::kAllowedQmMethodConsumer),
+                                                      message_passing::NodeIdFromPid(kDummyPid));
     ASSERT_TRUE(captured_method_subscribed_handler_b_.has_value());
     const auto scoped_handler_result_b = std::invoke(captured_method_subscribed_handler_b_.value(),
                                                      proxy_instance_identifier_b_,
-                                                     test::kAllowedAsilBMethodConsumer,
-                                                     kDummyPid);
+                                                     message_passing::PrincipalIdFromUid(test::kAllowedAsilBMethodConsumer),
+                                                     message_passing::NodeIdFromPid(kDummyPid));
 
     // Then both handlers should return valid results
     ASSERT_TRUE(scoped_handler_result_qm.has_value());
@@ -708,8 +709,8 @@ TEST_F(SkeletonOnServiceMethodsSubscribedFixture, CallingReturnsErrorIfRegisteri
     ASSERT_TRUE(captured_method_subscribed_handler_qm_.has_value());
     const auto scoped_handler_result = std::invoke(captured_method_subscribed_handler_qm_.value(),
                                                    proxy_instance_identifier_qm_,
-                                                   test::kAllowedQmMethodConsumer,
-                                                   kDummyPid);
+                                                   message_passing::PrincipalIdFromUid(test::kAllowedQmMethodConsumer),
+                                                   message_passing::NodeIdFromPid(kDummyPid));
 
     // Then the handler should return an error
     ASSERT_TRUE(scoped_handler_result.has_value());
@@ -733,15 +734,15 @@ TEST_F(SkeletonOnServiceMethodsSubscribedFixture, CallingOpensShmIfAlreadyCalled
     ASSERT_TRUE(captured_method_subscribed_handler_qm_.has_value());
     score::cpp::ignore = std::invoke(captured_method_subscribed_handler_qm_.value(),
                                      proxy_instance_identifier_qm_,
-                                     test::kAllowedQmMethodConsumer,
-                                     kDummyPid);
+                                     message_passing::PrincipalIdFromUid(test::kAllowedQmMethodConsumer),
+                                     message_passing::NodeIdFromPid(kDummyPid));
 
     // When calling the registered method subscribed handler with a ProxyInstanceIdentifier containing the same
     // ProxyInstanceCounter and PID but a different application ID
     const auto scoped_handler_result = std::invoke(captured_method_subscribed_handler_qm_.value(),
                                                    proxy_instance_identifier_2,
-                                                   test::kAllowedQmMethodConsumer,
-                                                   kDummyPid);
+                                                   message_passing::PrincipalIdFromUid(test::kAllowedQmMethodConsumer),
+                                                   message_passing::NodeIdFromPid(kDummyPid));
 
     // Then the result should be valid
     EXPECT_TRUE(scoped_handler_result.has_value());
@@ -764,15 +765,15 @@ TEST_F(SkeletonOnServiceMethodsSubscribedFixture,
     ASSERT_TRUE(captured_method_subscribed_handler_qm_.has_value());
     score::cpp::ignore = std::invoke(captured_method_subscribed_handler_qm_.value(),
                                      proxy_instance_identifier_qm_,
-                                     test::kAllowedQmMethodConsumer,
-                                     kDummyPid);
+                                     message_passing::PrincipalIdFromUid(test::kAllowedQmMethodConsumer),
+                                     message_passing::NodeIdFromPid(kDummyPid));
 
     // When calling the registered method subscribed handler with a ProxyInstanceIdentifier containing the same
     // application ID and PID but a different ProxyInstanceCounter
     const auto scoped_handler_result = std::invoke(captured_method_subscribed_handler_qm_.value(),
                                                    proxy_instance_identifier_2,
-                                                   test::kAllowedQmMethodConsumer,
-                                                   kDummyPid);
+                                                   message_passing::PrincipalIdFromUid(test::kAllowedQmMethodConsumer),
+                                                   message_passing::NodeIdFromPid(kDummyPid));
 
     // Then the result should be valid
     EXPECT_TRUE(scoped_handler_result.has_value());
@@ -793,15 +794,15 @@ TEST_F(SkeletonOnServiceMethodsSubscribedFixture,
     ASSERT_TRUE(captured_method_subscribed_handler_qm_.has_value());
     score::cpp::ignore = std::invoke(captured_method_subscribed_handler_qm_.value(),
                                      proxy_instance_identifier_qm_,
-                                     test::kAllowedQmMethodConsumer,
-                                     kDummyPid);
+                                     message_passing::PrincipalIdFromUid(test::kAllowedQmMethodConsumer),
+                                     message_passing::NodeIdFromPid(kDummyPid));
 
     // When calling the registered method subscribed handler with a ProxyInstanceIdentifier containing the same
     // ProxyInstanceIdentifier but a different PID
     const auto scoped_handler_result = std::invoke(captured_method_subscribed_handler_qm_.value(),
                                                    proxy_instance_identifier_qm_,
-                                                   test::kAllowedQmMethodConsumer,
-                                                   pid_2);
+                                                   message_passing::PrincipalIdFromUid(test::kAllowedQmMethodConsumer),
+                                                   message_passing::NodeIdFromPid(pid_2));
 
     // Then the result should be valid
     EXPECT_TRUE(scoped_handler_result.has_value());
@@ -818,15 +819,15 @@ TEST_F(SkeletonOnServiceMethodsSubscribedFixture, CallingDoesNotOpenShmIfAlready
     ASSERT_TRUE(captured_method_subscribed_handler_qm_.has_value());
     score::cpp::ignore = std::invoke(captured_method_subscribed_handler_qm_.value(),
                                      proxy_instance_identifier_qm_,
-                                     test::kAllowedQmMethodConsumer,
-                                     kDummyPid);
+                                     message_passing::PrincipalIdFromUid(test::kAllowedQmMethodConsumer),
+                                     message_passing::NodeIdFromPid(kDummyPid));
 
     // When calling the registered method subscribed handler with a ProxyInstanceIdentifier containing the same
     // ProxyInstanceIdentifier and the same PID
     const auto scoped_handler_result = std::invoke(captured_method_subscribed_handler_qm_.value(),
                                                    proxy_instance_identifier_qm_,
-                                                   test::kAllowedQmMethodConsumer,
-                                                   kDummyPid);
+                                                   message_passing::PrincipalIdFromUid(test::kAllowedQmMethodConsumer),
+                                                   message_passing::NodeIdFromPid(kDummyPid));
 
     // Then the result should be valid
     EXPECT_TRUE(scoped_handler_result.has_value());
@@ -850,16 +851,16 @@ TEST_F(SkeletonOnServiceMethodsSubscribedFixture, CallingRemovesOldRegionsFromCa
     ASSERT_TRUE(captured_method_subscribed_handler_qm_.has_value());
     score::cpp::ignore = std::invoke(captured_method_subscribed_handler_qm_.value(),
                                      proxy_instance_identifier_qm_,
-                                     test::kAllowedQmMethodConsumer,
-                                     kDummyPid);
+                                     message_passing::PrincipalIdFromUid(test::kAllowedQmMethodConsumer),
+                                     message_passing::NodeIdFromPid(kDummyPid));
 
     // When calling the registered method subscribed handler with a ProxyInstanceIdentifier containing the same
     // ProxyInstanceIdentifier and a different PID
     EXPECT_EQ(mock_method_memory_resource_qm_.use_count(), first_initial_shm_resource_ref_counter + 1U);
     score::cpp::ignore = std::invoke(captured_method_subscribed_handler_qm_.value(),
                                      proxy_instance_identifier_2,
-                                     test::kAllowedQmMethodConsumer,
-                                     pid_2);
+                                     message_passing::PrincipalIdFromUid(test::kAllowedQmMethodConsumer),
+                                     message_passing::NodeIdFromPid(pid_2));
 
     // Then the reference counter for the first methods SharedMemoryResource should be have been decremented,
     // indicating that it's been removed from the Skeleton's state
@@ -908,8 +909,8 @@ TEST_F(SkeletonOnServiceMethodsSubscribedFixture, CallingRegistersAMethodCallHan
     ASSERT_TRUE(captured_method_subscribed_handler_qm_.has_value());
     score::cpp::ignore = std::invoke(captured_method_subscribed_handler_qm_.value(),
                                      proxy_instance_identifier_qm_,
-                                     test::kAllowedQmMethodConsumer,
-                                     kDummyPid);
+                                     message_passing::PrincipalIdFromUid(test::kAllowedQmMethodConsumer),
+                                     message_passing::NodeIdFromPid(kDummyPid));
 }
 
 TEST_F(SkeletonOnServiceMethodsSubscribedFixture,
@@ -955,8 +956,8 @@ TEST_F(SkeletonOnServiceMethodsSubscribedFixture,
     ASSERT_TRUE(captured_method_subscribed_handler_b_.has_value());
     score::cpp::ignore = std::invoke(captured_method_subscribed_handler_b_.value(),
                                      proxy_instance_identifier_b_,
-                                     test::kAllowedAsilBMethodConsumer,
-                                     kDummyPid);
+                                     message_passing::PrincipalIdFromUid(test::kAllowedAsilBMethodConsumer),
+                                     message_passing::NodeIdFromPid(kDummyPid));
 }
 
 TEST_F(SkeletonOnServiceMethodsSubscribedFixture, CallingQmOpensSharedMemoryWithProxyUidAsAllowedProvider)
@@ -978,8 +979,8 @@ TEST_F(SkeletonOnServiceMethodsSubscribedFixture, CallingQmOpensSharedMemoryWith
     ASSERT_TRUE(captured_method_subscribed_handler_qm_.has_value());
     const auto scoped_handler_result = std::invoke(captured_method_subscribed_handler_qm_.value(),
                                                    proxy_instance_identifier_qm_,
-                                                   test::kAllowedQmMethodConsumer,
-                                                   kDummyPid);
+                                                   message_passing::PrincipalIdFromUid(test::kAllowedQmMethodConsumer),
+                                                   message_passing::NodeIdFromPid(kDummyPid));
 
     // Then the result should be valid
     EXPECT_TRUE(scoped_handler_result.has_value());
@@ -1004,8 +1005,8 @@ TEST_F(SkeletonOnServiceMethodsSubscribedFixture, CallingAsilBOpensSharedMemoryW
     ASSERT_TRUE(captured_method_subscribed_handler_b_.has_value());
     const auto scoped_handler_result = std::invoke(captured_method_subscribed_handler_b_.value(),
                                                    proxy_instance_identifier_b_,
-                                                   test::kAllowedAsilBMethodConsumer,
-                                                   kDummyPid);
+                                                   message_passing::PrincipalIdFromUid(test::kAllowedAsilBMethodConsumer),
+                                                   message_passing::NodeIdFromPid(kDummyPid));
 
     // Then the result should be valid
     EXPECT_TRUE(scoped_handler_result.has_value());
@@ -1021,8 +1022,8 @@ TEST_F(SkeletonOnServiceMethodsSubscribedFixture, CallingStoresSharedMemoryInCla
     ASSERT_TRUE(captured_method_subscribed_handler_qm_.has_value());
     score::cpp::ignore = std::invoke(captured_method_subscribed_handler_qm_.value(),
                                      proxy_instance_identifier_qm_,
-                                     test::kAllowedQmMethodConsumer,
-                                     kDummyPid);
+                                     message_passing::PrincipalIdFromUid(test::kAllowedQmMethodConsumer),
+                                     message_passing::NodeIdFromPid(kDummyPid));
 
     // Then the reference counter for the methods SharedMemoryResource should be incremented, indicating that it's
     // been stored in the Skeleton's state
@@ -1040,8 +1041,8 @@ TEST_F(SkeletonOnServiceMethodsSubscribedFixture, FailingToOpenSharedMemoryRetur
     ASSERT_TRUE(captured_method_subscribed_handler_qm_.has_value());
     const auto scoped_handler_result = std::invoke(captured_method_subscribed_handler_qm_.value(),
                                                    proxy_instance_identifier_qm_,
-                                                   test::kAllowedQmMethodConsumer,
-                                                   kDummyPid);
+                                                   message_passing::PrincipalIdFromUid(test::kAllowedQmMethodConsumer),
+                                                   message_passing::NodeIdFromPid(kDummyPid));
 
     // Then the handler should return an error
     ASSERT_TRUE(scoped_handler_result.has_value());
@@ -1062,8 +1063,8 @@ TEST_F(SkeletonOnServiceMethodsSubscribedFixture, FailingToGetUsableBaseAddressF
     SCORE_LANGUAGE_FUTURECPP_EXPECT_CONTRACT_VIOLATED(score::cpp::ignore =
                                                           std::invoke(captured_method_subscribed_handler_qm_.value(),
                                                                       proxy_instance_identifier_qm_,
-                                                                      test::kAllowedQmMethodConsumer,
-                                                                      kDummyPid));
+                                                                      message_passing::PrincipalIdFromUid(test::kAllowedQmMethodConsumer),
+                                                                      message_passing::NodeIdFromPid(kDummyPid)));
 }
 
 TEST_F(SkeletonOnServiceMethodsSubscribedFixture, CallingAsilQmWithoutInArgsOrReturnStillOpensSharedMemory)
@@ -1077,8 +1078,8 @@ TEST_F(SkeletonOnServiceMethodsSubscribedFixture, CallingAsilQmWithoutInArgsOrRe
     ASSERT_TRUE(captured_method_subscribed_handler_qm_.has_value());
     const auto scoped_handler_result = std::invoke(captured_method_subscribed_handler_qm_.value(),
                                                    proxy_instance_identifier_qm_,
-                                                   test::kAllowedQmMethodConsumer,
-                                                   kDummyPid);
+                                                   message_passing::PrincipalIdFromUid(test::kAllowedQmMethodConsumer),
+                                                   message_passing::NodeIdFromPid(kDummyPid));
 
     // Then the result should be valid
     EXPECT_TRUE(scoped_handler_result.has_value());
@@ -1095,8 +1096,8 @@ TEST_F(SkeletonOnServiceMethodsSubscribedFixture, CallingAsilBWithoutInArgsOrRet
     ASSERT_TRUE(captured_method_subscribed_handler_b_.has_value());
     const auto scoped_handler_result = std::invoke(captured_method_subscribed_handler_b_.value(),
                                                    proxy_instance_identifier_b_,
-                                                   test::kAllowedAsilBMethodConsumer,
-                                                   kDummyPid);
+                                                   message_passing::PrincipalIdFromUid(test::kAllowedAsilBMethodConsumer),
+                                                   message_passing::NodeIdFromPid(kDummyPid));
 
     // Then the result should be valid
     EXPECT_TRUE(scoped_handler_result.has_value());
@@ -1127,15 +1128,15 @@ TEST_F(SkeletonOnServiceMethodsSubscribedFixture, CallingForBothAsilAndQmDoesNot
     ASSERT_TRUE(captured_method_subscribed_handler_qm_.has_value());
     const auto scoped_handler_result = std::invoke(captured_method_subscribed_handler_qm_.value(),
                                                    proxy_instance_identifier_qm_,
-                                                   test::kAllowedQmMethodConsumer,
-                                                   kDummyPid);
+                                                   message_passing::PrincipalIdFromUid(test::kAllowedQmMethodConsumer),
+                                                   message_passing::NodeIdFromPid(kDummyPid));
     EXPECT_TRUE(scoped_handler_result.has_value());
 
     ASSERT_TRUE(captured_method_subscribed_handler_b_.has_value());
     const auto scoped_handler_result_2 = std::invoke(captured_method_subscribed_handler_b_.value(),
                                                      proxy_instance_identifier_b_,
-                                                     test::kAllowedAsilBMethodConsumer,
-                                                     kDummyPid);
+                                                     message_passing::PrincipalIdFromUid(test::kAllowedAsilBMethodConsumer),
+                                                     message_passing::NodeIdFromPid(kDummyPid));
     EXPECT_TRUE(scoped_handler_result_2.has_value());
 
     // Then UnregisterMethodCallHandler was not called during handler invocation
@@ -1164,8 +1165,8 @@ TEST_F(SkeletonOnServiceMethodsSubscribedFixture, CallingWillUnregisterRegistere
     ASSERT_TRUE(captured_method_subscribed_handler_qm_.has_value());
     const auto scoped_handler_result = std::invoke(captured_method_subscribed_handler_qm_.value(),
                                                    proxy_instance_identifier_qm_,
-                                                   test::kAllowedQmMethodConsumer,
-                                                   kDummyPid);
+                                                   message_passing::PrincipalIdFromUid(test::kAllowedQmMethodConsumer),
+                                                   message_passing::NodeIdFromPid(kDummyPid));
     EXPECT_TRUE(scoped_handler_result.has_value());
 }
 
@@ -1192,8 +1193,8 @@ TEST_F(SkeletonOnServiceMethodsSubscribedFixture,
     ASSERT_TRUE(captured_method_subscribed_handler_b_.has_value());
     const auto scoped_handler_result = std::invoke(captured_method_subscribed_handler_b_.value(),
                                                    proxy_instance_identifier_b_,
-                                                   test::kAllowedQmMethodConsumer,
-                                                   kDummyPid);
+                                                   message_passing::PrincipalIdFromUid(test::kAllowedQmMethodConsumer),
+                                                   message_passing::NodeIdFromPid(kDummyPid));
     EXPECT_TRUE(scoped_handler_result.has_value());
 }
 
@@ -1353,8 +1354,8 @@ TEST_F(SkeletonOnServiceMethodsUnsubscribedFixture, CallingRemovesShmResource)
     ASSERT_TRUE(captured_method_subscribed_handler_qm_.has_value());
     score::cpp::ignore = std::invoke(captured_method_subscribed_handler_qm_.value(),
                                      proxy_instance_identifier_qm_,
-                                     test::kAllowedQmMethodConsumer,
-                                     kDummyPid);
+                                     message_passing::PrincipalIdFromUid(test::kAllowedQmMethodConsumer),
+                                     message_passing::NodeIdFromPid(kDummyPid));
 
     const auto shm_resource_ref_counter_after_subscribe = mock_method_memory_resource_qm_.use_count();
 
@@ -1385,8 +1386,8 @@ TEST_F(SkeletonOnServiceMethodsUnsubscribedFixture, CallingUnregistersMethodCall
     ASSERT_TRUE(captured_method_subscribed_handler_qm_.has_value());
     score::cpp::ignore = std::invoke(captured_method_subscribed_handler_qm_.value(),
                                      proxy_instance_identifier_qm_,
-                                     test::kAllowedQmMethodConsumer,
-                                     kDummyPid);
+                                     message_passing::PrincipalIdFromUid(test::kAllowedQmMethodConsumer),
+                                     message_passing::NodeIdFromPid(kDummyPid));
 
     // Expecting that UnregisterMethodCallHandler will be called for both methods corresponding to the proxy
     EXPECT_CALL(message_passing_mock_,

@@ -80,7 +80,7 @@ TEST(QnxDispatchServerTest, RunningServerWithConnection)
     EXPECT_TRUE(server);
     auto connect_callback = [this](IServerConnection& connection) -> std::uintptr_t {
         std::cout << "EchoConnectCallback " << &connection << std::endl;
-        const pid_t client_pid = connection.GetClientIdentity().GetNodeId();
+        const pid_t client_pid = NodeIdToPid(connection.GetClientIdentity().GetNodeId());
         return static_cast<std::uintptr_t>(client_pid);
     };
     auto disconnect_callback = [this](IServerConnection& connection) {

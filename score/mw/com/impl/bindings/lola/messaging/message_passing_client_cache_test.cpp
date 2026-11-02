@@ -26,8 +26,8 @@ using namespace message_passing;
 class MessagePassingClientCacheTest : public ::testing::TestWithParam<ClientQualityType>
 {
   public:
-    static constexpr pid_t pid_{21};
-    static constexpr pid_t pid2_{42};
+    static constexpr message_passing::NodeId pid_{message_passing::NodeIdFromPid(21)};
+    static constexpr message_passing::NodeId pid2_{message_passing::NodeIdFromPid(42)};
 
     score::cpp::pmr::unique_ptr<::testing::NiceMock<ClientConnectionMock>> client_connection_mock_{
         score::cpp::pmr::make_unique<::testing::NiceMock<ClientConnectionMock>>(
@@ -170,7 +170,7 @@ TEST_P(MessagePassingClientCacheTest, RemoveMessagePassingClientRemovingNonExist
 
 TEST(MessagePassingClientCacheDeathTest, RemoveMessagePassingClientTerminatesWhenCalledOnNonStoppedClientConnection)
 {
-    constexpr pid_t target_node_id{12};
+    constexpr message_passing::NodeId target_node_id{message_passing::NodeIdFromPid(12)};
 
     // Given client connection mock in ready state
     score::cpp::pmr::unique_ptr<::testing::NiceMock<ClientConnectionMock>> client_connection_mock{

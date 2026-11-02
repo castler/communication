@@ -10,6 +10,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  ********************************************************************************/
+#include "score/message_passing/identity_types.h"
 #include "score/mw/com/impl/bindings/lola/skeleton_method.h"
 
 #include "score/memory/data_type_size_info.h"
@@ -180,7 +181,7 @@ TEST_F(SkeletonMethodOnProxyMethodSubscribedFixture, CallingRegistersCallbackWit
     // OnProxyMethoSubscribeFinished.
     const auto asil_level = QualityType::kASIL_B;
     EXPECT_CALL(message_passing_mock_,
-                RegisterMethodCallHandler(asil_level, proxy_method_instance_identifier_, _, kAllowedProxyUid));
+                RegisterMethodCallHandler(asil_level, proxy_method_instance_identifier_, _, message_passing::PrincipalIdFromUid(kAllowedProxyUid)));
 
     // When calling OnProxyMethodSubscribeFinished with a registered callback
     const auto result = unit_->OnProxyMethodSubscribeFinished(kTypeErasedInfoWithInArgsAndReturn,

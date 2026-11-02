@@ -116,6 +116,8 @@ class MessagePassingServiceInstanceTest : public ::testing::Test
 
     pid_t local_pid_{1};
     pid_t remote_pid_{2};
+    message_passing::NodeId local_node_{message_passing::NodeIdFromPid(local_pid_)};
+    message_passing::NodeId remote_node_{message_passing::NodeIdFromPid(remote_pid_)};
 
     ClientIdentity client_identity_{ClientIdentity::FromCredentials(15u, 25u, 35u)};
     UserData user_data_{std::in_place_type<uintptr_t>, 10u};
@@ -160,7 +162,7 @@ TEST_F(MessagePassingServiceInstanceTest, ConnectCallbackReturnsClientPid)
 
     // Expect return value contains user pid
     ASSERT_TRUE(pid_result.has_value());
-    EXPECT_EQ(std::get<uintptr_t>(pid_result.value()), client_identity_.GetNodeId());
+    EXPECT_EQ(std::get<uintptr_t>(pid_result.value()), client_identity_.GetNodeId().Raw());
 }
 
 TEST_F(MessagePassingServiceInstanceTest, DisconnectCallbackSuccessfullyExecuted)
@@ -245,7 +247,7 @@ TEST_F(MessagePassingServiceInstanceTest, NotifyEventLocallyCallsRegisteredHandl
         });
 
     // and handler being registered for event
-    instance.RegisterEventNotification(event_id_, handler, local_pid_);
+    instance.RegisterEventNotification(event_id_, handler, local_node_);
 
     // When NotifyEvent is called for the same event
     instance.NotifyEvent(event_id_);
@@ -262,7 +264,7 @@ TEST_F(MessagePassingServiceInstanceTest, NotifyEventLocallyDoesNotTerminateUpon
         quality_type_, asil_cfg_, server_factory_mock_, client_factory_mock_, executor_mock_};
 
     // and an empty weak_ptr being registered for event
-    instance.RegisterEventNotification(event_id_, {}, local_pid_);
+    instance.RegisterEventNotification(event_id_, {}, local_node_);
 
     // Then we call NotifyEvent for the same event
     instance.NotifyEvent(event_id_);
@@ -278,10 +280,10 @@ TEST_F(MessagePassingServiceInstanceTest, NotifyEventLocallyDoesNotCallUnregiste
         quality_type_, asil_cfg_, server_factory_mock_, client_factory_mock_, executor_mock_};
 
     // and handler being registered for event
-    auto handler_registration = instance.RegisterEventNotification(event_id_, {}, local_pid_);
+    auto handler_registration = instance.RegisterEventNotification(event_id_, {}, local_node_);
 
     // and then unregistered
-    instance.UnregisterEventNotification(event_id_, handler_registration, local_pid_);
+    instance.UnregisterEventNotification(event_id_, handler_registration, local_node_);
 
     // When we call NotifyEvent for the same event
     instance.NotifyEvent(event_id_);
@@ -305,10 +307,10 @@ TEST_F(MessagePassingServiceInstanceTest,
         });
 
     // and handler being registered for event
-    auto handler_registration = instance.RegisterEventNotification(event_id_, handler, local_pid_);
+    auto handler_registration = instance.RegisterEventNotification(event_id_, handler, local_node_);
 
     // and then UnregisterEventNotification is called with a different handle
-    instance.UnregisterEventNotification(event_id_, ++handler_registration, local_pid_);
+    instance.UnregisterEventNotification(event_id_, ++handler_registration, local_node_);
 
     // When we call NotifyEvent for the same event
     instance.NotifyEvent(event_id_);
@@ -347,7 +349,7 @@ TEST_F(MessagePassingServiceInstanceTest, NotifyEventLocallyCallsNoMoreThanMaxPo
     // and handler being registered for event (max_receive_handlers_per_event + 2) times
     for (auto i = 0U; i < MessagePassingServiceInstanceAttorney::max_receive_handlers_per_event + 2U; ++i)
     {
-        instance.RegisterEventNotification(event_id_, handler, local_pid_);
+        instance.RegisterEventNotification(event_id_, handler, local_node_);
     }
 
     // When we call NotifyEvent for the same event
@@ -375,7 +377,7 @@ TEST_F(MessagePassingServiceInstanceTest, RegisterEventNotificationRemoteSendsRe
         .WillOnce(testing::Return(score::cpp::expected_blank<score::os::Error>{}));
 
     // When handler being registered with pid != local_pid
-    instance.RegisterEventNotification(event_id_, {}, remote_pid_);
+    instance.RegisterEventNotification(event_id_, {}, remote_node_);
 }
 
 TEST_F(MessagePassingServiceInstanceTest,
@@ -396,7 +398,7 @@ TEST_F(MessagePassingServiceInstanceTest,
         .WillOnce(testing::Return(score::cpp::make_unexpected<score::os::Error>(os::Error::createFromErrno(ENOMEM))));
 
     // When handler being registered with pid != local_pid
-    instance.RegisterEventNotification(event_id_, {}, remote_pid_);
+    instance.RegisterEventNotification(event_id_, {}, remote_node_);
 }
 
 TEST_F(MessagePassingServiceInstanceTest,
@@ -417,8 +419,8 @@ TEST_F(MessagePassingServiceInstanceTest,
         .WillOnce(testing::Return(score::cpp::expected_blank<score::os::Error>{}));
 
     // When handler being registered with pid != local_pid
-    instance.RegisterEventNotification(event_id_, {}, remote_pid_);
-    instance.RegisterEventNotification(event_id_, {}, remote_pid_);
+    instance.RegisterEventNotification(event_id_, {}, remote_node_);
+    instance.RegisterEventNotification(event_id_, {}, remote_node_);
 }
 
 TEST_F(MessagePassingServiceInstanceTest,
@@ -440,8 +442,8 @@ TEST_F(MessagePassingServiceInstanceTest,
         }));
 
     // When handler being registered for event with pid != local_pid
-    instance.RegisterEventNotification(event_id_, {}, remote_pid_);
-    instance.RegisterEventNotification(event_id_, {}, remote_pid_ + 5);
+    instance.RegisterEventNotification(event_id_, {}, remote_node_);
+    instance.RegisterEventNotification(event_id_, {}, message_passing::NodeIdFromPid(remote_pid_ + 5));
 }
 
 TEST_F(MessagePassingServiceInstanceTest,
@@ -457,10 +459,10 @@ TEST_F(MessagePassingServiceInstanceTest,
         .WillRepeatedly(testing::Return(score::cpp::expected_blank<score::os::Error>{}));
 
     // Given handler being registered with pid != local_pid
-    auto registration_no = instance.RegisterEventNotification(event_id_, {}, remote_pid_);
+    auto registration_no = instance.RegisterEventNotification(event_id_, {}, remote_node_);
 
     // When UnregisterEventNotification is called with received registration handler
-    instance.UnregisterEventNotification(event_id_, registration_no, remote_pid_);
+    instance.UnregisterEventNotification(event_id_, registration_no, remote_node_);
 }
 
 TEST_F(MessagePassingServiceInstanceTest,
@@ -476,10 +478,10 @@ TEST_F(MessagePassingServiceInstanceTest,
         .WillOnce(testing::Return(score::cpp::make_unexpected<score::os::Error>(os::Error::createFromErrno(ENOMEM))));
 
     // Given handler being registered for event with pid != local_pid
-    auto registration_no = instance.RegisterEventNotification(event_id_, {}, remote_pid_);
+    auto registration_no = instance.RegisterEventNotification(event_id_, {}, remote_node_);
 
     // When UnregisterEventNotification is called with received registration handler
-    instance.UnregisterEventNotification(event_id_, registration_no, remote_pid_);
+    instance.UnregisterEventNotification(event_id_, registration_no, remote_node_);
 }
 
 TEST_F(MessagePassingServiceInstanceTest,
@@ -500,10 +502,10 @@ TEST_F(MessagePassingServiceInstanceTest,
         .WillRepeatedly(testing::Return(IClientConnection::State::kStopped));
 
     // Given handler being registered for event with pid != local_pid
-    auto registration_no = instance.RegisterEventNotification(event_id_, {}, remote_pid_);
+    auto registration_no = instance.RegisterEventNotification(event_id_, {}, remote_node_);
 
     // When UnregisterEventNotification is called with received registration handler
-    instance.UnregisterEventNotification(event_id_, registration_no, remote_pid_);
+    instance.UnregisterEventNotification(event_id_, registration_no, remote_node_);
 }
 
 TEST_F(MessagePassingServiceInstanceTest, UnregisterEventNotificationRemoteDoesNotUnregisterOnPidMismatch)
@@ -517,10 +519,10 @@ TEST_F(MessagePassingServiceInstanceTest, UnregisterEventNotificationRemoteDoesN
         .WillOnce(testing::Return(score::cpp::expected_blank<score::os::Error>{}));
 
     // Given handler being registered with pid != local_pid
-    auto registration_no = instance.RegisterEventNotification(event_id_, {}, remote_pid_);
+    auto registration_no = instance.RegisterEventNotification(event_id_, {}, remote_node_);
 
     // When UnregisterEventNotification is called with received registration handler
-    instance.UnregisterEventNotification(event_id_, registration_no, remote_pid_ + 5);
+    instance.UnregisterEventNotification(event_id_, registration_no, message_passing::NodeIdFromPid(remote_pid_ + 5));
 }
 
 TEST_F(MessagePassingServiceInstanceTest,
@@ -535,11 +537,11 @@ TEST_F(MessagePassingServiceInstanceTest,
         .WillOnce(testing::Return(score::cpp::expected_blank<score::os::Error>{}));
 
     // Given handler being registered with pid != local_pid twice
-    auto registration_no = instance.RegisterEventNotification(event_id_, {}, remote_pid_);
-    instance.RegisterEventNotification(event_id_, {}, remote_pid_);
+    auto registration_no = instance.RegisterEventNotification(event_id_, {}, remote_node_);
+    instance.RegisterEventNotification(event_id_, {}, remote_node_);
 
     // When UnregisterEventNotification is called with received registration handler
-    instance.UnregisterEventNotification(event_id_, registration_no, remote_pid_);
+    instance.UnregisterEventNotification(event_id_, registration_no, remote_node_);
 }
 
 TEST_F(MessagePassingServiceInstanceTest, UnregisterEventNotificationRemoteDoesNotUnregisterLocalRegistrations)  // TODO
@@ -552,10 +554,10 @@ TEST_F(MessagePassingServiceInstanceTest, UnregisterEventNotificationRemoteDoesN
     EXPECT_CALL(client_factory_mock_, Create(::testing::_, ::testing::_)).Times(0);
 
     // Given handler being registered with local_pid
-    auto registration_no = instance.RegisterEventNotification(event_id_, {}, local_pid_);
+    auto registration_no = instance.RegisterEventNotification(event_id_, {}, local_node_);
 
     // When UnregisterEventNotification is called for the same event but remote pid
-    instance.UnregisterEventNotification(event_id_, registration_no, remote_pid_);
+    instance.UnregisterEventNotification(event_id_, registration_no, remote_node_);
 }
 
 // notify remote
@@ -819,7 +821,7 @@ TEST_F(MessagePassingServiceInstanceTest, NotifyEventMessageCallsRegisteredHandl
         .WillOnce(testing::Return(score::cpp::expected_blank<score::os::Error>{}));
 
     // when handler being registered for event
-    instance.RegisterEventNotification(event_id_, handler, remote_pid_);
+    instance.RegisterEventNotification(event_id_, handler, remote_node_);
 
     // and when notify event message is received with the same event
     received_send_message_callback_(*server_connection_mock_, Serialize(event_id_, MessageType::kNotifyEvent));
@@ -846,7 +848,7 @@ TEST_F(MessagePassingServiceInstanceTest, NotifyEventMessageDoesNotCallHandlerFo
         .WillOnce(testing::Return(score::cpp::expected_blank<score::os::Error>{}));
 
     // when handler being registered for event
-    instance.RegisterEventNotification(event_id_, handler, remote_pid_);
+    instance.RegisterEventNotification(event_id_, handler, remote_node_);
 
     // When notify event message is received for a different event
     ++event_id_.element_id_;
@@ -867,7 +869,7 @@ TEST_F(MessagePassingServiceInstanceTest, ReregisterEventNotificationDoesNotRegi
     EXPECT_CALL(client_factory_mock_, Create(::testing::_, ::testing::_)).Times(0);
 
     // When ReregisterEventNotification is called on previously unregistered notification
-    instance.ReregisterEventNotification(event_id_, remote_pid_);
+    instance.ReregisterEventNotification(event_id_, remote_node_);
 
     // Then NotifyEvent() for the event is called
     instance.NotifyEvent(event_id_);
@@ -888,10 +890,10 @@ TEST_F(MessagePassingServiceInstanceTest,
         });
 
     // and notification being registered locally
-    instance.RegisterEventNotification(event_id_, handler, local_pid_);
+    instance.RegisterEventNotification(event_id_, handler, local_node_);
 
     // When ReregisterEventNotification is called for the same event but with remote pid
-    instance.ReregisterEventNotification(event_id_, remote_pid_);
+    instance.ReregisterEventNotification(event_id_, remote_node_);
 
     // Given notification message received
     received_send_message_callback_(*server_connection_mock_, Serialize(event_id_, MessageType::kNotifyEvent));
@@ -915,10 +917,10 @@ TEST_F(MessagePassingServiceInstanceTest,
         });
 
     // and notification being registered locally
-    instance.RegisterEventNotification(event_id_, handler, local_pid_);
+    instance.RegisterEventNotification(event_id_, handler, local_node_);
 
     // When ReregisterEventNotification is called for the same event/local pid
-    instance.ReregisterEventNotification(event_id_, local_pid_);
+    instance.ReregisterEventNotification(event_id_, local_node_);
 
     // Given notification message received
     received_send_message_callback_(*server_connection_mock_, Serialize(event_id_, MessageType::kNotifyEvent));
@@ -938,10 +940,10 @@ TEST_F(MessagePassingServiceInstanceTest, ReregisterEventNotificationForTheSameE
         .WillOnce(testing::Return(score::cpp::expected_blank<score::os::Error>{}));
 
     // Given event notification being registered for remote pid
-    instance.RegisterEventNotification(event_id_, {}, remote_pid_);
+    instance.RegisterEventNotification(event_id_, {}, remote_node_);
 
     // When ReregisterEventNotification() is called with the same event and pid
-    instance.ReregisterEventNotification(event_id_, remote_pid_);
+    instance.ReregisterEventNotification(event_id_, remote_node_);
 }
 
 TEST_F(MessagePassingServiceInstanceTest, ReregisterEventNotificationWithDifferentNodeIdReplacesNodeIdAndSendsMessage)
@@ -963,10 +965,10 @@ TEST_F(MessagePassingServiceInstanceTest, ReregisterEventNotificationWithDiffere
         }));
 
     // Given event notification is registered
-    instance.RegisterEventNotification(event_id_, {}, remote_pid_);
+    instance.RegisterEventNotification(event_id_, {}, remote_node_);
 
     // When event notification for the same event is reregistered with a different pid
-    instance.ReregisterEventNotification(event_id_, remote_pid_ + 5);
+    instance.ReregisterEventNotification(event_id_, message_passing::NodeIdFromPid(remote_pid_ + 5));
 }
 
 // NotifyOutdatedNode()
@@ -987,7 +989,7 @@ TEST_F(MessagePassingServiceInstanceTest, NotifyOutdatedNodeCreatesClientAndSend
         .WillOnce(testing::Return(score::cpp::expected_blank<score::os::Error>{}));
 
     // When NotifyOutdatedNodeId() is called for a previously unused target_node_id
-    instance.NotifyOutdatedNodeId(remote_pid_, remote_pid_ + 2);
+    instance.NotifyOutdatedNodeId(remote_node_, message_passing::NodeIdFromPid(remote_pid_ + 2));
 }
 
 TEST_F(MessagePassingServiceInstanceTest, NotifyOutdatedNodeDoesNotTerminateOnFailedSend)
@@ -1001,7 +1003,7 @@ TEST_F(MessagePassingServiceInstanceTest, NotifyOutdatedNodeDoesNotTerminateOnFa
         .WillOnce(testing::Return(score::cpp::make_unexpected<score::os::Error>(os::Error::createFromErrno(ENOMEM))));
 
     // When NotifyOutdatedNodeId() is called for a previously unused target_node_id
-    instance.NotifyOutdatedNodeId(remote_pid_, remote_pid_ + 2);
+    instance.NotifyOutdatedNodeId(remote_node_, message_passing::NodeIdFromPid(remote_pid_ + 2));
 }
 
 TEST_F(MessagePassingServiceInstanceTest, RegisterCallbackWithNoExistingHandlersCallbackNotInvoked)
@@ -1029,7 +1031,7 @@ TEST_F(MessagePassingServiceInstanceTest, RegisterCallbackWithExistingLocalHandl
         quality_type_, asil_cfg_, server_factory_mock_, client_factory_mock_, executor_mock_};
 
     auto handler = std::make_shared<ScopedEventReceiveHandler>(scope_, []() noexcept {});
-    instance.RegisterEventNotification(event_id_, handler, local_pid_);
+    instance.RegisterEventNotification(event_id_, handler, local_node_);
 
     std::atomic<bool> callback_invoked{false};
     std::atomic<bool> callback_value{false};
@@ -1055,7 +1057,7 @@ TEST_F(MessagePassingServiceInstanceTest, RegisterCallbackWithExistingRemoteHand
     EXPECT_CALL(client_connection_mock_, Send(::testing::_))
         .WillOnce(testing::Return(score::cpp::expected_blank<score::os::Error>{}));
 
-    instance.RegisterEventNotification(event_id_, {}, remote_pid_);
+    instance.RegisterEventNotification(event_id_, {}, remote_node_);
 
     std::atomic<bool> callback_invoked{false};
     std::atomic<bool> callback_value{false};
@@ -1087,7 +1089,7 @@ TEST_F(MessagePassingServiceInstanceTest, RegisterLocalHandlerCallbackInvokedWit
 
     // When registering first local handler
     auto handler = std::make_shared<ScopedEventReceiveHandler>(scope_, []() noexcept {});
-    instance.RegisterEventNotification(event_id_, handler, local_pid_);
+    instance.RegisterEventNotification(event_id_, handler, local_node_);
 
     // Then callback should be invoked with true
     EXPECT_TRUE(callback_invoked.load());
@@ -1101,7 +1103,7 @@ TEST_F(MessagePassingServiceInstanceTest, UnregisterLastLocalHandlerCallbackInvo
         quality_type_, asil_cfg_, server_factory_mock_, client_factory_mock_, executor_mock_};
 
     auto handler = std::make_shared<ScopedEventReceiveHandler>(scope_, []() noexcept {});
-    auto handler_id = instance.RegisterEventNotification(event_id_, handler, local_pid_);
+    auto handler_id = instance.RegisterEventNotification(event_id_, handler, local_node_);
 
     std::atomic<int> callback_count{0};
     std::atomic<bool> last_callback_value{true};
@@ -1114,7 +1116,7 @@ TEST_F(MessagePassingServiceInstanceTest, UnregisterLastLocalHandlerCallbackInvo
     callback_count.store(0);  // Reset after registration callback
 
     // When unregistering the last handler
-    instance.UnregisterEventNotification(event_id_, handler_id, local_pid_);
+    instance.UnregisterEventNotification(event_id_, handler_id, local_node_);
 
     // Then callback should be invoked with false
     EXPECT_EQ(callback_count.load(), 1);
@@ -1136,18 +1138,18 @@ TEST_F(MessagePassingServiceInstanceTest, MultipleLocalHandlersCallbackOnlyOnFir
 
     // When registering multiple handlers
     auto handler1 = std::make_shared<ScopedEventReceiveHandler>(scope_, []() noexcept {});
-    auto handler_id1 = instance.RegisterEventNotification(event_id_, handler1, local_pid_);
+    auto handler_id1 = instance.RegisterEventNotification(event_id_, handler1, local_node_);
     EXPECT_EQ(callback_count.load(), 1);  // Called on first handler
 
     auto handler2 = std::make_shared<ScopedEventReceiveHandler>(scope_, []() noexcept {});
-    auto handler_id2 = instance.RegisterEventNotification(event_id_, handler2, local_pid_);
+    auto handler_id2 = instance.RegisterEventNotification(event_id_, handler2, local_node_);
     EXPECT_EQ(callback_count.load(), 1);  // Not called on second handler
 
     // When unregistering handlers
-    instance.UnregisterEventNotification(event_id_, handler_id1, local_pid_);
+    instance.UnregisterEventNotification(event_id_, handler_id1, local_node_);
     EXPECT_EQ(callback_count.load(), 1);  // Not called, still have one handler
 
-    instance.UnregisterEventNotification(event_id_, handler_id2, local_pid_);
+    instance.UnregisterEventNotification(event_id_, handler_id2, local_node_);
     EXPECT_EQ(callback_count.load(), 2);  // Called on last handler removal
 }
 
@@ -1169,7 +1171,7 @@ TEST_F(MessagePassingServiceInstanceTest, UnregisterCallbackNoMoreCallbacksInvok
 
     // And then registering a handler
     auto handler = std::make_shared<ScopedEventReceiveHandler>(scope_, []() noexcept {});
-    instance.RegisterEventNotification(event_id_, handler, local_pid_);
+    instance.RegisterEventNotification(event_id_, handler, local_node_);
 
     // Then callback should not be invoked
     EXPECT_EQ(callback_count.load(), 0);
@@ -1191,7 +1193,7 @@ TEST_F(MessagePassingServiceInstanceTest, LocalAndRemoteHandlersMixedCallbackRes
 
     // When registering both local and remote handlers
     auto handler = std::make_shared<ScopedEventReceiveHandler>(scope_, []() noexcept {});
-    auto handler_id = instance.RegisterEventNotification(event_id_, handler, local_pid_);
+    auto handler_id = instance.RegisterEventNotification(event_id_, handler, local_node_);
     EXPECT_EQ(callback_count.load(), 1);  // Called on first handler
     EXPECT_TRUE(last_callback_value.load());
 
@@ -1204,15 +1206,15 @@ TEST_F(MessagePassingServiceInstanceTest, LocalAndRemoteHandlersMixedCallbackRes
     EXPECT_CALL(client_factory_mock_, Create(::testing::_, ::testing::_))
         .WillOnce(::testing::Return(::testing::ByMove(std::move(client_conn_mock))));
 
-    auto remote_handler_id = instance.RegisterEventNotification(event_id_, {}, remote_pid_);
+    auto remote_handler_id = instance.RegisterEventNotification(event_id_, {}, remote_node_);
     EXPECT_EQ(callback_count.load(), 1);  // Not called, already have handlers
 
     // When removing local handler (remote still exists)
-    instance.UnregisterEventNotification(event_id_, handler_id, local_pid_);
+    instance.UnregisterEventNotification(event_id_, handler_id, local_node_);
     EXPECT_EQ(callback_count.load(), 1);  // Not called, still have remote handler
 
     // When removing remote handler (no handlers left)
-    instance.UnregisterEventNotification(event_id_, remote_handler_id, remote_pid_);
+    instance.UnregisterEventNotification(event_id_, remote_handler_id, remote_node_);
     EXPECT_EQ(callback_count.load(), 2);  // Called when last handler removed
     EXPECT_FALSE(last_callback_value.load());
 }
@@ -1247,7 +1249,7 @@ TEST_F(MessagePassingServiceInstanceTest, RemoteHandlerRegistrationInvokesCallba
         .WillOnce(testing::Return(score::cpp::expected_blank<score::os::Error>{}));
 
     // When registering first remote handler
-    instance.RegisterEventNotification(event_id_, {}, remote_pid_);
+    instance.RegisterEventNotification(event_id_, {}, remote_node_);
 
     // Then callback should be invoked with true
     EXPECT_TRUE(callback_invoked.load());
@@ -1269,7 +1271,7 @@ TEST_F(MessagePassingServiceInstanceTest, RemoteHandlerUnregistrationInvokesCall
     EXPECT_CALL(client_factory_mock_, Create(::testing::_, ::testing::_))
         .WillOnce(::testing::Return(::testing::ByMove(std::move(client_conn_mock))));
 
-    auto registration_no = instance.RegisterEventNotification(event_id_, {}, remote_pid_);
+    auto registration_no = instance.RegisterEventNotification(event_id_, {}, remote_node_);
 
     std::atomic<int> callback_count{0};
     std::atomic<bool> last_callback_value{true};
@@ -1282,7 +1284,7 @@ TEST_F(MessagePassingServiceInstanceTest, RemoteHandlerUnregistrationInvokesCall
     callback_count.store(0);  // Reset after registration callback
 
     // When unregistering the last remote handler
-    instance.UnregisterEventNotification(event_id_, registration_no, remote_pid_);
+    instance.UnregisterEventNotification(event_id_, registration_no, remote_node_);
 
     // Then callback should be invoked with false
     EXPECT_EQ(callback_count.load(), 1);
@@ -1366,7 +1368,7 @@ TEST_F(MessagePassingServiceInstanceTest, UnregisterEventNotificationWithNonExis
     callback_count.store(0);  // Reset after registration (callback not invoked since no handlers exist)
 
     // When trying to unregister a handler that was never registered
-    instance.UnregisterEventNotification(event_id_, registration_no, local_pid_);
+    instance.UnregisterEventNotification(event_id_, registration_no, local_node_);
 
     // Then status change callback is NOT invoked (no actual state change occurred)
     EXPECT_EQ(callback_count.load(), 0);  // Callback should not be invoked

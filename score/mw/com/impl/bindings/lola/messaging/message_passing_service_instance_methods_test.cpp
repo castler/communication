@@ -63,10 +63,13 @@ using MethodReplyPayload = ErrorSerializer<MethodErrc>::SerializedErrorType;
 
 constexpr pid_t kLocalPid{1};
 constexpr uid_t kLocalUid{3};
+constexpr message_passing::NodeId kLocalNode{message_passing::NodeIdFromPid(kLocalPid)};
+constexpr message_passing::PrincipalId kLocalPrincipal{message_passing::PrincipalIdFromUid(kLocalUid)};
 constexpr gid_t kLocalGid{4};
 
 constexpr pid_t kRemotePid{10};
 constexpr uid_t kRemoteUid{30};
+constexpr message_passing::NodeId kRemoteNode{message_passing::NodeIdFromPid(kRemotePid)};
 constexpr gid_t kRemoteGid{40};
 
 const ProxyInstanceIdentifier kProxyInstanceIdentifier{kLocalUid, 1U};
@@ -171,7 +174,7 @@ class MessagePassingServiceInstanceMethodsFixture : public ::testing::Test
 
     MessagePassingServiceInstanceMethodsFixture& WithARegisteredMethodCallHandler(
         ProxyMethodInstanceIdentifier proxy_method_instance_identifier,
-        uid_t allowed_consumer_uid)
+        message_passing::PrincipalId allowed_consumer_uid)
     {
         SCORE_LANGUAGE_FUTURECPP_ASSERT_PRD(unit_ != nullptr);
         SCORE_LANGUAGE_FUTURECPP_ASSERT_PRD(client_identity_ != nullptr);
@@ -283,7 +286,7 @@ class MessagePassingServiceInstanceMethodsFixture : public ::testing::Test
     safecpp::Scope<> unsubscribe_method_handler_scope_{};
 
     ::testing::MockFunction<void(std::size_t)> mock_method_call_handler_{};
-    ::testing::MockFunction<score::Result<void>(ProxyInstanceIdentifier, uid_t, pid_t)>
+    ::testing::MockFunction<score::Result<void>(ProxyInstanceIdentifier, message_passing::PrincipalId, message_passing::NodeId)>
         mock_subscribe_method_handler_{};
     ::testing::MockFunction<score::Result<void>(ProxyInstanceIdentifier)> mock_unsubscribe_method_handler_{};
 
@@ -309,7 +312,7 @@ TEST_F(MessagePassingServiceInstanceLocalCallMethodTest, CallingWithSelfPidCalls
     EXPECT_CALL(client_connection_mock_, SendWaitReply(_, _)).Times(0);
 
     // When calling CallMethod with target_node_id equal to the PID of the current process
-    const auto call_result = unit_->CallMethod(kProxyMethodInstanceIdentifier, kQueuePosition, kLocalPid);
+    const auto call_result = unit_->CallMethod(kProxyMethodInstanceIdentifier, kQueuePosition, kLocalNode);
 
     // Then the result is valid
     ASSERT_TRUE(call_result.has_value());
@@ -321,11 +324,11 @@ TEST_F(MessagePassingServiceInstanceLocalCallMethodTest, CallingWillFailIfRegist
 
     // Given that the method call handler was registered with an allowed uid that does not match the uid of the local
     // process containing the MessagePassingServiceInstance
-    const uid_t invalid_uid = kLocalUid + 20;
+    const auto invalid_uid = message_passing::PrincipalIdFromUid(kLocalUid + 20);
     WithARegisteredMethodCallHandler(kProxyMethodInstanceIdentifier, invalid_uid);
 
     // When calling CallMethod with target_node_id equal to the PID of the current process
-    const auto call_result = unit_->CallMethod(kProxyMethodInstanceIdentifier, kQueuePosition, kLocalPid);
+    const auto call_result = unit_->CallMethod(kProxyMethodInstanceIdentifier, kQueuePosition, kLocalNode);
 
     // Then the result contains an error
     ASSERT_FALSE(call_result.has_value());
@@ -338,7 +341,7 @@ TEST_F(MessagePassingServiceInstanceLocalCallMethodTest, CallingWithProxyIdentif
         kProxyMethodInstanceIdentifier2, client_identity_->GetPrincipalId());
 
     // When calling CallMethod with a ProxyMethodInstanceIdentifier for which no method call handler has been registered
-    const auto call_result = unit_->CallMethod(kProxyMethodInstanceIdentifier, kQueuePosition, kLocalPid);
+    const auto call_result = unit_->CallMethod(kProxyMethodInstanceIdentifier, kQueuePosition, kLocalNode);
 
     // Then the result contains an error
     ASSERT_FALSE(call_result.has_value());
@@ -357,7 +360,7 @@ TEST_F(MessagePassingServiceInstanceLocalCallMethodTest, CallingAfterMethodHandl
     EXPECT_CALL(mock_method_call_handler_, Call(_)).Times(0);
 
     // When calling CallMethod
-    const auto call_result = unit_->CallMethod(kProxyMethodInstanceIdentifier, kQueuePosition, kLocalPid);
+    const auto call_result = unit_->CallMethod(kProxyMethodInstanceIdentifier, kQueuePosition, kLocalNode);
 
     // Then the result contains an error
     ASSERT_FALSE(call_result.has_value());
@@ -386,7 +389,7 @@ TEST_F(MessagePassingServiceInstanceRemoteCallMethodTest, CallingWithOtherProces
     EXPECT_CALL(mock_method_call_handler_, Call(_)).Times(0);
 
     // When calling CallMethod with target_node_id equal to the PID of a different process
-    const auto call_result = unit_->CallMethod(kProxyMethodInstanceIdentifier, kQueuePosition, kRemotePid);
+    const auto call_result = unit_->CallMethod(kProxyMethodInstanceIdentifier, kQueuePosition, kRemoteNode);
 
     // Then the result is valid
     ASSERT_TRUE(call_result.has_value());
@@ -409,7 +412,7 @@ TEST_F(MessagePassingServiceInstanceRemoteCallMethodTest, CallingGetsClientWithP
     })));
 
     // When calling CallMethod with target_node_id equal to the PID of a different process
-    const auto call_result = unit_->CallMethod(kProxyMethodInstanceIdentifier, kQueuePosition, kRemotePid);
+    const auto call_result = unit_->CallMethod(kProxyMethodInstanceIdentifier, kQueuePosition, kRemoteNode);
 
     // Then the result is valid
     ASSERT_TRUE(call_result.has_value());
@@ -425,7 +428,7 @@ TEST_F(MessagePassingServiceInstanceRemoteCallMethodTest, ReturnsErrorWhenSendWa
         .WillOnce(Return(score::cpp::make_unexpected(score::os::Error::createFromErrno())));
 
     // When calling CallMethod with target_node_id equal to the PID of a different process
-    const auto call_result = unit_->CallMethod(kProxyMethodInstanceIdentifier, kQueuePosition, kRemotePid);
+    const auto call_result = unit_->CallMethod(kProxyMethodInstanceIdentifier, kQueuePosition, kRemoteNode);
 
     // Then an error is returned
     ASSERT_FALSE(call_result.has_value());
@@ -444,7 +447,7 @@ TEST_F(MessagePassingServiceInstanceRemoteCallMethodTest, ReturnsErrorWhenReplyP
             score::cpp::span<std::uint8_t>{payload_with_unexpected_size.data(), payload_with_unexpected_size.size()}));
 
     // When calling CallMethod with target_node_id equal to the PID of a different process
-    const auto call_result = unit_->CallMethod(kProxyMethodInstanceIdentifier, kQueuePosition, kRemotePid);
+    const auto call_result = unit_->CallMethod(kProxyMethodInstanceIdentifier, kQueuePosition, kRemoteNode);
 
     // Then an error is returned
     ASSERT_FALSE(call_result.has_value());
@@ -462,7 +465,7 @@ TEST_F(MessagePassingServiceInstanceRemoteCallMethodTest, ReturnsErrorWhenReplyR
         .WillOnce(Return(CreateSerializedMethodReply(MakeUnexpected(error_code), method_reply_buffer_)));
 
     // When calling CallMethod with target_node_id equal to the PID of a different process
-    const auto call_result = unit_->CallMethod(kProxyMethodInstanceIdentifier, kQueuePosition, kRemotePid);
+    const auto call_result = unit_->CallMethod(kProxyMethodInstanceIdentifier, kQueuePosition, kRemoteNode);
 
     // Then the reported error is returned
     ASSERT_FALSE(call_result.has_value());
@@ -480,7 +483,7 @@ TEST_F(MessagePassingServiceInstanceLocalSubscribeMethodTest, CallingWithSelfPid
     // Expecting that the registered method subscribe handler will be called with the provided,
     // ProxyInstanceIdentifier and the proxy PID / UID derived from the
     // MessagePassingServiceInstance itself.
-    EXPECT_CALL(mock_subscribe_method_handler_, Call(kProxyInstanceIdentifier, kLocalUid, kLocalPid));
+    EXPECT_CALL(mock_subscribe_method_handler_, Call(kProxyInstanceIdentifier, kLocalPrincipal, kLocalNode));
 
     // and expecting that a SubscribeServiceMethod message will NOT be sent (which would happen when the client is in
     // another process)
@@ -488,7 +491,7 @@ TEST_F(MessagePassingServiceInstanceLocalSubscribeMethodTest, CallingWithSelfPid
 
     // When calling SubscribeServiceMethod with target_node_id equal to the PID of the current process
     const auto call_result =
-        unit_->SubscribeServiceMethod(kSkeletonInstanceIdentifier, kProxyInstanceIdentifier, kLocalPid);
+        unit_->SubscribeServiceMethod(kSkeletonInstanceIdentifier, kProxyInstanceIdentifier, kLocalNode);
 
     // Then the result is valid
     ASSERT_TRUE(call_result.has_value());
@@ -501,12 +504,12 @@ TEST_F(MessagePassingServiceInstanceLocalSubscribeMethodTest, CallingWillFailIfR
 
     // Given that the method call handler was registered with a set of allowed uids that does not contain the uid of the
     // local process containing the MessagePassingServiceInstance
-    const uid_t invalid_uid = kLocalUid + 20;
+    const auto invalid_uid = message_passing::PrincipalIdFromUid(kLocalUid + 20);
     WithARegisteredSubscribeMethodHandler(kSkeletonInstanceIdentifier, {{invalid_uid}});
 
     // When calling SubscribeServiceMethod with target_node_id equal to the PID of the current process
     const auto call_result =
-        unit_->SubscribeServiceMethod(kSkeletonInstanceIdentifier, kProxyInstanceIdentifier, kLocalPid);
+        unit_->SubscribeServiceMethod(kSkeletonInstanceIdentifier, kProxyInstanceIdentifier, kLocalNode);
 
     // Then the result contains an error
     ASSERT_FALSE(call_result.has_value());
@@ -524,7 +527,7 @@ TEST_F(MessagePassingServiceInstanceLocalSubscribeMethodTest, CallingWillSucceed
 
     // When calling SubscribeServiceMethod with target_node_id equal to the PID of the current process
     const auto call_result =
-        unit_->SubscribeServiceMethod(kSkeletonInstanceIdentifier, kProxyInstanceIdentifier, kLocalPid);
+        unit_->SubscribeServiceMethod(kSkeletonInstanceIdentifier, kProxyInstanceIdentifier, kLocalNode);
 
     // Then the result is valid
     ASSERT_TRUE(call_result.has_value());
@@ -539,7 +542,7 @@ TEST_F(MessagePassingServiceInstanceLocalSubscribeMethodTest,
     // When calling SubscribeServiceMethod with a SkeletonMethodInstanceIdentifier for which no subscribe method handler
     // has been registered
     const auto call_result =
-        unit_->SubscribeServiceMethod(kSkeletonInstanceIdentifier, kProxyInstanceIdentifier, kLocalPid);
+        unit_->SubscribeServiceMethod(kSkeletonInstanceIdentifier, kProxyInstanceIdentifier, kLocalNode);
 
     // Then the result contains an error
     ASSERT_FALSE(call_result.has_value());
@@ -560,7 +563,7 @@ TEST_F(MessagePassingServiceInstanceLocalSubscribeMethodTest,
 
     // When calling SubscribeServiceMethod with target_node_id equal to the PID of the current process
     const auto call_result =
-        unit_->SubscribeServiceMethod(kSkeletonInstanceIdentifier, kProxyInstanceIdentifier, kLocalPid);
+        unit_->SubscribeServiceMethod(kSkeletonInstanceIdentifier, kProxyInstanceIdentifier, kLocalNode);
 
     // Then the result contains an error
     ASSERT_FALSE(call_result.has_value());
@@ -574,12 +577,12 @@ TEST_F(MessagePassingServiceInstanceLocalSubscribeMethodTest, ReturnsErrorWhenRe
 
     // Expecting that the registered method subscribe handler will be called which returns an error
     const auto error_code = ComErrc::kCallQueueFull;
-    EXPECT_CALL(mock_subscribe_method_handler_, Call(kProxyInstanceIdentifier, kLocalUid, kLocalPid))
+    EXPECT_CALL(mock_subscribe_method_handler_, Call(kProxyInstanceIdentifier, kLocalPrincipal, kLocalNode))
         .WillOnce(Return(MakeUnexpected(error_code)));
 
     // When calling SubscribeServiceMethod with target_node_id equal to the PID of the current process
     const auto call_result =
-        unit_->SubscribeServiceMethod(kSkeletonInstanceIdentifier, kProxyInstanceIdentifier, kLocalPid);
+        unit_->SubscribeServiceMethod(kSkeletonInstanceIdentifier, kProxyInstanceIdentifier, kLocalNode);
 
     // Then the result contains the error returned by the handler
     ASSERT_FALSE(call_result.has_value());
@@ -609,7 +612,7 @@ TEST_F(MessagePassingServiceInstanceRemoteSubscribeMethodTest, CallingWithOtherP
 
     // When calling SubscribeServiceMethod with target_node_id equal to the PID of a different process
     const auto call_result =
-        unit_->SubscribeServiceMethod(kSkeletonInstanceIdentifier, kProxyInstanceIdentifier, kRemotePid);
+        unit_->SubscribeServiceMethod(kSkeletonInstanceIdentifier, kProxyInstanceIdentifier, kRemoteNode);
 
     // Then the result is valid
     ASSERT_TRUE(call_result.has_value());
@@ -633,7 +636,7 @@ TEST_F(MessagePassingServiceInstanceRemoteSubscribeMethodTest, CallingGetsClient
 
     // When calling SubscribeServiceMethod with target_node_id equal to the PID of a different process
     const auto call_result =
-        unit_->SubscribeServiceMethod(kSkeletonInstanceIdentifier, kProxyInstanceIdentifier, kRemotePid);
+        unit_->SubscribeServiceMethod(kSkeletonInstanceIdentifier, kProxyInstanceIdentifier, kRemoteNode);
 
     // Then the result is valid
     ASSERT_TRUE(call_result.has_value());
@@ -650,7 +653,7 @@ TEST_F(MessagePassingServiceInstanceRemoteSubscribeMethodTest, ReturnsErrorWhenS
 
     // When calling SubscribeServiceMethod with target_node_id equal to the PID of a different process
     const auto call_result =
-        unit_->SubscribeServiceMethod(kSkeletonInstanceIdentifier, kProxyInstanceIdentifier, kRemotePid);
+        unit_->SubscribeServiceMethod(kSkeletonInstanceIdentifier, kProxyInstanceIdentifier, kRemoteNode);
 
     // Then an error is returned
     ASSERT_FALSE(call_result.has_value());
@@ -670,7 +673,7 @@ TEST_F(MessagePassingServiceInstanceRemoteSubscribeMethodTest, ReturnsErrorWhenR
 
     // When calling SubscribeServiceMethod with target_node_id equal to the PID of a different process
     const auto call_result =
-        unit_->SubscribeServiceMethod(kSkeletonInstanceIdentifier, kProxyInstanceIdentifier, kRemotePid);
+        unit_->SubscribeServiceMethod(kSkeletonInstanceIdentifier, kProxyInstanceIdentifier, kRemoteNode);
 
     // Then an error is returned
     ASSERT_FALSE(call_result.has_value());
@@ -689,7 +692,7 @@ TEST_F(MessagePassingServiceInstanceRemoteSubscribeMethodTest, ReturnsErrorWhenR
 
     // When calling SubscribeServiceMethod with target_node_id equal to the PID of a different process
     const auto call_result =
-        unit_->SubscribeServiceMethod(kSkeletonInstanceIdentifier, kProxyInstanceIdentifier, kRemotePid);
+        unit_->SubscribeServiceMethod(kSkeletonInstanceIdentifier, kProxyInstanceIdentifier, kRemoteNode);
 
     // Then the reported error is returned
     ASSERT_FALSE(call_result.has_value());
@@ -719,7 +722,7 @@ TEST_F(MessagePassingServiceInstanceRegisterMethodCallHandlerTest,
 using MessagePassingServiceInstanceRegisterSubscribeHandlerTest = MessagePassingServiceInstanceMethodsFixture;
 TEST_F(MessagePassingServiceInstanceRegisterSubscribeHandlerTest, ReregisteringHandlerReturnsError)
 {
-    ::testing::MockFunction<score::Result<void>(ProxyInstanceIdentifier, uid_t, pid_t)>
+    ::testing::MockFunction<score::Result<void>(ProxyInstanceIdentifier, message_passing::PrincipalId, message_passing::NodeId)>
         mock_subscribe_method_handler_2{};
     safecpp::Scope<> subscribe_method_handler_scope_2{};
     IMessagePassingService::ServiceMethodSubscribedHandler scoped_subscribe_method_handler_2{
@@ -1003,7 +1006,9 @@ TEST_F(MessagePassingServiceInstanceHandleCallMethodMessageTest, ReturnsSuccessW
     // Expecting that GetClientIdentity will be called which returns a uid different to the one registered in
     // RegisterMethodCallHandler
     const auto invalid_client_identity = ClientIdentity::FromCredentials(
-        client_identity_->GetNodeId(), client_identity_->GetPrincipalId() + 30, kLocalGid);
+        message_passing::NodeIdToPid(client_identity_->GetNodeId()),
+        message_passing::PrincipalIdToUid(client_identity_->GetPrincipalId()) + 30,
+        kLocalGid);
     EXPECT_CALL(server_connection_mock_, GetClientIdentity()).WillOnce(ReturnRef(invalid_client_identity));
 
     // Expecting that the registered method call handler will not be called
@@ -1025,7 +1030,9 @@ TEST_F(MessagePassingServiceInstanceHandleCallMethodMessageTest, RepliesErrorWhe
     // Expecting that GetClientIdentity will be called which returns a uid different to the one registered in
     // RegisterMethodCallHandler
     const auto invalid_client_identity = ClientIdentity::FromCredentials(
-        client_identity_->GetNodeId(), client_identity_->GetPrincipalId() + 30, kLocalGid);
+        message_passing::NodeIdToPid(client_identity_->GetNodeId()),
+        message_passing::PrincipalIdToUid(client_identity_->GetPrincipalId()) + 30,
+        kLocalGid);
     EXPECT_CALL(server_connection_mock_, GetClientIdentity()).WillOnce(ReturnRef(invalid_client_identity));
 
     // Expecting that a reply will be sent containing an unknown proxy error
@@ -1165,7 +1172,7 @@ TEST_F(MessagePassingServiceInstanceHandleSubscribeMethodMessageTest,
     // Expecting that the registered method subscribe handler will be called with the provided,
     // ProxyInstanceIdentifier and the proxy PID / UID derived from the
     // MessagePassingServiceInstance itself.
-    EXPECT_CALL(mock_subscribe_method_handler_, Call(kProxyInstanceIdentifier, kLocalUid, kLocalPid));
+    EXPECT_CALL(mock_subscribe_method_handler_, Call(kProxyInstanceIdentifier, kLocalPrincipal, kLocalNode));
 
     // When a message a MessageWithReply message is received of type kSubscribeServiceMethod
     const auto result =
@@ -1205,7 +1212,9 @@ TEST_F(MessagePassingServiceInstanceHandleSubscribeMethodMessageTest,
     // Expecting that GetClientIdentity will be called which returns a uid different to the one registered in
     // RegisterOnServiceMethodSubscribedHandler
     const auto invalid_client_identity = ClientIdentity::FromCredentials(
-        client_identity_->GetNodeId(), client_identity_->GetPrincipalId() + 30, kLocalGid);
+        message_passing::NodeIdToPid(client_identity_->GetNodeId()),
+        message_passing::PrincipalIdToUid(client_identity_->GetPrincipalId()) + 30,
+        kLocalGid);
     EXPECT_CALL(server_connection_mock_, GetClientIdentity()).WillOnce(ReturnRef(invalid_client_identity));
 
     // Expecting that the registered subscribe method handler will not be called
@@ -1228,7 +1237,9 @@ TEST_F(MessagePassingServiceInstanceHandleSubscribeMethodMessageTest,
     // Expecting that GetClientIdentity will be called which returns a uid different to the one registered in
     // RegisterOnServiceMethodSubscribedHandler
     const auto invalid_client_identity = ClientIdentity::FromCredentials(
-        client_identity_->GetNodeId(), client_identity_->GetPrincipalId() + 30, kLocalGid);
+        message_passing::NodeIdToPid(client_identity_->GetNodeId()),
+        message_passing::PrincipalIdToUid(client_identity_->GetPrincipalId()) + 30,
+        kLocalGid);
     EXPECT_CALL(server_connection_mock_, GetClientIdentity()).WillOnce(ReturnRef(invalid_client_identity));
 
     // Expecting that a reply will be sent containing an unknown proxy error
@@ -1253,7 +1264,9 @@ TEST_F(MessagePassingServiceInstanceHandleSubscribeMethodMessageTest,
 
     // Expecting that GetClientIdentity will be called which returns a random uid
     const auto invalid_client_identity = ClientIdentity::FromCredentials(
-        client_identity_->GetNodeId(), client_identity_->GetPrincipalId() + 30, kLocalGid);
+        message_passing::NodeIdToPid(client_identity_->GetNodeId()),
+        message_passing::PrincipalIdToUid(client_identity_->GetPrincipalId()) + 30,
+        kLocalGid);
     EXPECT_CALL(server_connection_mock_, GetClientIdentity()).WillOnce(ReturnRef(invalid_client_identity));
 
     // Expecting that the registered subscribe method handler will be called with the uid and pid returned by
@@ -1278,7 +1291,9 @@ TEST_F(MessagePassingServiceInstanceHandleSubscribeMethodMessageTest,
 
     // Expecting that GetClientIdentity will be called which returns a random uid
     const auto invalid_client_identity = ClientIdentity::FromCredentials(
-        client_identity_->GetNodeId(), client_identity_->GetPrincipalId() + 30, kLocalGid);
+        message_passing::NodeIdToPid(client_identity_->GetNodeId()),
+        message_passing::PrincipalIdToUid(client_identity_->GetPrincipalId()) + 30,
+        kLocalGid);
     EXPECT_CALL(server_connection_mock_, GetClientIdentity()).WillOnce(ReturnRef(invalid_client_identity));
 
     // Expecting that a reply will be sent containing success
@@ -1307,7 +1322,7 @@ TEST_F(MessagePassingServiceInstanceUnregisterMethodCallHandlerTest, CallingHand
     EXPECT_CALL(mock_method_call_handler_, Call(_)).Times(0);
 
     // When calling CallMethod with target_node_id equal to the PID of the current process
-    const auto call_result = unit_->CallMethod(kProxyMethodInstanceIdentifier, kQueuePosition, kLocalPid);
+    const auto call_result = unit_->CallMethod(kProxyMethodInstanceIdentifier, kQueuePosition, kLocalNode);
 
     // Then the result contains an error
     ASSERT_FALSE(call_result.has_value());
@@ -1338,7 +1353,7 @@ TEST_F(MessagePassingServiceInstanceUnregisterSubscribeMethodHandlerTest, Callin
 
     // When calling SubscribeServiceMethod with target_node_id equal to the PID of the current process
     const auto call_result =
-        unit_->SubscribeServiceMethod(kSkeletonInstanceIdentifier, kProxyInstanceIdentifier, kLocalPid);
+        unit_->SubscribeServiceMethod(kSkeletonInstanceIdentifier, kProxyInstanceIdentifier, kLocalNode);
 
     // Then the result contains an error
     ASSERT_FALSE(call_result.has_value());
@@ -1390,7 +1405,7 @@ TEST_F(MessagePassingServiceInstanceLocalUnsubscribeMethodTest, CallingWithSelfP
 
     // When calling UnsubscribeServiceMethod with target_node_id equal to the PID of the current process
     const auto call_result =
-        unit_->UnsubscribeServiceMethod(kSkeletonInstanceIdentifier, kProxyInstanceIdentifier, kLocalPid);
+        unit_->UnsubscribeServiceMethod(kSkeletonInstanceIdentifier, kProxyInstanceIdentifier, kLocalNode);
 
     // Then the result is valid
     ASSERT_TRUE(call_result.has_value());
@@ -1405,7 +1420,7 @@ TEST_F(MessagePassingServiceInstanceLocalUnsubscribeMethodTest,
     // When calling UnsubscribeServiceMethod with a SkeletonInstanceIdentifier for which no unsubscribe handler has been
     // registered (best-effort: returns success instead of error)
     const auto call_result =
-        unit_->UnsubscribeServiceMethod(kSkeletonInstanceIdentifier, kProxyInstanceIdentifier, kLocalPid);
+        unit_->UnsubscribeServiceMethod(kSkeletonInstanceIdentifier, kProxyInstanceIdentifier, kLocalNode);
 
     // Then the result is valid (best-effort: not-found is treated as success)
     ASSERT_TRUE(call_result.has_value());
@@ -1422,7 +1437,7 @@ TEST_F(MessagePassingServiceInstanceLocalUnsubscribeMethodTest,
 
     // When calling UnsubscribeServiceMethod with target_node_id equal to the PID of the current process
     const auto call_result =
-        unit_->UnsubscribeServiceMethod(kSkeletonInstanceIdentifier, kProxyInstanceIdentifier, kLocalPid);
+        unit_->UnsubscribeServiceMethod(kSkeletonInstanceIdentifier, kProxyInstanceIdentifier, kLocalNode);
 
     // Then the result is valid (best-effort: scope-expired is treated as success)
     ASSERT_TRUE(call_result.has_value());
@@ -1442,7 +1457,7 @@ TEST_F(MessagePassingServiceInstanceLocalUnsubscribeMethodTest,
 
     // When calling UnsubscribeServiceMethod
     score::cpp::ignore =
-        unit_->UnsubscribeServiceMethod(kSkeletonInstanceIdentifier, kProxyInstanceIdentifier, kLocalPid);
+        unit_->UnsubscribeServiceMethod(kSkeletonInstanceIdentifier, kProxyInstanceIdentifier, kLocalNode);
 }
 
 using MessagePassingServiceInstanceRemoteUnsubscribeMethodTest = MessagePassingServiceInstanceMethodsFixture;
@@ -1468,7 +1483,7 @@ TEST_F(MessagePassingServiceInstanceRemoteUnsubscribeMethodTest, CallingWithOthe
 
     // When calling UnsubscribeServiceMethod with target_node_id equal to the PID of a different process
     const auto call_result =
-        unit_->UnsubscribeServiceMethod(kSkeletonInstanceIdentifier, kProxyInstanceIdentifier, kRemotePid);
+        unit_->UnsubscribeServiceMethod(kSkeletonInstanceIdentifier, kProxyInstanceIdentifier, kRemoteNode);
 
     // Then the result is valid
     ASSERT_TRUE(call_result.has_value());
@@ -1485,7 +1500,7 @@ TEST_F(MessagePassingServiceInstanceRemoteUnsubscribeMethodTest, ReturnsErrorWhe
 
     // When calling UnsubscribeServiceMethod with target_node_id equal to the PID of a different process
     const auto call_result =
-        unit_->UnsubscribeServiceMethod(kSkeletonInstanceIdentifier, kProxyInstanceIdentifier, kRemotePid);
+        unit_->UnsubscribeServiceMethod(kSkeletonInstanceIdentifier, kProxyInstanceIdentifier, kRemoteNode);
 
     // Then an error is returned
     ASSERT_FALSE(call_result.has_value());
@@ -1505,7 +1520,7 @@ TEST_F(MessagePassingServiceInstanceRemoteUnsubscribeMethodTest, ReturnsErrorWhe
 
     // When calling UnsubscribeServiceMethod with target_node_id equal to the PID of a different process
     const auto call_result =
-        unit_->UnsubscribeServiceMethod(kSkeletonInstanceIdentifier, kProxyInstanceIdentifier, kRemotePid);
+        unit_->UnsubscribeServiceMethod(kSkeletonInstanceIdentifier, kProxyInstanceIdentifier, kRemoteNode);
 
     // Then an error is returned
     ASSERT_FALSE(call_result.has_value());
