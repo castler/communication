@@ -1,0 +1,120 @@
+diff -ru a/score/os/glob.cpp b/score/os/glob.cpp
+--- a/score/os/glob.cpp	2026-11-02 15:48:31.022000000 +0100
++++ b/score/os/glob.cpp	2026-11-02 15:48:51.414000000 +0100
+@@ -48,18 +48,21 @@
+          {Flag::kNoEscape, GLOB_NOESCAPE},
+          {Flag::kNoSort, GLOB_NOSORT},
+          {Flag::kPeriod, GLOB_PERIOD},
++#if !defined(__Fuchsia__)
+          {Flag::kMagChar, GLOB_MAGCHAR},
+          {Flag::kAltDirFunc, GLOB_ALTDIRFUNC},
+          {Flag::kBrace, GLOB_BRACE},
+          {Flag::kNoMagic, GLOB_NOMAGIC},
+          {Flag::kTilde, GLOB_TILDE},
++#endif
+ // Suppress "AUTOSAR C++14 A16-0-1" rule findings. This rule stated: "The pre-processor shall only be used for
+ // unconditional and conditional file inclusion and include guards, and using the following directives: (1) #ifndef,
+ // #ifdef, (3) #if, (4) #if defined, (5) #elif, (6) #else, (7) #define, (8) #endif, (9) #include.".
+ // Rationale: Pre-processor commands are used to allow different implementations for linux and QNX to exist
+ // in the same file. It also prevents compiler errors in linux code when compiling for QNX and vice versa.
+ // coverity[autosar_cpp14_a16_0_1_violation]
+-#ifdef __linux__
++#if defined(__Fuchsia__)
++#elif defined(__linux__)
+          {Flag::kTildeCheck, GLOB_TILDE_CHECK},
+          {Flag::kOnlyDir, GLOB_ONLYDIR}
+ // coverity[autosar_cpp14_a16_0_1_violation], see above rationale
+diff -ru a/score/os/glob.h b/score/os/glob.h
+--- a/score/os/glob.h	2026-11-02 15:48:31.013000000 +0100
++++ b/score/os/glob.h	2026-11-02 15:48:51.406000000 +0100
+@@ -48,18 +48,21 @@
+         kNoEscape = GLOB_NOESCAPE,
+         kNoSort = GLOB_NOSORT,
+         kPeriod = GLOB_PERIOD,
++#if !defined(__Fuchsia__)
+         kMagChar = GLOB_MAGCHAR,
+         kAltDirFunc = GLOB_ALTDIRFUNC,
+         kBrace = GLOB_BRACE,
+         kNoMagic = GLOB_NOMAGIC,
+         kTilde = GLOB_TILDE,
++#endif
+ // Suppress "AUTOSAR C++14 A16-0-1" rule findings. This rule stated: "The pre-processor shall only be used for
+ // unconditional and conditional file inclusion and include guards, and using the following directives: (1) #ifndef,
+ // #ifdef, (3) #if, (4) #if defined, (5) #elif, (6) #else, (7) #define, (8) #endif, (9) #include.".
+ // Rationale: Pre-processor commands are used to allow different implementations for linux and QNX to exist
+ // in the same file. It also prevents compiler errors in linux code when compiling for QNX and vice versa.
+ // coverity[autosar_cpp14_a16_0_1_violation]
+-#ifdef __linux__
++#if defined(__Fuchsia__)
++#elif defined(__linux__)
+         kTildeCheck = GLOB_TILDE_CHECK,
+         kOnlyDir = GLOB_ONLYDIR,
+ // coverity[autosar_cpp14_a16_0_1_violation], see above rationale
+diff -ru a/score/os/pthread.cpp b/score/os/pthread.cpp
+--- a/score/os/pthread.cpp	2026-11-02 15:48:31.026000000 +0100
++++ b/score/os/pthread.cpp	2026-11-02 15:48:44.448000000 +0100
+@@ -12,6 +12,20 @@
+  ********************************************************************************/
+ #include "score/os/pthread.h"
+ 
++#if defined(__Fuchsia__)
++#include <cerrno>
++#include <pthread.h>
++// Fuchsia libc has no process-shared pthread attributes; report ENOTSUP so callers see the limitation.
++#ifndef PTHREAD_PROCESS_SHARED
++#define PTHREAD_PROCESS_PRIVATE 0
++#define PTHREAD_PROCESS_SHARED 1
++#endif
++inline int pthread_mutexattr_setpshared(pthread_mutexattr_t*, int) { return ENOTSUP; }
++inline int pthread_condattr_setpshared(pthread_condattr_t*, int) { return ENOTSUP; }
++inline int pthread_setschedparam(pthread_t, int, const struct sched_param*) { return ENOTSUP; }
++inline int pthread_getschedparam(pthread_t, int*, struct sched_param*) { return ENOTSUP; }
++#endif
++
+ score::os::Pthread& score::os::Pthread::instance() noexcept
+ {
+     // suppress "AUTOSAR C++14 A3-3-2" rule finding. This rule states:
+diff -ru a/score/os/utils/interprocess/interprocess_conditional_variable.cpp b/score/os/utils/interprocess/interprocess_conditional_variable.cpp
+--- a/score/os/utils/interprocess/interprocess_conditional_variable.cpp	2026-11-02 15:48:31.037000000 +0100
++++ b/score/os/utils/interprocess/interprocess_conditional_variable.cpp	2026-11-02 15:48:44.448000000 +0100
+@@ -17,6 +17,18 @@
+ #include <iostream>
+ #include <tuple>
+ 
++#if defined(__Fuchsia__)
++#include <cerrno>
++#include <pthread.h>
++// Fuchsia libc has no process-shared pthread attributes; report ENOTSUP so callers see the limitation.
++#ifndef PTHREAD_PROCESS_SHARED
++#define PTHREAD_PROCESS_PRIVATE 0
++#define PTHREAD_PROCESS_SHARED 1
++#endif
++inline int pthread_mutexattr_setpshared(pthread_mutexattr_t*, int) { return ENOTSUP; }
++inline int pthread_condattr_setpshared(pthread_condattr_t*, int) { return ENOTSUP; }
++#endif
++
+ score::os::InterprocessConditionalVariable::InterprocessConditionalVariable() noexcept
+ {
+     std::int32_t error{0};
+diff -ru a/score/os/utils/interprocess/interprocess_mutex.cpp b/score/os/utils/interprocess/interprocess_mutex.cpp
+--- a/score/os/utils/interprocess/interprocess_mutex.cpp	2026-11-02 15:48:31.032000000 +0100
++++ b/score/os/utils/interprocess/interprocess_mutex.cpp	2026-11-02 15:48:44.448000000 +0100
+@@ -17,6 +17,18 @@
+ #include <pthread.h>
+ #include <iostream>
+ 
++#if defined(__Fuchsia__)
++#include <cerrno>
++#include <pthread.h>
++// Fuchsia libc has no process-shared pthread attributes; report ENOTSUP so callers see the limitation.
++#ifndef PTHREAD_PROCESS_SHARED
++#define PTHREAD_PROCESS_PRIVATE 0
++#define PTHREAD_PROCESS_SHARED 1
++#endif
++inline int pthread_mutexattr_setpshared(pthread_mutexattr_t*, int) { return ENOTSUP; }
++inline int pthread_condattr_setpshared(pthread_condattr_t*, int) { return ENOTSUP; }
++#endif
++
+ // We need to ensure that this is the case, since otherwise we cannot store it in shared memory.
+ static_assert(std::is_standard_layout<score::os::InterprocessMutex>::value,
+               "InterprocessMutex is not of Standard layout");

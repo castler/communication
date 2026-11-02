@@ -249,7 +249,7 @@ auto FlagFileCrawler::CrawlAndWatchWithRetry(const EnrichedInstanceIdentifier& e
 auto FlagFileCrawler::ConvertFromStringToInstanceId(std::string_view view) noexcept -> Result<LolaServiceInstanceId>
 {
     LolaServiceInstanceId::InstanceId actual_instance_id{};
-    const auto conversion_result = std::from_chars(view.cbegin(), view.cend(), actual_instance_id);
+    const auto conversion_result = std::from_chars(view.data(), view.data() + view.size(), actual_instance_id);
     if (conversion_result.ec != std::errc{})
     {
         return MakeUnexpected(ComErrc::kBindingFailure, "Could not parse instance id from string");

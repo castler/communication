@@ -228,3 +228,7 @@ build:fuchsia --linkopt=-fexceptions
 build:fuchsia --copt=-Wno-extra-semi
 # baselibs uses typeid and dynamic_cast, the Fuchsia clang toolchain defaults to -fno-rtti.
 build:fuchsia --cxxopt=-frtti
+# libc++ and musl do not provide these transitively (std::terminate, std::lock_guard, uid_t/mode_t as used by baselibs and mw/com).
+build:fuchsia --cxxopt=-include --cxxopt=exception
+build:fuchsia --cxxopt=-include --cxxopt=mutex
+build:fuchsia --cxxopt=-include --cxxopt=sys/types.h
