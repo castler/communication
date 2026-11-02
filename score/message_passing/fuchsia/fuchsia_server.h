@@ -97,8 +97,6 @@ class FuchsiaServer final : public IServer
     // becomes readable when a client connection is pending in the connection registry
     std::int32_t wake_fd_;
     std::recursive_mutex connection_setup_mutex_;
-    // only accessed from ProcessConnect(), which runs on the engine thread
-    std::uint32_t next_consumer_id_{1U};
 
     ConnectCallback connect_callback_;
     DisconnectCallback disconnect_callback_;

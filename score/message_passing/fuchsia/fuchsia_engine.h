@@ -50,7 +50,11 @@ class FuchsiaEngine final : public ISharedResourceEngine
         score::cpp::pmr::unique_ptr<score::os::Unistd> unistd{};
     };
 
-    FuchsiaEngine(score::cpp::pmr::memory_resource* memory_resource, LoggingCallback logger = GetCerrLogger()) noexcept;
+    /// \param consumer_id id this process/consumer was registered with; presented to servers as the principal of the
+    ///        client connections opened through this engine
+    FuchsiaEngine(score::cpp::pmr::memory_resource* memory_resource,
+                  LoggingCallback logger = GetCerrLogger(),
+                  std::uint32_t consumer_id = 0U) noexcept;
     ~FuchsiaEngine() noexcept override;
 
     FuchsiaEngine(const FuchsiaEngine&) = delete;
@@ -140,6 +144,7 @@ class FuchsiaEngine final : public ISharedResourceEngine
     std::int32_t ProcessTimerQueue() noexcept;
 
     score::cpp::pmr::memory_resource* const memory_resource_;
+    const std::uint32_t consumer_id_;
     OsResources os_resources_;
     LoggingCallback logger_;
 

@@ -29,5 +29,7 @@ closed protocol Connector {
     strict Connect(resource struct {
         identifier string:MAX_IDENTIFIER_LENGTH;
         socket zx.Handle:SOCKET;
+        /// Capability identity of the connecting consumer, as assigned at its registration.
+        consumer_id uint32;
     }) -> () error ConnectError;
 };

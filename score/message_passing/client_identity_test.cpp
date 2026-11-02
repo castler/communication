@@ -39,9 +39,26 @@ TEST(ClientIdentityTest, EqualityComparesAllCredentials)
 
 TEST(ClientIdentityTest, EndpointIdentityDiffersFromCredentialIdentity)
 {
-    EXPECT_NE(ClientIdentity::FromEndpoint(7), ClientIdentity::FromCredentials(7, 7, 0));
-    EXPECT_EQ(ClientIdentity::FromEndpoint(7), ClientIdentity::FromEndpoint(7));
-    EXPECT_NE(ClientIdentity::FromEndpoint(7), ClientIdentity::FromEndpoint(8));
+    EXPECT_NE(ClientIdentity::FromEndpoint(7, 7), ClientIdentity::FromCredentials(7, 7, 0));
+    EXPECT_EQ(ClientIdentity::FromEndpoint(7, 3), ClientIdentity::FromEndpoint(7, 3));
+    EXPECT_NE(ClientIdentity::FromEndpoint(7, 3), ClientIdentity::FromEndpoint(8, 3));
+    EXPECT_NE(ClientIdentity::FromEndpoint(7, 3), ClientIdentity::FromEndpoint(7, 4));
+}
+
+TEST(ClientIdentityTest, EndpointIdentitySeparatesNodeFromPrincipal)
+{
+    const auto identity = ClientIdentity::FromEndpoint(11, 5);
+    EXPECT_EQ(identity.GetNodeId(), 11);
+    EXPECT_EQ(identity.GetPrincipalId(), 5U);
+    EXPECT_NE(static_cast<std::uint32_t>(identity.GetNodeId()), identity.GetPrincipalId());
+}
+
+TEST(ClientIdentityTest, ReconnectOfSameConsumerKeepsPrincipalButChangesNode)
+{
+    const auto first = ClientIdentity::FromEndpoint(1, 5);
+    const auto second = ClientIdentity::FromEndpoint(2, 5);
+    EXPECT_EQ(first.GetPrincipalId(), second.GetPrincipalId());
+    EXPECT_NE(first.GetNodeId(), second.GetNodeId());
 }
 
 TEST(ClientIdentityTest, HashIsConsistentWithEquality)
@@ -51,14 +68,14 @@ TEST(ClientIdentityTest, HashIsConsistentWithEquality)
 
     std::unordered_set<ClientIdentity> identities{identity, ClientIdentity::FromCredentials(10, 20, 30)};
     EXPECT_EQ(identities.size(), 1U);
-    identities.insert(ClientIdentity::FromEndpoint(1));
+    identities.insert(ClientIdentity::FromEndpoint(1, 2));
     EXPECT_EQ(identities.size(), 2U);
 }
 
 TEST(ClientIdentityTest, ToStringDescribesIdentity)
 {
     EXPECT_EQ(ClientIdentity::FromCredentials(10, 20, 30).ToString(), "pid=10, uid=20, gid=30");
-    EXPECT_EQ(ClientIdentity::FromEndpoint(5).ToString(), "consumer=5");
+    EXPECT_EQ(ClientIdentity::FromEndpoint(4, 5).ToString(), "connection=4, consumer=5");
 }
 
 TEST(ClientIdentityTest, IsAllowedWithoutListAllowsEverybody)
@@ -83,7 +100,7 @@ TEST(ClientIdentityTest, IsAllowedSinglePrincipal)
 
 TEST(ClientIdentityTest, EndpointIdentityIsAllowedByConsumerId)
 {
-    const auto identity = ClientIdentity::FromEndpoint(5);
+    const auto identity = ClientIdentity::FromEndpoint(9, 5);
     EXPECT_TRUE(identity.IsAllowed(ClientIdentity::AllowedPrincipals{{5U}}));
     EXPECT_FALSE(identity.IsAllowed(ClientIdentity::AllowedPrincipals{{6U}}));
 }
