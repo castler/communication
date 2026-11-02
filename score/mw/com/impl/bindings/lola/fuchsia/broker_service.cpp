@@ -160,6 +160,19 @@ void BrokerService::OnLeaseEnd(LeaseId lease, LeaseKind kind)
 {
     // Destroying the waits from within their own handler is avoided by deferring.
     async::PostTask(dispatcher_, [this, lease] { watches_.erase(lease); });
+    if (kind == LeaseKind::kProxy)
+    {
+        const auto owner = proxy_incarnation_.find(lease);
+        if (owner != proxy_incarnation_.end())
+        {
+            const auto retained = retained_.find(owner->second);
+            if (retained != retained_.end())
+            {
+                retained->second.fenced.erase(lease);
+            }
+            proxy_incarnation_.erase(owner);
+        }
+    }
     if (lease_end_observer_)
     {
         lease_end_observer_(lease, kind);
@@ -184,7 +197,7 @@ void BrokerService::OnFence(const InstanceKey& key, Epoch epoch, BrokerFenceReas
     }
     for (auto& local : retained.fenced)
     {
-        local.signal_peer(0U, ZX_USER_SIGNAL_0);
+        local.second.signal_peer(0U, ZX_USER_SIGNAL_0);
     }
     retained.fenced.clear();
 }
@@ -217,6 +230,31 @@ void BrokerService::BeginIncarnation(BeginIncarnationRequest& request, BeginInca
     completer.Reply(fit::ok(score_mw_com::BrokerBeginIncarnationResponse{epoch, lease}));
 }
 
+bool BrokerService::VerifyRegions(zx::vmo& data,
+                                  zx::vmo& control,
+                                  const std::uint64_t data_offset,
+                                  const std::uint64_t control_offset,
+                                  const Epoch epoch,
+                                  Retained& retained)
+{
+    zx_vaddr_t data_mapping{0U};
+    std::size_t data_size{0U};
+    const bool data_ok = MapAndCheckHeader(data, false, data_offset, epoch, data_mapping, data_size);
+    if (data_ok)
+    {
+        zx::vmar::root_self()->unmap(data_mapping, data_size);
+    }
+    if (!data_ok ||
+        !MapAndCheckHeader(control, true, control_offset, epoch, retained.control_mapping, retained.control_size))
+    {
+        return false;
+    }
+    retained.data = std::move(data);
+    retained.control = std::move(control);
+    retained.control_header_offset = control_offset;
+    return true;
+}
+
 void BrokerService::Publish(PublishRequest& request, PublishCompleter::Sync& completer)
 {
     const InstanceKey key = ToKey(request.instance());
@@ -227,20 +265,12 @@ void BrokerService::Publish(PublishRequest& request, PublishCompleter::Sync& com
         return;
     }
     Retained retained;
-    zx_vaddr_t data_mapping{0U};
-    std::size_t data_size{0U};
-    const bool data_ok =
-        MapAndCheckHeader(request.data(), false, request.data_header_offset(), epoch, data_mapping, data_size);
-    if (data_ok)
-    {
-        zx::vmar::root_self()->unmap(data_mapping, data_size);
-    }
-    if (!data_ok || !MapAndCheckHeader(request.control(),
-                                       true,
-                                       request.control_header_offset(),
-                                       epoch,
-                                       retained.control_mapping,
-                                       retained.control_size))
+    if (!VerifyRegions(request.data(),
+                       request.control(),
+                       request.data_header_offset(),
+                       request.control_header_offset(),
+                       epoch,
+                       retained))
     {
         completer.Reply(fit::error(score_mw_com::BrokerError::kInvalidRegion));
         return;
@@ -252,11 +282,42 @@ void BrokerService::Publish(PublishRequest& request, PublishCompleter::Sync& com
         completer.Reply(fit::error(ToError(status)));
         return;
     }
-    retained.data = std::move(request.data());
-    retained.control = std::move(request.control());
-    retained.control_header_offset = request.control_header_offset();
     retained_.emplace(RetainedKey{key, epoch}, std::move(retained));
     completer.Reply(fit::ok());
+}
+
+void BrokerService::Reannounce(ReannounceRequest& request, ReannounceCompleter::Sync& completer)
+{
+    const InstanceKey key = ToKey(request.instance());
+    const Epoch epoch = request.epoch();
+    if (retained_.count({key, epoch}) != 0U)
+    {
+        completer.Reply(fit::error(score_mw_com::BrokerError::kAlreadyProvisioned));
+        return;
+    }
+    Retained retained;
+    if (!VerifyRegions(request.data(),
+                       request.control(),
+                       request.data_header_offset(),
+                       request.control_header_offset(),
+                       epoch,
+                       retained))
+    {
+        completer.Reply(fit::error(score_mw_com::BrokerError::kInvalidRegion));
+        return;
+    }
+    LeaseId lease{};
+    const auto status = core_.AdoptIncarnation(key, epoch, lease);
+    if (status != BrokerStatus::kOk)
+    {
+        zx::vmar::root_self()->unmap(retained.control_mapping, retained.control_size);
+        completer.Reply(fit::error(ToError(status)));
+        return;
+    }
+    retained_.emplace(RetainedKey{key, epoch}, std::move(retained));
+    StartWatch(lease, LeaseKind::kSkeleton, std::move(request.liveness()), std::move(request.process()));
+    score::mw::log::LogInfo(kLogContext) << "Adopted epoch " << epoch << " of instance " << key.instance_id << ".";
+    completer.Reply(fit::ok(score_mw_com::BrokerReannounceResponse{lease}));
 }
 
 void BrokerService::Resign(ResignRequest& request, ResignCompleter::Sync& completer)
@@ -283,7 +344,8 @@ void BrokerService::RegisterProxy(RegisterProxyRequest& request, RegisterProxyCo
         completer.Reply(fit::error(score_mw_com::BrokerError::kResourceExhausted));
         return;
     }
-    retained_.at({key, request.epoch()}).fenced.push_back(std::move(local));
+    retained_.at({key, request.epoch()}).fenced.emplace(lease, std::move(local));
+    proxy_incarnation_.emplace(lease, RetainedKey{key, request.epoch()});
     StartWatch(lease, LeaseKind::kProxy, std::move(request.liveness()), std::move(request.process()));
     completer.Reply(fit::ok(score_mw_com::BrokerRegisterProxyResponse{lease, std::move(remote)}));
 }

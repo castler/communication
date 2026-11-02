@@ -111,6 +111,25 @@ fuchsia_cc_binary(
     ],
 )
 
+fuchsia_cc_binary(
+    name = "sleeper_main",
+    srcs = ["sleeper_main.cc"],
+    tags = ["manual"],
+)
+
+fuchsia_cc_binary(
+    name = "broker_hardening_test",
+    srcs = ["broker_hardening_test.cc"],
+    tags = ["manual"],
+    deps = [
+        "//score/mw/com/impl/bindings/lola/fuchsia:incarnation_header",
+        "//score/mw/com/impl/bindings/lola/fuchsia:score_mw_com_fidl_cpp",
+        "@fuchsia_sdk//pkg/fdio",
+        "@fuchsia_sdk//pkg/syslog",
+        "@fuchsia_sdk//pkg/zx",
+    ],
+)
+
 fuchsia_component_manifest(
     name = "broker_manifest",
     src = "meta/broker.cml",
@@ -184,6 +203,37 @@ fuchsia_test_component(
     deps = [":broker_test"],
 )
 
+fuchsia_component_manifest(
+    name = "sleeper_manifest",
+    src = "meta/sleeper.cml",
+    includes = ["@fuchsia_sdk//pkg/syslog:client"],
+    tags = ["manual"],
+)
+
+fuchsia_component(
+    name = "sleeper_component",
+    manifest = ":sleeper_manifest",
+    tags = ["manual"],
+    deps = [":sleeper_main"],
+)
+
+fuchsia_component_manifest(
+    name = "broker_hardening_test_manifest",
+    src = "meta/broker_hardening_test.cml",
+    includes = [
+        "@fuchsia_sdk//pkg/sys/testing:elf_test_runner",
+        "@fuchsia_sdk//pkg/syslog:client",
+    ],
+    tags = ["manual"],
+)
+
+fuchsia_test_component(
+    name = "broker_hardening_test_component",
+    manifest = ":broker_hardening_test_manifest",
+    tags = ["manual"],
+    deps = [":broker_hardening_test"],
+)
+
 fuchsia_test_package(
     name = "test_pkg",
     package_name = "fuchsia_broker_test",
@@ -192,13 +242,25 @@ fuchsia_test_package(
         ":discovery_component",
         ":proxy_component",
         ":skeleton_component",
+        ":sleeper_component",
     ],
     tags = ["manual"],
-    test_components = [":broker_test_component"],
+    test_components = [
+        ":broker_hardening_test_component",
+        ":broker_test_component",
+    ],
 )
 
 femu_integration_test(
     name = "fuchsia_broker_itf_test",
     srcs = ["test_fuchsia_broker.py"],
     packages = [":test_pkg"],
+)
+
+# The hardening test spawns the broker and the stand-in holders itself (/pkg/bin), so that it can kill and restart them.
+femu_integration_test(
+    name = "fuchsia_broker_hardening_itf_test",
+    srcs = ["test_fuchsia_broker_hardening.py"],
+    packages = [":test_pkg"],
+    timeout = "long",
 )

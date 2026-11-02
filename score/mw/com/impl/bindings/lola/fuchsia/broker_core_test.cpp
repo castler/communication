@@ -204,6 +204,34 @@ TEST_F(BrokerCoreTest, ProxyCannotRegisterOnFencedOrUnknownIncarnation)
     EXPECT_EQ(last_reason_, BrokerFenceReason::kResigned);
 }
 
+TEST_F(BrokerCoreTest, RestartedBrokerAdoptsALiveIncarnationAndKeepsEpochsMonotonic)
+{
+    LeaseId skeleton{};
+    ASSERT_EQ(core_.AdoptIncarnation(kInstance, 5000U, skeleton), BrokerStatus::kOk);
+    CoreStats stats = core_.Stats(kInstance);
+    EXPECT_EQ(stats.active_epoch, 5000U);
+    EXPECT_EQ(stats.last_epoch, 5000U);
+
+    LeaseId proxy{};
+    EXPECT_EQ(core_.RegisterProxy(kInstance, 5000U, proxy), BrokerStatus::kOk);
+    core_.SkeletonLost(skeleton, BrokerFenceReason::kProcessTerminated);
+    core_.ProxyEnded(proxy);
+
+    now_ = 100U;  // behind the adopted epoch
+    EXPECT_EQ(Provision(kInstance), 5001U);
+}
+
+TEST_F(BrokerCoreTest, AdoptionIsRefusedWhileTheInstanceHasALiveIncarnation)
+{
+    LeaseId lease{};
+    const Epoch live = Provision(kInstance);
+    EXPECT_EQ(core_.AdoptIncarnation(kInstance, live + 10U, lease), BrokerStatus::kAlreadyProvisioned);
+    EXPECT_EQ(core_.AdoptIncarnation(kOther, 0U, lease), BrokerStatus::kStaleEpoch);
+    EXPECT_EQ(core_.AdoptIncarnation(kOther, UINT64_MAX, lease), BrokerStatus::kStaleEpoch);
+    EXPECT_EQ(core_.AdoptIncarnation(kOther, 77U, lease), BrokerStatus::kOk);
+    EXPECT_EQ(core_.AdoptIncarnation(kOther, 78U, lease), BrokerStatus::kAlreadyProvisioned);
+}
+
 TEST(IncarnationHeaderTest, FenceIsVisibleToTheReaderOfThatEpochOnly)
 {
     IncarnationHeader header{};
