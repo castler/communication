@@ -32,3 +32,10 @@ def test_fidl_rights_on_receive(target):
     print(result.output)
     assert result.returncode == 0, result.output
     assert "RIGHTS_REDUCTION_TEST PASS" in result.output, result.output
+
+
+def test_event_notification(target):
+    result = target.run_test_component("fuchsia_attach_test#meta/events_test.cm")
+    print(result.output)
+    assert result.returncode == 0, result.output
+    assert "EVENTS_TEST PASS" in result.output, result.output

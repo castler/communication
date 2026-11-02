@@ -69,6 +69,17 @@ class FidlVmoHandleClient final : public score::memory::shared::fuchsia::IVmoHan
     /// \brief Peer-closed on it means that the skeleton is gone.
     const zx::eventpair& liveness() const noexcept;
 
+    /// \brief Blocks until the skeleton published something (USER_0), the skeleton is gone or `deadline` passed. On ZX_OK
+    ///        the signal is already cleared: read the VMO afterwards, so that no publication is lost (several may have
+    ///        been coalesced into one wake-up). ZX_ERR_PEER_CLOSED: skeleton gone, ZX_ERR_TIMED_OUT, ZX_ERR_BAD_STATE
+    ///        before Acquire() or after ReleaseNotification().
+    zx_status_t WaitForNotification(const zx::time deadline) noexcept;
+    /// \brief Opt-in polling: closes the notification handle. The skeleton drops the subscriber on its next
+    ///        notification and spends no further syscall on it; the caller polls the VMO itself.
+    void ReleaseNotification() noexcept;
+    /// \brief For waiting on several skeletons with one port.
+    const zx::eventpair& notification() const noexcept { return notification_; }
+
   private:
     zx_status_t EnsureAttached();
 
@@ -81,7 +92,7 @@ class FidlVmoHandleClient final : public score::memory::shared::fuchsia::IVmoHan
     std::optional<AttachInfo> info_;
     std::map<VmoRole, zx::vmo> handles_;
     zx::eventpair liveness_;
-    fidl::ClientEnd<score_mw_com::EventChannel> events_;
+    zx::eventpair notification_;
 };
 
 }  // namespace score::mw::com::impl::lola::fuchsia

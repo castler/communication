@@ -47,6 +47,7 @@ inline bool IsConsumerWritable(const std::string& key) noexcept
 constexpr zx_rights_t kDataRights = ZX_RIGHT_READ | ZX_RIGHT_MAP | ZX_RIGHT_GET_PROPERTY;
 constexpr zx_rights_t kControlRights = ZX_RIGHT_READ | ZX_RIGHT_WRITE | ZX_RIGHT_MAP | ZX_RIGHT_GET_PROPERTY;
 constexpr zx_rights_t kLivenessRights = ZX_RIGHT_WAIT;
+constexpr zx_rights_t kNotificationRights = ZX_RIGHT_WAIT | ZX_RIGHT_SIGNAL;
 
 }  // namespace score::mw::com::impl::lola::fuchsia
 
