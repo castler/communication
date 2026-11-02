@@ -1,0 +1,92 @@
+// Copyright (c) 2026 Contributors to the Eclipse Foundation
+//
+// See the NOTICE file(s) distributed with this work for additional
+// information regarding copyright ownership.
+//
+// This program and the accompanying materials are made available under the
+// terms of the Apache License Version 2.0 which is available at
+// https://www.apache.org/licenses/LICENSE-2.0
+//
+// SPDX-License-Identifier: Apache-2.0
+{
+    include: [
+        "sys/testing/elf_test_runner.shard.cml",
+        "syslog/client.shard.cml",
+    ],
+
+    program: {
+        binary: "bin/broker_test",
+    },
+
+    // All lazy: the skeleton is started by the first connection to one of its capabilities (and again after every death).
+    children: [
+        {
+            name: "discovery",
+            url: "#meta/discovery.cm",
+        },
+        {
+            name: "broker",
+            url: "#meta/broker.cm",
+        },
+        {
+            name: "skeleton",
+            url: "#meta/skeleton.cm",
+        },
+        {
+            name: "proxy",
+            url: "#meta/proxy.cm",
+        },
+    ],
+    offer: [
+        {
+            protocol: "fuchsia.logger.LogSink",
+            from: "parent",
+            to: [
+                "#broker",
+                "#discovery",
+                "#proxy",
+                "#skeleton",
+            ],
+        },
+        {
+            protocol: "score.mw.com.registry.for_app_1000",
+            from: "#discovery",
+            to: "#skeleton",
+            as: "score.mw.com.ServiceRegistry",
+        },
+        {
+            protocol: "score.mw.com.discovery.for_app_4002",
+            from: "#discovery",
+            to: "#proxy",
+            as: "score.mw.com.ServiceDiscovery",
+        },
+        {
+            protocol: "score.mw.com.Endpoint.for_app_4002",
+            from: "#skeleton",
+            to: "#proxy",
+            as: "score.mw.com.Endpoint",
+        },
+        {
+            protocol: "score.mw.com.Broker",
+            from: "#broker",
+            to: [
+                "#proxy",
+                "#skeleton",
+            ],
+        },
+    ],
+    use: [
+        {
+            protocol: "score.mw.com.Broker",
+            from: "#broker",
+        },
+        {
+            protocol: "score.mw.com.test.broker.Skeleton",
+            from: "#skeleton",
+        },
+        {
+            protocol: "score.mw.com.test.broker.Proxy",
+            from: "#proxy",
+        },
+    ],
+}

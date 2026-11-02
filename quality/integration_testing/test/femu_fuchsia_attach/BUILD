@@ -47,6 +47,7 @@ fuchsia_cc_binary(
     name = "discovery_main",
     srcs = ["discovery_main.cc"],
     tags = ["manual"],
+    visibility = ["//quality/integration_testing/test:__subpackages__"],
     deps = [
         "//score/mw/com/impl/bindings/lola/fuchsia:discovery_service",
         "@fuchsia_sdk//pkg/async-loop-cpp",

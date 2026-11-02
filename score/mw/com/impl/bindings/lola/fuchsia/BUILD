@@ -91,3 +91,50 @@ cc_library(
         "@score_baselibs//score/mw/log",
     ],
 )
+
+# Lease broker (design/fuchsia/README.md section 6.5). The core and the header are platform neutral and unit tested on
+# the host; the service is the Fuchsia shell (VMOs, eventpairs, process handles).
+
+cc_library(
+    name = "incarnation_header",
+    hdrs = ["incarnation_header.h"],
+    features = COMPILER_WARNING_FEATURES,
+    visibility = ["//quality/integration_testing/test:__subpackages__"],
+)
+
+cc_library(
+    name = "broker_core",
+    srcs = ["broker_core.cpp"],
+    hdrs = ["broker_core.h"],
+    features = COMPILER_WARNING_FEATURES,
+    visibility = ["//quality/integration_testing/test:__subpackages__"],
+)
+
+cc_test(
+    name = "broker_core_test",
+    srcs = ["broker_core_test.cpp"],
+    features = COMPILER_WARNING_FEATURES,
+    deps = [
+        ":broker_core",
+        ":incarnation_header",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "broker_service",
+    srcs = ["broker_service.cpp"],
+    hdrs = ["broker_service.h"],
+    features = COMPILER_WARNING_FEATURES,
+    tags = ["manual"],
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = ["//quality/integration_testing/test:__subpackages__"],
+    deps = [
+        ":broker_core",
+        ":incarnation_header",
+        ":score_mw_com_fidl_cpp",
+        "@fuchsia_sdk//pkg/async-cpp",
+        "@fuchsia_sdk//pkg/zx",
+        "@score_baselibs//score/mw/log",
+    ],
+)

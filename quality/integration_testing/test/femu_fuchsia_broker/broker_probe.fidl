@@ -1,0 +1,74 @@
+// Copyright (c) 2026 Contributors to the Eclipse Foundation
+//
+// See the NOTICE file(s) distributed with this work for additional
+// information regarding copyright ownership.
+//
+// This program and the accompanying materials are made available under the
+// terms of the Apache License Version 2.0 which is available at
+// https://www.apache.org/licenses/LICENSE-2.0
+//
+// SPDX-License-Identifier: Apache-2.0
+
+// Test only: control of the skeleton (crash on request) and observation of what the proxy saw. ITF only sees the
+// output of the driver.
+library score.mw.com.test.broker;
+
+type CrashMode = strict enum : uint8 {
+    /// zx_process_exit
+    EXIT = 1;
+    /// __builtin_trap, an unhandled exception kills the process
+    TRAP = 2;
+};
+
+@discoverable
+closed protocol Skeleton {
+    /// Epoch of the running incarnation; the first call after a crash starts a new one.
+    strict Epoch() -> (struct {
+        epoch uint64;
+    });
+    strict Crash(struct {
+        mode CrashMode;
+    });
+};
+
+type AttachResult = struct {
+    ok bool;
+    /// What the Endpoint said, what discovery said, what the headers in the regions say.
+    epoch uint64;
+    discovery_epoch uint64;
+    data_header_epoch uint64;
+    control_header_epoch uint64;
+    /// Payload of the data region: epoch ^ 0x5a5a for a healthy incarnation.
+    data_value uint64;
+    proxy_lease uint64;
+    /// Zero if there was none (first attach).
+    released_lease uint64;
+    attach_us uint64;
+};
+
+type FenceResult = struct {
+    timed_out bool;
+    skeleton_liveness_closed bool;
+    fenced_signalled bool;
+    control_tombstoned bool;
+    /// Data region of the dead incarnation: still mapped and readable, header unchanged (stale, not fresh).
+    data_header_epoch_after uint64;
+    data_value_after uint64;
+    /// Until the first of the two signals, and until the tombstone was visible in the control region.
+    detect_us uint64;
+    tombstone_us uint64;
+};
+
+@discoverable
+closed protocol Proxy {
+    /// Discovery (waits for an epoch other than the previous one), Endpoint.Attach, map, header validation, lease at
+    /// the broker; releases the lease of the previous incarnation afterwards.
+    strict Attach() -> (struct {
+        result AttachResult;
+    });
+    strict WaitFenced(struct {
+        timeout_ms uint32;
+    }) -> (struct {
+        result FenceResult;
+    });
+};

@@ -68,6 +68,10 @@ class FidlVmoHandleServer final : public score::memory::shared::fuchsia::IVmoHan
     /// \brief Handler to hand to OutgoingDirectory::AddProtocol for the endpoint of `application_id`.
     fidl::ProtocolHandler<score_mw_com::Endpoint> CreateHandler(const std::uint64_t application_id);
 
+    /// \brief Duplicate of a published region for the broker (Broker.Publish): the declared Attach rights plus TRANSFER.
+    ///        nullopt if the region was not published or lacks the rights.
+    std::optional<zx::vmo> DuplicateForBroker(const VmoRole role) const noexcept;
+
     /// \brief Number of successful Attach calls on the endpoint of `application_id` / of all endpoints.
     std::size_t AttachCount(const std::uint64_t application_id) const noexcept;
     std::size_t AttachCount() const noexcept;
