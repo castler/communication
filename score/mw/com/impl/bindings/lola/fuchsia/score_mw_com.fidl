@@ -129,3 +129,95 @@ closed protocol EventChannel {
         epoch uint64;
     });
 };
+
+type BrokerError = flexible enum : uint32 {
+    /// The instance has no ACTIVE incarnation (or none with that epoch).
+    NOT_ACTIVE = 1;
+    /// A skeleton incarnation of the instance is still provisioned or active.
+    ALREADY_PROVISIONED = 2;
+    /// Too many fenced incarnations are still pinned by live proxies.
+    RESOURCE_EXHAUSTED = 3;
+    /// The regions do not carry the expected incarnation header.
+    INVALID_REGION = 4;
+    STALE_EPOCH = 5;
+};
+
+/// Why an incarnation was fenced.
+type FenceReason = flexible enum : uint8 {
+    NONE = 0;
+    RESIGNED = 1;
+    PROCESS_TERMINATED = 2;
+    LIVENESS_CLOSED = 3;
+};
+
+type BrokerStats = struct {
+    /// 0 if no incarnation is provisioned or active.
+    active_epoch uint64;
+    last_epoch uint64;
+    /// Incarnations whose VMOs the broker still holds (active + draining).
+    retained_incarnations uint32;
+    /// Fenced incarnations still pinned by live proxy leases.
+    draining_incarnations uint32;
+    live_proxy_leases uint32;
+    fenced_total uint32;
+    released_total uint32;
+    last_fence_reason FenceReason;
+    fenced_by_process uint32;
+    fenced_by_liveness uint32;
+};
+
+/// Lease broker, one per realm slice (design/fuchsia/README.md section 6.5). Never on the data path: the broker retains
+/// the regions of every skeleton incarnation, watches skeletons and proxies for termination and fences an incarnation
+/// when its skeleton is gone (control header epoch := UINT64_MAX, `fenced` eventpair signalled USER_0). Regions are
+/// handed to proxies by the skeleton's `Endpoint`, not by the broker.
+///
+/// Liveness of a holder is the peer-closed of the `liveness` eventpair it sends (needs no further right) and/or
+/// ZX_PROCESS_TERMINATED of an optional process handle (needs WAIT, also tells crash from exit).
+@discoverable(name="score.mw.com.Broker")
+closed protocol Broker {
+    /// Allocates the next epoch of the instance (strictly increasing, boot-clock based) and a skeleton lease.
+    strict BeginIncarnation(resource struct {
+        instance ServiceInstanceId;
+        liveness zx.Handle:<EVENTPAIR, zx.Rights.WAIT>;
+        process zx.Handle:<PROCESS, zx.Rights.WAIT, optional>;
+    }) -> (struct {
+        epoch uint64;
+        skeleton_lease uint64;
+    }) error BrokerError;
+    /// Deposits the regions of `epoch`; the broker checks the incarnation header at the given offsets (magic and
+    /// epoch, in both regions) before the incarnation becomes ACTIVE.
+    strict Publish(resource struct {
+        instance ServiceInstanceId;
+        epoch uint64;
+        data zx.Handle:<VMO, zx.Rights.READ | zx.Rights.MAP | zx.Rights.GET_PROPERTY>;
+        control zx.Handle:<VMO, zx.Rights.READ | zx.Rights.WRITE | zx.Rights.MAP | zx.Rights.GET_PROPERTY>;
+        data_header_offset uint64;
+        control_header_offset uint64;
+    }) -> () error BrokerError;
+    /// Orderly StopOffer: fences at once.
+    strict Resign(struct {
+        instance ServiceInstanceId;
+        epoch uint64;
+    }) -> ();
+    /// Proxy lease on `epoch`. `application_id` is informational (accounting/logging); the identity that grants access is
+    /// still the routed `Endpoint`.
+    strict RegisterProxy(resource struct {
+        instance ServiceInstanceId;
+        epoch uint64;
+        application_id uint64;
+        liveness zx.Handle:<EVENTPAIR, zx.Rights.WAIT>;
+        process zx.Handle:<PROCESS, zx.Rights.WAIT, optional>;
+    }) -> (resource struct {
+        proxy_lease uint64;
+        /// USER_0 = the incarnation is fenced. Peer-closed without USER_0 = broker lost, not skeleton lost.
+        fenced zx.Handle:<EVENTPAIR, zx.Rights.WAIT>;
+    }) error BrokerError;
+    strict ReleaseLease(struct {
+        proxy_lease uint64;
+    }) -> ();
+    strict Inspect(struct {
+        instance ServiceInstanceId;
+    }) -> (struct {
+        stats BrokerStats;
+    });
+};

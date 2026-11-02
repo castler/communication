@@ -185,6 +185,7 @@ cc_library(
     tags = ["FFI"],
     visibility = [
         "//quality/integration_testing/test/femu_fuchsia_attach:__pkg__",
+        "//quality/integration_testing/test/femu_fuchsia_broker:__pkg__",
         "//quality/integration_testing/test/femu_vmo_shm:__pkg__",
     ],
     deps = [

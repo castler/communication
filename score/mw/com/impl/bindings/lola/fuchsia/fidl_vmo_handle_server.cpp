@@ -207,6 +207,22 @@ auto FidlVmoHandleServer::CreateHandler(const std::uint64_t application_id)
     };
 }
 
+auto FidlVmoHandleServer::DuplicateForBroker(const VmoRole role) const noexcept -> std::optional<zx::vmo>
+{
+    const std::lock_guard<std::mutex> lock{state_->mutex};
+    const auto found = state_->published.find(role);
+    if (found == state_->published.end())
+    {
+        return std::nullopt;
+    }
+    auto copy = DuplicateForSending(found->second.handle, role == VmoRole::kData ? kDataRights : kControlRights);
+    if (!copy.has_value())
+    {
+        return std::nullopt;
+    }
+    return std::move(copy).value();
+}
+
 auto FidlVmoHandleServer::AttachCount(const std::uint64_t application_id) const noexcept -> std::size_t
 {
     const std::lock_guard<std::mutex> lock{state_->mutex};
