@@ -16,6 +16,7 @@
 #include "score/expected.hpp"
 #include "score/os/errno.h"
 #include <cstdint>
+#include <sys/types.h>
 
 namespace score::memory::shared
 {
