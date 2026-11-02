@@ -290,6 +290,7 @@ All workflows that save or delete caches already declare this permission.
 | `_coverage_report.yml` | `coverage_report` |
 | `_codeql.yml` | _(none — empty)_ |
 | `build_and_test_qnx.yml` | `build_and_test_qnx` |
+| `build_and_test_fuchsia.yml` | `build_and_test_fuchsia` (standalone, not part of the nightly cache recreation) |
 | `deploy_docs.yml` | `build_docs` |
 
 ## 8. Risks and Mitigations

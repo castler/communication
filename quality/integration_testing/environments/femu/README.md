@@ -26,6 +26,26 @@ bazel test --config=fuchsia //quality/integration_testing/test/femu_hello_world:
 - The Fuchsia toolchains are only registered with `--config=fuchsia` (root `.bazelrc`) and all
   targets are tagged `manual`, so regular builds and `//...` are not affected.
 
+## Running the tests locally / in CI
+
+All Fuchsia targets are tagged `manual`, so wildcards (`//...`, `:all`) skip them and they must be
+named explicitly. Locally you need `/dev/kvm` access (user in group `kvm`) and network access for the
+first SDK / product bundle download:
+
+```bash
+bazel test --config=fuchsia \
+  //quality/integration_testing/test/femu_hello_world:hello_world_itf_test \
+  //quality/integration_testing/test/femu_message_passing:message_passing_itf_test
+```
+
+Emulator and test output ends up in `bazel-testlogs/<package>/<target>/test.log`.
+
+CI: `.github/workflows/build_and_test_fuchsia.yml` ("Fuchsia / FEMU - Build & Test") runs the same
+commands with `--config=ci` on `ubuntu-24.04`, after enabling `/dev/kvm` with a udev rule. It runs on
+pull requests, the merge queue and pushes to `main`, is not a required check yet, and uploads the
+Bazel test logs as `bazel-testlogs-fuchsia` on failure. Without KVM the emulator falls back to TCG
+(a warning is emitted) and the tests are expected to time out.
+
 ## Sandboxing
 
 The test runs in the Bazel linux-sandbox without network (`--nosandbox_default_allow_network`,

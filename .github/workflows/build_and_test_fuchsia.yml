@@ -1,0 +1,87 @@
+# *******************************************************************************
+# Copyright (c) 2026 Contributors to the Eclipse Foundation
+#
+# See the NOTICE file(s) distributed with this work for additional
+# information regarding copyright ownership.
+#
+# This program and the accompanying materials are made available under the
+# terms of the Apache License Version 2.0 which is available at
+# https://www.apache.org/licenses/LICENSE-2.0
+#
+# SPDX-License-Identifier: Apache-2.0
+# *******************************************************************************
+
+# Workflow configuration for S-CORE CI - Bazel Build & Test for the Fuchsia target platform.
+# Builds the Fuchsia packages and runs the FEMU (Fuchsia emulator) ITF integration tests.
+# Not a required check yet: do not add "Fuchsia / FEMU - Build & Test" to the branch protection rules
+# until the job has proven to be stable.
+
+name: Fuchsia
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, reopened, synchronize]
+  merge_group:
+    types: [checks_requested]
+  workflow_dispatch:
+
+concurrency:
+  group: build_and_test_fuchsia-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build_and_test_fuchsia:
+    name: FEMU - Build & Test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6.0.2
+
+      # Hosted runners expose /dev/kvm but only root can use it. Without KVM the emulator falls back to
+      # TCG, which is very slow and will most likely hit the test timeout.
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          if [[ -w /dev/kvm ]]; then
+            echo "/dev/kvm is available"
+          else
+            echo "::warning::/dev/kvm is not accessible, the Fuchsia emulator will run without hardware acceleration and is expected to time out"
+          fi
+
+      - name: Setup Bazel environment
+        uses: ./.github/actions/00_infrastructure/prepare_bazel_environment
+        with:
+          disk-cache: build_and_test_fuchsia
+          # The Fuchsia SDK, clang and the core.x64 product bundle (~360 MB) are downloaded by Bazel repository rules.
+          repository-cache: "true"
+
+      - name: Build Fuchsia packages
+        # All Fuchsia targets are tagged "manual", so wildcards would not match them and they are listed explicitly.
+        run: >
+          bazel build --config=ci --config=fuchsia --
+          //score/message_passing/fuchsia:connection_registry_test_pkg
+          //score/message_passing/fuchsia:cross_component_echo_test_pkg
+          //score/message_passing/fuchsia:echo_test_pkg
+          //score/message_passing/fuchsia:stalled_reader_test_pkg
+          //quality/integration_testing/test/femu_hello_world:hello_world_itf_test
+          //quality/integration_testing/test/femu_message_passing:message_passing_itf_test
+
+      - name: Run FEMU ITF tests
+        id: run-tests
+        run: >
+          bazel test --config=ci --config=fuchsia --flaky_test_attempts=2 --test_output=errors --
+          //quality/integration_testing/test/femu_hello_world:hello_world_itf_test
+          //quality/integration_testing/test/femu_message_passing:message_passing_itf_test
+
+      - name: Upload failed Bazel test logs
+        if: failure() && steps.run-tests.outcome == 'failure'
+        uses: ./.github/actions/00_infrastructure/upload_bazel_testlogs_on_failure
+        with:
+          artifact-name: bazel-testlogs-fuchsia
