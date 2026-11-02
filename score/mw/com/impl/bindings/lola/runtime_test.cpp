@@ -450,5 +450,13 @@ TEST_F(RuntimeFixture, EnsureCorrectPidReturned)
     EXPECT_EQ(unit_->GetPid(), kOurPid);
 }
 
+TEST_F(RuntimeFixture, IncarnationIsDerivedFromPid)
+{
+    EXPECT_EQ(unit_->GetIncarnation(), IncarnationId::FromPid(kOurPid));
+    EXPECT_EQ(unit_->GetIncarnationAuthority().Self(), unit_->GetIncarnation());
+    EXPECT_EQ(unit_->GetIncarnationAuthority().GetTakeoverPolicy(), TakeoverPolicy::kAlwaysTakeover);
+    EXPECT_FALSE(unit_->GetIncarnationAuthority().SupportsProviderSideRollback());
+}
+
 }  // namespace
 }  // namespace score::mw::com::impl::lola

@@ -796,6 +796,90 @@ TEST_F(MessagePassingServiceInstanceTest, HandleOutdatedNodeIdCalledWithUnregist
     instance.NotifyEvent(event_id_);
 }
 
+TEST_F(MessagePassingServiceInstanceTest, OutdatedNodeIdOfOneNodeKeepsNotificationsOfOtherNodes)
+{
+    // Characterization: kOutdatedNodeId only removes the interest of the node named in the payload.
+    MessagePassingServiceInstance instance{
+        quality_type_, asil_cfg_, server_factory_mock_, client_factory_mock_, executor_mock_};
+
+    // Given two nodes (user data 10 and 11) registered for the same event
+    UserData other_user_data{std::in_place_type<uintptr_t>, 11u};
+    received_send_message_callback_(*server_connection_mock_,
+                                    Serialize(event_id_, MessageType::kRegisterEventNotifier));
+    ON_CALL(*server_connection_mock_, GetUserData()).WillByDefault(::testing::ReturnRef(other_user_data));
+    received_send_message_callback_(*server_connection_mock_,
+                                    Serialize(event_id_, MessageType::kRegisterEventNotifier));
+
+    // When node 10 is reported as outdated
+    received_send_message_callback_(*server_connection_mock_,
+                                    Serialize(static_cast<pid_t>(10), MessageType::kOutdatedNodeId));
+
+    // Then only node 11 is notified
+    EXPECT_CALL(client_connection_mock_, Send(::testing::_)).Times(1);
+    instance.NotifyEvent(event_id_);
+}
+
+TEST_F(MessagePassingServiceInstanceTest, OutdatedNodeIdDropsClientOfOutdatedNodeSoThatItIsRecreatedOnNextUse)
+{
+    // Characterization: the message passing client towards the outdated node is removed from the client cache.
+    MessagePassingServiceInstance instance{
+        quality_type_, asil_cfg_, server_factory_mock_, client_factory_mock_, executor_mock_};
+
+    // Given a client towards node 10 has been created by a notification
+    std::size_t created_clients{0U};
+    std::size_t stopped_clients{0U};
+    EXPECT_CALL(client_factory_mock_, Create(::testing::_, ::testing::_))
+        .WillRepeatedly(::testing::Invoke([&created_clients, &stopped_clients](auto&&...) {
+            ++created_clients;
+            auto mock = score::cpp::pmr::make_unique<::testing::NiceMock<ClientConnectionMock>>(
+                score::cpp::pmr::new_delete_resource());
+            auto* const mock_ptr = mock.get();
+            ON_CALL(*mock_ptr, GetState()).WillByDefault(::testing::Return(IClientConnection::State::kReady));
+            ON_CALL(*mock_ptr, Stop()).WillByDefault(::testing::Invoke([&stopped_clients, mock_ptr]() {
+                ++stopped_clients;
+                ON_CALL(*mock_ptr, GetState()).WillByDefault(::testing::Return(IClientConnection::State::kStopped));
+            }));
+            return mock;
+        }));
+    received_send_message_callback_(*server_connection_mock_,
+                                    Serialize(event_id_, MessageType::kRegisterEventNotifier));
+    instance.NotifyEvent(event_id_);
+    ASSERT_EQ(created_clients, 1U);
+
+    // When node 10 is reported as outdated and registers (a new incarnation with the same pid) again
+    received_send_message_callback_(*server_connection_mock_,
+                                    Serialize(static_cast<pid_t>(10), MessageType::kOutdatedNodeId));
+    received_send_message_callback_(*server_connection_mock_,
+                                    Serialize(event_id_, MessageType::kRegisterEventNotifier));
+    instance.NotifyEvent(event_id_);
+
+    // Then the first client was stopped and dropped and a second one was created
+    EXPECT_EQ(stopped_clients, 1U);
+    EXPECT_EQ(created_clients, 2U);
+}
+
+TEST_F(MessagePassingServiceInstanceTest, NotifyOutdatedNodeSendsOutdatedNodeIdMessageWithPidPayload)
+{
+    // Characterization of the wire format: [MessageType::kOutdatedNodeId][pid_t outdated node]
+    MessagePassingServiceInstance instance{
+        quality_type_, asil_cfg_, server_factory_mock_, client_factory_mock_, executor_mock_};
+
+    std::vector<std::uint8_t> sent{};
+    EXPECT_CALL(client_connection_mock_, Send(::testing::_))
+        .WillOnce(::testing::Invoke([&sent](const score::cpp::span<const std::uint8_t> message) {
+            sent.assign(message.begin(), message.end());
+            return score::cpp::expected_blank<score::os::Error>{};
+        }));
+
+    instance.NotifyOutdatedNodeId(remote_pid_, remote_pid_ + 2);
+
+    ASSERT_EQ(sent.size(), 1U + sizeof(pid_t));
+    EXPECT_EQ(sent[0], score::cpp::to_underlying(MessageType::kOutdatedNodeId));
+    pid_t payload{};
+    std::memcpy(&payload, sent.data() + 1, sizeof(payload));
+    EXPECT_EQ(payload, remote_pid_);
+}
+
 // notify event message
 TEST_F(MessagePassingServiceInstanceTest, NotifyEventMessageCallsRegisteredHandler)
 {

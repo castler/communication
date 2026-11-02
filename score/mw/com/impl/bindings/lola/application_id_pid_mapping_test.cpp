@@ -125,6 +125,76 @@ TEST(ApplicationIdPidMapping, RegisterUpdatesPidWhenEntryIsInUpdatingStateForSam
     EXPECT_EQ(result.value(), new_pid);
 }
 
+// Characterization tests: pin the current takeover semantics (always take over, last writer wins, previous value is
+// handed back to the taker).
+TEST(ApplicationIdPidMapping, EachRegistrationReturnsThePidOfTheMostRecentPreviousRegistration)
+{
+    ApplicationIdPidMapping<Allocator> unit{kMaxNumberOfMappings, Allocator()};
+
+    // A fresh registration returns the own pid (indistinguishable from "same pid registered again").
+    EXPECT_EQ(unit.RegisterPid(42, 100).value(), 100);
+    // Every following registration unconditionally takes over and returns the pid it replaced.
+    EXPECT_EQ(unit.RegisterPid(42, 101).value(), 100);
+    EXPECT_EQ(unit.RegisterPid(42, 102).value(), 101);
+    EXPECT_EQ(unit.RegisterPid(42, 103).value(), 102);
+    // Registering the already registered pid is a no-op that returns the same pid.
+    EXPECT_EQ(unit.RegisterPid(42, 103).value(), 103);
+}
+
+TEST(ApplicationIdPidMapping, TakeoverOfOneApplicationIdDoesNotAffectOtherApplicationIds)
+{
+    ApplicationIdPidMapping<Allocator> unit{kMaxNumberOfMappings, Allocator()};
+    ASSERT_EQ(unit.RegisterPid(1, 11).value(), 11);
+    ASSERT_EQ(unit.RegisterPid(2, 22).value(), 22);
+
+    EXPECT_EQ(unit.RegisterPid(1, 12).value(), 11);
+
+    EXPECT_EQ(unit.RegisterPid(2, 23).value(), 22);
+    EXPECT_EQ(unit.RegisterPid(1, 13).value(), 12);
+}
+
+TEST(ApplicationIdPidMapping, TakeoverDoesNotConsumeAdditionalEntries)
+{
+    ApplicationIdPidMapping<Allocator> unit{1, Allocator()};
+    ASSERT_TRUE(unit.RegisterPid(7, 70).has_value());
+
+    // A single entry is sufficient for any number of takeovers of the same application ID ...
+    EXPECT_EQ(unit.RegisterPid(7, 71).value(), 70);
+    EXPECT_EQ(unit.RegisterPid(7, 72).value(), 71);
+    // ... but another application ID finds no free entry.
+    EXPECT_FALSE(unit.RegisterPid(8, 80).has_value());
+}
+
+TEST(ApplicationIdPidMapping, EntryLeftInUpdatingStateIsFinalizedByTakeoverAndBehavesAsUsedAfterwards)
+{
+    score::containers::DynamicArray<ApplicationIdPidMappingEntry> mapping_entries(1);
+    const std::uint32_t application_id{42U};
+    mapping_entries.at(0).SetStatusAndApplicationIdAtomic(ApplicationIdPidMappingEntry::MappingEntryStatus::kUpdating,
+                                                          application_id);
+    mapping_entries.at(0).pid_ = 100;
+
+    // Takeover of a half-written entry returns the new pid (the stale pid is NOT reported) ...
+    EXPECT_EQ(lola::detail::RegisterPid(mapping_entries.begin(), mapping_entries.end(), application_id, 200).value(),
+              200);
+    // ... and the entry is kUsed afterwards, i.e. a further takeover reports the pid registered by the first one.
+    const auto status_and_id = mapping_entries.at(0).GetStatusAndApplicationIdAtomic();
+    EXPECT_EQ(status_and_id.first, ApplicationIdPidMappingEntry::MappingEntryStatus::kUsed);
+    EXPECT_EQ(status_and_id.second, application_id);
+    EXPECT_EQ(lola::detail::RegisterPid(mapping_entries.begin(), mapping_entries.end(), application_id, 300).value(),
+              200);
+}
+
+TEST(ApplicationIdPidMapping, EntryInUpdatingStateOfOtherApplicationIdIsNotTakenOver)
+{
+    score::containers::DynamicArray<ApplicationIdPidMappingEntry> mapping_entries(1);
+    mapping_entries.at(0).SetStatusAndApplicationIdAtomic(ApplicationIdPidMappingEntry::MappingEntryStatus::kUpdating,
+                                                          1U);
+    mapping_entries.at(0).pid_ = 100;
+
+    EXPECT_FALSE(lola::detail::RegisterPid(mapping_entries.begin(), mapping_entries.end(), 2U, 200).has_value());
+    EXPECT_EQ(mapping_entries.at(0).pid_, 100);
+}
+
 TEST(ApplicationIdPidMapping, ConcurrentAccess)
 {
     // Given a ApplicationIdPidMapping with a max number of supported mappings of 100

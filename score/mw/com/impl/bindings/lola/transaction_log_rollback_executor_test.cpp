@@ -234,6 +234,233 @@ TEST_F(TransactionLogRollbackExecutorRollbackLogsFixture, WillNotNotifyProviderO
     EXPECT_TRUE(result.has_value());
 }
 
+TEST_F(TransactionLogRollbackExecutorRollbackLogsFixture, WillNotNotifyProviderWhenSamePidIsAlreadyRegistered)
+{
+    WithTransactionLogRollbackExecutor();
+
+    // given the mapping already names the current pid (e.g. a second proxy process-incarnation with a reused pid)
+    AddApplicationIdPidMapping(static_cast<std::uint32_t>(kDummyTransactionLogId), kDummyCurrentConsumerPid);
+
+    // expect that no outdated notification is sent
+    EXPECT_CALL(message_passing_service_mock_, NotifyOutdatedNodeId(_, _, _)).Times(0);
+
+    EXPECT_TRUE(unit_->RollbackTransactionLogs().has_value());
+}
+
+TEST_F(TransactionLogRollbackExecutorRollbackLogsFixture, TakesOverMappingOfPreviousPidAndMarksLogsNeedingRollback)
+{
+    WithTransactionLogRollbackExecutor();
+    AddApplicationIdPidMapping(static_cast<std::uint32_t>(kDummyTransactionLogId), kDummyOldConsumerPid);
+    auto& transaction_log_node = RegisterProxyElementWithTransactionLogSet(kDummyElementFqId, kDummyTransactionLogId);
+    TransactionLogLocalView{transaction_log_node.GetTransactionLog()}.SubscribeTransactionBegin(kNumberOfSlots);
+    EXPECT_CALL(message_passing_service_mock_, NotifyOutdatedNodeId(_, _, _)).Times(1);
+
+    // when the rollback is prepared (the log cannot be rolled back, as the subscribe was not finished)
+    EXPECT_FALSE(unit_->RollbackTransactionLogs().has_value());
+
+    // expect that the log was flagged for rollback and the mapping now names the current pid (last writer wins)
+    EXPECT_TRUE(transaction_log_node.NeedsRollback());
+    EXPECT_EQ(service_data_control_->application_id_pid_mapping_
+                  .RegisterPid(static_cast<std::uint32_t>(kDummyTransactionLogId), 9999)
+                  .value(),
+              kDummyCurrentConsumerPid);
+}
+
+TEST_F(TransactionLogRollbackExecutorRollbackLogsFixture, OnlyLogsOfOwnApplicationIdAreMarkedAndRolledBack)
+{
+    WithTransactionLogRollbackExecutor();
+    const TransactionLogId other_transaction_log_id{21U};
+    auto& own_node = RegisterProxyElementWithTransactionLogSet(kDummyElementFqId, kDummyTransactionLogId);
+    auto& other_node = RegisterProxyElementWithTransactionLogSet(kDummyElementFqId, other_transaction_log_id);
+
+    ASSERT_TRUE(unit_->RollbackTransactionLogs().has_value());
+
+    EXPECT_FALSE(own_node.IsActive());
+    EXPECT_TRUE(other_node.IsActive());
+    EXPECT_FALSE(other_node.NeedsRollback());
+}
+
+// Re-run behaviour of RollbackProxyTransactions after the executing process stopped part-way through a rollback.
+// The tests simulate the stop by applying the first steps of a rollback to the log by hand (exactly the sequence
+// TransactionLogLocalView::RollbackIncrementTransactions / RollbackSubscribeTransactions performs) and then run the
+// real rollback on the remaining state.
+class TransactionLogRollbackRerunFixture : public TransactionLogRollbackExecutorFixture
+{
+  protected:
+    static constexpr std::size_t kSubscriptionMaxSampleCount{kNumberOfSlots};
+
+    TransactionLogSet::TransactionLogNode& SetupLogWithReferencedSlotsAndSubscription(
+        const std::vector<TransactionLog::SlotIndexType>& referenced_slots) noexcept
+    {
+        WithTransactionLogRollbackExecutor();
+        auto& node = RegisterProxyElementWithTransactionLogSet(kDummyElementFqId, kDummyTransactionLogId);
+        TransactionLogLocalView view{node.GetTransactionLog()};
+        view.SubscribeTransactionBegin(kSubscriptionMaxSampleCount);
+        view.SubscribeTransactionCommit();
+        for (const auto slot : referenced_slots)
+        {
+            view.ReferenceTransactionBegin(slot);
+            view.ReferenceTransactionCommit(slot);
+        }
+        GetTransactionLogSet(kDummyElementFqId).MarkTransactionLogsNeedRollback(kDummyTransactionLogId);
+        EXPECT_TRUE(node.NeedsRollback());
+        return node;
+    }
+
+    Result<void> RunRollback() noexcept
+    {
+        return GetTransactionLogSet(kDummyElementFqId)
+            .RollbackProxyTransactions(
+                kDummyTransactionLogId,
+                [this](const TransactionLog::SlotIndexType slot_index) noexcept {
+                    dereferenced_slots_.push_back(slot_index);
+                },
+                [this](const TransactionLog::MaxSampleCountType max_sample_count) noexcept {
+                    unsubscribed_with_.push_back(max_sample_count);
+                });
+    }
+
+    std::vector<TransactionLog::SlotIndexType> dereferenced_slots_{};
+    std::vector<TransactionLog::MaxSampleCountType> unsubscribed_with_{};
+};
+
+TEST_F(TransactionLogRollbackRerunFixture, UninterruptedRollbackDereferencesEverySlotOnceAndUnsubscribes)
+{
+    auto& node = SetupLogWithReferencedSlotsAndSubscription({0U, 3U, 4U});
+
+    ASSERT_TRUE(RunRollback().has_value());
+
+    EXPECT_EQ(dereferenced_slots_, (std::vector<TransactionLog::SlotIndexType>{0U, 3U, 4U}));
+    EXPECT_EQ(unsubscribed_with_.size(), 1U);
+    EXPECT_FALSE(node.IsActive());
+}
+
+TEST_F(TransactionLogRollbackRerunFixture, RerunAfterStopBetweenSlotsFinishesRemainingSlotsExactlyOnce)
+{
+    auto& node = SetupLogWithReferencedSlotsAndSubscription({0U, 1U, 2U, 3U});
+    TransactionLogLocalView view{node.GetTransactionLog()};
+
+    // Given a first rollback which stopped after it completely dereferenced slots 0 and 1 (callback already invoked
+    // for them in the stopped run, so they are not counted here)
+    for (const TransactionLog::SlotIndexType slot : std::vector<TransactionLog::SlotIndexType>{0U, 1U})
+    {
+        view.DereferenceTransactionBegin(slot);
+        view.DereferenceTransactionCommit(slot);
+    }
+
+    // when the rollback is re-run
+    ASSERT_TRUE(RunRollback().has_value());
+
+    // then only the remaining slots are dereferenced (exactly once), the subscription is undone and the log released
+    EXPECT_EQ(dereferenced_slots_, (std::vector<TransactionLog::SlotIndexType>{2U, 3U}));
+    EXPECT_EQ(unsubscribed_with_.size(), 1U);
+    EXPECT_FALSE(node.IsActive());
+    EXPECT_FALSE(node.NeedsRollback());
+}
+
+TEST_F(TransactionLogRollbackRerunFixture, RerunAfterStopBeforeUnsubscribeOnlyUnsubscribes)
+{
+    auto& node = SetupLogWithReferencedSlotsAndSubscription({1U});
+    TransactionLogLocalView view{node.GetTransactionLog()};
+    view.DereferenceTransactionBegin(1U);
+    view.DereferenceTransactionCommit(1U);
+
+    ASSERT_TRUE(RunRollback().has_value());
+
+    EXPECT_TRUE(dereferenced_slots_.empty());
+    EXPECT_EQ(unsubscribed_with_, (std::vector<TransactionLog::MaxSampleCountType>{kSubscriptionMaxSampleCount}));
+    EXPECT_FALSE(node.IsActive());
+}
+
+TEST_F(TransactionLogRollbackRerunFixture, RerunAfterStopInsideSlotDereferenceFailsWithoutDereferencingAgain)
+{
+    auto& node = SetupLogWithReferencedSlotsAndSubscription({0U, 1U, 2U});
+    TransactionLogLocalView view{node.GetTransactionLog()};
+
+    // Given a first rollback which completed slot 0 and stopped inside the dereference of slot 1, i.e. after
+    // DereferenceTransactionBegin but before DereferenceTransactionCommit. Whether the refcount decrement of slot 1
+    // already happened is not recorded.
+    view.DereferenceTransactionBegin(0U);
+    view.DereferenceTransactionCommit(0U);
+    view.DereferenceTransactionBegin(1U);
+
+    // when the rollback is re-run
+    const auto result = RunRollback();
+
+    // then it fails (fail-safe: no blind second decrement of slot 1) ...
+    ASSERT_FALSE(result.has_value());
+    EXPECT_EQ(result.error(), ComErrc::kCouldNotRestartProxy);
+    EXPECT_TRUE(dereferenced_slots_.empty());
+    EXPECT_TRUE(unsubscribed_with_.empty());
+    // ... and the log stays active and flagged, i.e. it is permanently stuck.
+    EXPECT_TRUE(node.IsActive());
+    EXPECT_TRUE(node.NeedsRollback());
+
+    // and a further re-run yields the same result (idempotent failure, no side effects)
+    EXPECT_FALSE(RunRollback().has_value());
+    EXPECT_TRUE(dereferenced_slots_.empty());
+}
+
+TEST_F(TransactionLogRollbackRerunFixture, RerunAfterStopInsideUnsubscribeFailsWithoutUnsubscribingAgain)
+{
+    auto& node = SetupLogWithReferencedSlotsAndSubscription({});
+    TransactionLogLocalView view{node.GetTransactionLog()};
+    view.UnsubscribeTransactionBegin();
+
+    const auto result = RunRollback();
+
+    ASSERT_FALSE(result.has_value());
+    EXPECT_EQ(result.error(), ComErrc::kCouldNotRestartProxy);
+    EXPECT_TRUE(unsubscribed_with_.empty());
+    EXPECT_TRUE(node.IsActive());
+    EXPECT_TRUE(node.NeedsRollback());
+}
+
+TEST_F(TransactionLogRollbackRerunFixture, RerunAfterCompletedRollbackIsNoOp)
+{
+    SetupLogWithReferencedSlotsAndSubscription({2U});
+    ASSERT_TRUE(RunRollback().has_value());
+    dereferenced_slots_.clear();
+    unsubscribed_with_.clear();
+
+    EXPECT_TRUE(RunRollback().has_value());
+
+    EXPECT_TRUE(dereferenced_slots_.empty());
+    EXPECT_TRUE(unsubscribed_with_.empty());
+}
+
+TEST_F(TransactionLogRollbackRerunFixture, RestartedProxyTakesOverFromCrashedRollbackAndRollsBackRemainingLog)
+{
+    // Given two logs of the same application id (two proxy elements) and a first proxy incarnation, which prepared the
+    // rollback (took over the mapping, flagged the logs) and rolled back one log before stopping
+    WithTransactionLogRollbackExecutor();
+    AddApplicationIdPidMapping(static_cast<std::uint32_t>(kDummyTransactionLogId), kDummyOldConsumerPid);
+    auto& node_0 = RegisterProxyElementWithTransactionLogSet(kDummyElementFqId, kDummyTransactionLogId);
+    auto& node_1 = RegisterProxyElementWithTransactionLogSet(kDummyElementFqId, kDummyTransactionLogId);
+    EXPECT_CALL(message_passing_service_mock_,
+                NotifyOutdatedNodeId(kDummyQualityType, kDummyOldConsumerPid, kDummyProviderPid))
+        .Times(1);
+    ASSERT_TRUE(unit_->RollbackTransactionLogs().has_value());
+    ASSERT_FALSE(node_0.IsActive());
+    ASSERT_TRUE(node_1.IsActive());
+    ASSERT_TRUE(node_1.NeedsRollback());
+
+    // when a second incarnation (new pid, new process-local RollbackSynchronization) runs the rollback
+    constexpr pid_t kNextConsumerPid{156};
+    RollbackSynchronization restarted_rollback_synchronization{};
+    ON_CALL(lola_runtime_mock_, GetPid()).WillByDefault(Return(kNextConsumerPid));
+    ON_CALL(lola_runtime_mock_, GetRollbackSynchronization())
+        .WillByDefault(ReturnRef(restarted_rollback_synchronization));
+    EXPECT_CALL(message_passing_service_mock_,
+                NotifyOutdatedNodeId(kDummyQualityType, kDummyCurrentConsumerPid, kDummyProviderPid))
+        .Times(1);
+    ASSERT_TRUE(unit_->RollbackTransactionLogs().has_value());
+
+    // then it reported the crashed incarnation as outdated and completed the remaining rollback
+    EXPECT_FALSE(node_1.IsActive());
+    EXPECT_FALSE(node_1.NeedsRollback());
+}
+
 TEST_F(TransactionLogRollbackExecutorRollbackLogsFixture, RollbackTransactionLogsCanBeCalledMultiThreaded)
 {
     WithTransactionLogRollbackExecutor();

@@ -19,11 +19,13 @@
 #include <functional>
 #include <string>
 
+#include "score/message_passing/node_id.h"
+
 namespace score::message_passing
 {
 
 /// \brief Opaque 64 bit identity value. Instantiations with different tags are unrelated, non-convertible types.
-/// \details The raw value is only accessible via Raw(). Platform specific conversions (pid, uid) are provided by the
+/// \details The raw value is only accessible via Raw(). NodeId is defined in node_id.h. Platform specific conversions (pid, uid) are provided by the
 /// named factories below, so that code outside of the platform layer cannot treat an identity as an OS id by accident.
 template <typename Tag>
 class OpaqueId
@@ -63,23 +65,19 @@ class OpaqueId
     std::uint64_t raw_{0U};
 };
 
-struct NodeIdTag;
 struct PrincipalIdTag;
-
-/// \brief Communication address/identity of a peer (pid on Linux/QNX).
-using NodeId = OpaqueId<NodeIdTag>;
 
 /// \brief Identity used for permission checks (uid on Linux/QNX).
 using PrincipalId = OpaqueId<PrincipalIdTag>;
 
 constexpr NodeId NodeIdFromPid(const pid_t pid) noexcept
 {
-    return NodeId{static_cast<std::uint64_t>(static_cast<std::uint32_t>(pid))};
+    return NodeId::FromPid(pid);
 }
 
 constexpr pid_t NodeIdToPid(const NodeId node) noexcept
 {
-    return static_cast<pid_t>(static_cast<std::uint32_t>(node.Raw()));
+    return node.ToPid();
 }
 
 constexpr PrincipalId PrincipalIdFromUid(const uid_t uid) noexcept

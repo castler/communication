@@ -690,8 +690,8 @@ score::Result<void> MessagePassingServiceInstance::CallSubscribeServiceMethodLoc
                                      "subscribe is not in allowed_consumers list.";
         return MakeUnexpected(MethodErrc::kUnknownProxy);
     }
-    const auto invocation_result =
-        std::invoke(method_subscribed_handler_copy, proxy_instance_identifier, proxy.GetPrincipalId(), proxy.GetNodeId());
+    const auto invocation_result = std::invoke(
+        method_subscribed_handler_copy, proxy_instance_identifier, proxy.GetPrincipalId(), proxy.GetNodeId().ToPid());
     if (!(invocation_result.has_value()))
     {
         mw::log::LogError("lola")
