@@ -1,0 +1,29 @@
+{
+    include: [ "syslog/client.shard.cml" ],
+
+    program: {
+        runner: "elf",
+        binary: "bin/discovery_main",
+        // Generated from the mw::com configuration in the realm generator: who may offer / find which service id.
+        args: [
+            "--skeleton=1000:3429",
+            "--consumer=4002:3429",
+        ],
+        forward_stderr_to: "log",
+        forward_stdout_to: "log",
+    },
+
+    capabilities: [
+        { protocol: "score.mw.com.registry.for_app_1000" },
+        { protocol: "score.mw.com.discovery.for_app_4002" },
+    ],
+    expose: [
+        {
+            protocol: [
+                "score.mw.com.discovery.for_app_4002",
+                "score.mw.com.registry.for_app_1000",
+            ],
+            from: "self",
+        },
+    ],
+}

@@ -103,7 +103,7 @@ class FakeLolaRuntime final : public lola::IRuntime
     }
     IncarnationId GetIncarnation() const noexcept override
     {
-        NotNeeded();
+        return IncarnationId::FromPid(kSkeletonPid);
     }
     const IIncarnationAuthority& GetIncarnationAuthority() const noexcept override
     {

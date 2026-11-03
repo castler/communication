@@ -1,0 +1,22 @@
+{
+    include: [ "syslog/client.shard.cml" ],
+
+    program: {
+        runner: "elf",
+        binary: "bin/wheelspeed_proxy",
+        forward_stderr_to: "log",
+        forward_stdout_to: "log",
+    },
+
+    capabilities: [
+        { protocol: "score.mw.com.wheelspeed.Probe" },
+    ],
+    use: [
+        { protocol: "score.mw.com.ServiceDiscovery" },
+        { protocol: "score.mw.com.Endpoint" },
+        { storage: "tmp", path: "/tmp" },
+    ],
+    expose: [
+        { protocol: "score.mw.com.wheelspeed.Probe", from: "self" },
+    ],
+}

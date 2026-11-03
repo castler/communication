@@ -1,0 +1,55 @@
+// Copyright (c) 2026 Contributors to the Eclipse Foundation
+//
+// See the NOTICE file(s) distributed with this work for additional
+// information regarding copyright ownership.
+//
+// This program and the accompanying materials are made available under the
+// terms of the Apache License Version 2.0 which is available at
+// https://www.apache.org/licenses/LICENSE-2.0
+//
+// SPDX-License-Identifier: Apache-2.0
+
+// Test only: lets the driver read what the proxy component observed (ITF only sees the driver's output).
+library score.mw.com.wheelspeed;
+
+type PhaseResult = struct {
+    found bool;
+    subscribed bool;
+    samples uint32;
+    /// Samples whose sequence was not strictly increasing within one incarnation.
+    order_errors uint32;
+    /// Samples whose payload did not match the deterministic content.
+    payload_errors uint32;
+    /// Sequence numbers skipped by the proxy (allowed: the proxy may be slower than the skeleton).
+    skipped uint32;
+    receive_handler_calls uint32;
+    find_handler_calls uint32;
+    incarnation uint32;
+    first_sequence uint32;
+    last_sequence uint32;
+    /// Publish -> GetNewSamples latency (skeleton and proxy share the monotonic clock), microseconds.
+    latency_min_us int64;
+    latency_p50_us int64;
+    latency_p99_us int64;
+    latency_max_us int64;
+    /// Time from the start of the phase until the proxy found the offer, milliseconds.
+    find_ms int64;
+    /// Time from the proxy's Subscribe call until the first sample arrived, milliseconds.
+    first_sample_ms int64;
+};
+
+@discoverable
+closed protocol Probe {
+    /// Blocks until `samples` samples of the first incarnation were received (or the timeout hit).
+    strict RunFirst(struct {
+        samples uint32;
+    }) -> (struct {
+        result PhaseResult;
+    });
+    /// Blocks until the proxy re-found and re-subscribed to a different incarnation and received `samples` of them.
+    strict RunRestart(struct {
+        samples uint32;
+    }) -> (struct {
+        result PhaseResult;
+    });
+};

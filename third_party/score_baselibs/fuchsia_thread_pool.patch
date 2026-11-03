@@ -1,0 +1,15 @@
+diff -ru a/score/concurrency/thread_pool.cpp b/score/concurrency/thread_pool.cpp
+--- a/score/concurrency/thread_pool.cpp
++++ b/score/concurrency/thread_pool.cpp
+@@ -57,6 +57,9 @@
+         // TODO: In ASIL-B context there are concerns that we may not directly use this API. We shall only use one
+         //       abstraction level to work with threads. (Ticket-99121)
+-        score::cpp::ignore =
+-            pthread->setname_np(worker_thread.native_handle(), (name + "_" + std::to_string(thread_number)).c_str());
++        if (pthread != nullptr)
++        {
++            score::cpp::ignore = pthread->setname_np(worker_thread.native_handle(),
++                                                     (name + "_" + std::to_string(thread_number)).c_str());
++        }
+         pool_.push_back(std::move(worker_thread));
+     }

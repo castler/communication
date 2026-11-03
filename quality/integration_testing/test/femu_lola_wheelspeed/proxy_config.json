@@ -1,0 +1,39 @@
+{
+  "serviceTypes": [
+    {
+      "serviceTypeName": "/wheelspeed/WheelSpeedInterface",
+      "version": { "major": 1, "minor": 0 },
+      "bindings": [
+        {
+          "binding": "SHM",
+          "serviceId": 3429,
+          "events": [
+            { "eventName": "wheel_speed", "eventId": 1 }
+          ]
+        }
+      ]
+    }
+  ],
+  "serviceInstances": [
+    {
+      "instanceSpecifier": "wheelspeed/WheelSpeed",
+      "serviceTypeName": "/wheelspeed/WheelSpeedInterface",
+      "version": { "major": 1, "minor": 0 },
+      "instances": [
+        {
+          "instanceId": 1,
+          "asil-level": "QM",
+          "binding": "SHM",
+          "allowedProvider": { "QM": [ 1000 ] },
+          "events": [
+            { "eventName": "wheel_speed", "numberOfSampleSlots": 20, "maxSubscribers": 2 }
+          ]
+        }
+      ]
+    }
+  ],
+  "global": {
+    "asil-level": "QM",
+    "applicationID": 4002
+  }
+}

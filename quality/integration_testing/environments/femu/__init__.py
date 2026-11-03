@@ -42,12 +42,18 @@ class FemuTarget:
     def __init__(self, femu):
         self._femu = femu
 
-    def run_test_component(self, url):
+    def run_test_component(self, url, min_severity=None):
         """Runs `<package>#<manifest>` below the test repository via `ffx test run`."""
+        extra = ["--min-severity-logs", min_severity] if min_severity else []
         result = self._femu.ffx(
-            "test", "run", f"fuchsia-pkg://{REPO_NAME}/{url}", check=False, capture=True
+            "test", "run", f"fuchsia-pkg://{REPO_NAME}/{url}", *extra, check=False, capture=True
         )
         return RunResult(result.returncode, result.stdout)
+
+    def dump_logs(self):
+        """System log of the target (includes components that are not part of the test realm)."""
+        result = self._femu.ffx("log", "dump", check=False, capture=True)
+        return result.stdout
 
 
 @pytest.fixture(scope="session")

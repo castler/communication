@@ -19,7 +19,7 @@ exports_files([
     "fuchsia_shm_support.patch",
     "fuchsia_lola_support.patch",
     "fuchsia_interprocess_sync.patch",
-])
+    "fuchsia_thread_pool.patch",
 
 # Certified-scope stubs for score_baselibs dependencies used by mw_com.
 # Each stub declares the scope of one package group so the dependable_element

@@ -113,7 +113,7 @@ using memory::DataTypeSizeInfo;
 /// \param file_path path of marker file (used for logging output)
 /// \param max_retries maximum numberof retries for flock
 /// \return nullptr in case shared flocking failed, else a unique ptr to the locked flock mutex.
-std::unique_ptr<score::memory::shared::FlockMutexAndLock<score::memory::shared::SharedFlockMutex>>
+[[maybe_unused]] std::unique_ptr<score::memory::shared::FlockMutexAndLock<score::memory::shared::SharedFlockMutex>>
 PlaceSharedLockOnUsageMarkerFileWithRetry(memory::shared::LockFile& service_instance_usage_marker_file,
                                           std::string_view file_path,
                                           std::uint32_t max_retries)
@@ -361,10 +361,16 @@ std::unique_ptr<Proxy> Proxy::Create(const HandleType& handle)
     const auto& lola_service_instance_id = GetServiceInstanceIdBinding<LolaServiceInstanceId>(service_instance_id);
 
     PartialRestartPathBuilder partial_restart_builder{lola_service_deployment.service_id_};
+    std::optional<memory::shared::LockFile> service_instance_usage_marker_file{};
+    std::unique_ptr<score::memory::shared::FlockMutexAndLock<score::memory::shared::SharedFlockMutex>>
+        service_instance_usage_mutex_and_lock{};
+#if !defined(__Fuchsia__)
+    // On Fuchsia the skeleton's partial-restart directory is private to its component (isolated storage), so the
+    // proxy cannot flock it. Liveness of proxies is tracked via the shm Attach channel instead.
     const auto service_instance_usage_marker_file_path =
         partial_restart_builder.GetServiceInstanceUsageMarkerFilePath(lola_service_instance_id.GetId());
 
-    auto service_instance_usage_marker_file = memory::shared::LockFile::Open(service_instance_usage_marker_file_path);
+    service_instance_usage_marker_file = memory::shared::LockFile::Open(service_instance_usage_marker_file_path);
     if (!service_instance_usage_marker_file.has_value())
     {
         score::mw::log::LogError("lola") << "Could not open marker file: " << service_instance_usage_marker_file_path;
@@ -372,7 +378,7 @@ std::unique_ptr<Proxy> Proxy::Create(const HandleType& handle)
     }
 
     constexpr std::uint32_t kMaxFlockRetries{3U};
-    auto service_instance_usage_mutex_and_lock =
+    service_instance_usage_mutex_and_lock =
         PlaceSharedLockOnUsageMarkerFileWithRetry(service_instance_usage_marker_file.value(),
                                                   std::string_view(service_instance_usage_marker_file_path),
                                                   kMaxFlockRetries);
@@ -380,6 +386,7 @@ std::unique_ptr<Proxy> Proxy::Create(const HandleType& handle)
     {
         return nullptr;
     }
+#endif
 
     QualityType quality_type{handle.GetServiceInstanceDeployment().asilLevel_};
 
