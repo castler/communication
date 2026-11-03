@@ -1,0 +1,29 @@
+{
+    include: [ "syslog/client.shard.cml" ],
+
+    program: {
+        runner: "elf",
+        binary: "bin/discovery_main",
+        args: [
+            "--skeleton=1000:4660",
+            "--consumer=4002:4660",
+        ],
+        forward_stderr_to: "log",
+        forward_stdout_to: "log",
+    },
+
+    // One capability per caller; the realm renames them to the constant names the callers use.
+    capabilities: [
+        { protocol: "score.mw.com.registry.for_app_1000" },
+        { protocol: "score.mw.com.discovery.for_app_4002" },
+    ],
+    expose: [
+        {
+            protocol: [
+                "score.mw.com.discovery.for_app_4002",
+                "score.mw.com.registry.for_app_1000",
+            ],
+            from: "self",
+        },
+    ],
+}

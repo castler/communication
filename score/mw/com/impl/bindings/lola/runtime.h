@@ -18,6 +18,7 @@
 #include "score/mw/com/impl/bindings/lola/pid_incarnation_authority.h"
 #include "score/mw/com/impl/bindings/lola/rollback_synchronization.h"
 #include "score/mw/com/impl/bindings/lola/service_discovery/client/service_discovery_client.h"
+#include "score/mw/com/impl/i_service_discovery_client.h"
 #include "score/mw/com/impl/bindings/lola/tracing/tracing_runtime.h"
 #include "score/mw/com/impl/configuration/configuration.h"
 
@@ -94,7 +95,7 @@ class Runtime final : public IRuntime
     concurrency::Executor& long_running_threads_;
     score::cpp::stop_source lola_messaging_stop_source_;
     MessagePassingService lola_messaging_service_;
-    ServiceDiscoveryClient service_discovery_client_;
+    std::unique_ptr<IServiceDiscoveryClient> service_discovery_client_;
     std::unique_ptr<lola::tracing::TracingRuntime> tracing_runtime_;
     RollbackSynchronization rollback_data_;
 

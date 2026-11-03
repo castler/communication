@@ -19,6 +19,11 @@
 #include <score/assert.hpp>
 #include <score/utility.hpp>
 
+#if defined(__Fuchsia__)
+#include "score/mw/com/impl/bindings/lola/fuchsia/fidl_discovery_transport.h"
+#include "score/mw/com/impl/bindings/lola/fuchsia/fuchsia_service_discovery_client.h"
+#endif
+
 #include <exception>
 #include <set>
 #include <unordered_map>
@@ -28,6 +33,24 @@
 
 namespace score::mw::com::impl::lola
 {
+
+namespace
+{
+
+// Linux/QNX discover through the file system; on Fuchsia the FIDL ServiceRegistry/ServiceDiscovery of the discovery
+// component is used (bindings/lola/fuchsia).
+std::unique_ptr<IServiceDiscoveryClient> CreateServiceDiscoveryClient(
+    [[maybe_unused]] concurrency::Executor& long_running_threads)
+{
+#if defined(__Fuchsia__)
+    return std::make_unique<fuchsia::FuchsiaServiceDiscoveryClient>(
+        std::make_unique<fuchsia::FidlDiscoveryTransport>());
+#else
+    return std::make_unique<ServiceDiscoveryClient>(long_running_threads);
+#endif
+}
+
+}  // namespace
 
 /// \brief Determines the unique identifier for this application instance.
 /// \details This function implements the logic to select the application identifier. It prioritizes the
@@ -70,7 +93,7 @@ Runtime::Runtime(const Configuration& config,
                                   ? std::optional<AsilSpecificCfg>{Runtime::GetMessagePassingCfg(QualityType::kASIL_B)}
                                   : std::nullopt,
                               std::make_unique<MessagePassingServiceInstanceFactory>()},
-      service_discovery_client_{long_running_threads_},
+      service_discovery_client_{CreateServiceDiscoveryClient(long_running_threads_)},
       tracing_runtime_{std::move(lola_tracing_runtime)},
       rollback_data_{},
       pid_{os::Unistd::instance().getpid()},
@@ -141,7 +164,7 @@ IServiceDiscoveryClient& Runtime::GetServiceDiscoveryClient() & noexcept
     // holder. API callers get the reference and use it in place without leaving the scope, so the reference remains
     // valid.
     // coverity[autosar_cpp14_a9_3_1_violation]
-    return service_discovery_client_;
+    return *service_discovery_client_;
 }
 
 RollbackSynchronization& Runtime::GetRollbackSynchronization() & noexcept

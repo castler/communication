@@ -34,8 +34,8 @@ namespace score::mw::com::impl::lola::fuchsia
 ///          Closing a registry connection (also a crash of the skeleton) withdraws every offer made through it.
 ///          `Search.Watch` is a hanging get that always returns full snapshots.
 ///
-///          Not thread-safe: everything runs on `dispatcher`, which must be single-threaded, and the service must
-///          outlive the bindings created from its handlers.
+///          Not thread-safe: everything runs on `dispatcher`, which must be single-threaded. Destroying the service (on
+///          the dispatcher thread) closes every connection; handlers invoked afterwards drop the channel.
 class DiscoveryService
 {
   public:
@@ -59,7 +59,7 @@ class DiscoveryService
 
   private:
     class Impl;
-    std::unique_ptr<Impl> impl_;
+    std::shared_ptr<Impl> impl_;
 };
 
 }  // namespace score::mw::com::impl::lola::fuchsia
