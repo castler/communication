@@ -21,6 +21,7 @@ cc_library(
     hdrs = ["asil_specific_cfg.h"],
     features = COMPILER_WARNING_FEATURES,
     tags = ["FFI"],
+    visibility = ["//score/mw/com/impl/bindings/lola/fuchsia:__pkg__"],
 )
 
 cc_library(
@@ -29,6 +30,7 @@ cc_library(
     hdrs = ["client_quality_type.h"],
     features = COMPILER_WARNING_FEATURES,
     tags = ["FFI"],
+    visibility = ["//score/mw/com/impl/bindings/lola/fuchsia:__pkg__"],
 )
 
 cc_library(
@@ -50,7 +52,10 @@ cc_library(
         "@score_baselibs//score/mw/log",
     ],
     tags = ["FFI"],
-    visibility = ["//score/mw/com/impl/bindings/lola:__pkg__"],
+    visibility = [
+        "//score/mw/com/impl/bindings/lola:__pkg__",
+        "//score/mw/com/impl/bindings/lola/fuchsia:__pkg__",
+    ],
     deps = [
         "//score/message_passing:common_headers",
         "//score/mw/com/impl:scoped_event_receive_handler",
@@ -85,6 +90,7 @@ cc_library(
     hdrs = ["i_message_passing_service_instance.h"],
     features = COMPILER_WARNING_FEATURES,
     tags = ["FFI"],
+    visibility = ["//score/mw/com/impl/bindings/lola/fuchsia:__pkg__"],
     deps = [
         ":asil_specific_cfg",
         ":client_quality_type",
@@ -132,6 +138,7 @@ cc_library(
     hdrs = ["i_message_passing_service_instance_factory.h"],
     features = COMPILER_WARNING_FEATURES,
     tags = ["FFI"],
+    visibility = ["//score/mw/com/impl/bindings/lola/fuchsia:__pkg__"],
     deps = [
         ":asil_specific_cfg",
         ":client_quality_type",

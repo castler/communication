@@ -191,7 +191,10 @@ cc_library(
         "//score/mw/com/impl/bindings/lola/tracing:tracing_runtime",
         "@score_baselibs//score/concurrency:executor",
         "@score_baselibs//score/language/futurecpp",
-    ],
+    ] + select({
+        "@platforms//os:fuchsia": ["//score/mw/com/impl/bindings/lola/fuchsia:event_notifying_service_instance"],
+        "//conditions:default": [],
+    }),
 )
 
 cc_library(

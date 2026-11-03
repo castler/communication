@@ -61,6 +61,10 @@ class FidlVmoHandleClient final : public score::memory::shared::fuchsia::IVmoHan
                                                          zx::vmo consumer_handle) noexcept override;
     void Withdraw(const std::string& key) noexcept override;
 
+    /// \brief Performs the Attach call now (instead of with the first Acquire()). ZX_OK only if the handles arrived;
+    ///        otherwise the transport status, or ZX_ERR_ACCESS_DENIED for a domain error (see attach_error()).
+    zx_status_t Attach() noexcept;
+
     /// \brief Outcome of the Attach call: ZX_OK, the transport status (e.g. ZX_ERR_PEER_CLOSED) or ZX_ERR_NOT_FOUND-like
     ///        domain errors reported through attach_error(). nullopt before the first Acquire().
     std::optional<zx_status_t> transport_status() const noexcept;

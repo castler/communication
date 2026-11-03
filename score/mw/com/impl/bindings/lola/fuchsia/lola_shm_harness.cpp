@@ -13,12 +13,17 @@
 #include "score/mw/com/impl/bindings/lola/fuchsia/lola_shm_harness.h"
 
 #include "score/mw/com/impl/bindings/lola/element_fq_id.h"
+#include "score/mw/com/impl/bindings/lola/consumer_event_data_control_local_view.h"
 #include "score/mw/com/impl/bindings/lola/event_control.h"
+#include "score/mw/com/impl/bindings/lola/event_data_control_composite.h"
+#include "score/mw/com/impl/bindings/lola/provider_event_data_control_local_view.h"
 #include "score/mw/com/impl/bindings/lola/event_data_storage.h"
 #include "score/mw/com/impl/bindings/lola/i_runtime.h"
 #include "score/mw/com/impl/bindings/lola/service_data_control.h"
 #include "score/mw/com/impl/bindings/lola/service_data_storage.h"
 #include "score/mw/com/impl/bindings/lola/shm_path_builder.h"
+#include "score/mw/com/impl/bindings/lola/transaction_log_registration_guard.h"
+#include "score/mw/com/impl/bindings/lola/transaction_log_set.h"
 #include "score/mw/com/impl/bindings/lola/skeleton_event_properties.h"
 #include "score/mw/com/impl/bindings/lola/skeleton_memory_manager.h"
 #include "score/mw/com/impl/configuration/lola_service_instance_deployment.h"
@@ -220,6 +225,10 @@ class SkeletonSide::Impl
     FakeEventBinding event_binding;
     EventControl* control_qm{nullptr};
     EventControl* control_asil_b{nullptr};
+    std::optional<ProviderEventDataControlLocalView<>> provider_qm;
+    std::optional<ProviderEventDataControlLocalView<>> provider_asil_b;
+    std::optional<EventDataControlComposite<>> composite;
+    EventSlotStatus::EventTimeStamp timestamp{EventSlotStatus::INVALID_TIMESTAMP};
 };
 
 SkeletonSide::SkeletonSide(const bool with_asil_b) : impl_{std::make_unique<Impl>(with_asil_b)} {}
@@ -242,6 +251,35 @@ bool SkeletonSide::CreateAndPublish(const SampleData& sample)
     static_cast<void>(impl_->manager.CreateEventDataInCreatedSharedMemory(
         FqId(), properties, memory::DataTypeSizeInfo{sizeof(SampleData), alignof(SampleData)}));
     WriteSample(sample);
+    impl_->provider_qm.emplace(impl_->control_qm->data_control);
+    ProviderEventDataControlLocalView<>* asil_b_view{nullptr};
+    if (impl_->control_asil_b != nullptr)
+    {
+        asil_b_view = &impl_->provider_asil_b.emplace(impl_->control_asil_b->data_control);
+    }
+    impl_->composite.emplace(*impl_->provider_qm, asil_b_view);
+    return true;
+}
+
+bool SkeletonSide::Publish(const std::uint64_t counter)
+{
+    auto allocation = impl_->composite->AllocateNextSlot();
+    for (int retries = 0; !allocation.allocated_slot_index.has_value() && retries < 1000; ++retries)
+    {
+        allocation = impl_->composite->AllocateNextSlot();
+    }
+    if (!allocation.allocated_slot_index.has_value())
+    {
+        return false;
+    }
+    const auto slot = allocation.allocated_slot_index.value();
+    auto& data = impl_->manager.RetrieveEventDataFromOpenedSharedMemory(FqId());
+    SampleData sample{};
+    sample.magic = kSampleMagic;
+    sample.counter = counter;
+    std::memcpy(data.GetTypeErasedDataSlot(slot, sizeof(SampleData)), &sample, sizeof(SampleData));
+    ++impl_->timestamp;
+    impl_->composite->EventReady(slot, impl_->timestamp);
     return true;
 }
 
@@ -288,9 +326,15 @@ class ProxySide::Impl
     std::shared_ptr<memory::shared::ManagedMemoryResource> data;
     ServiceDataStorage* storage{nullptr};
     ServiceDataControl* service_control{nullptr};
+    std::unique_ptr<ConsumerEventDataControlLocalView<>> view;
+    std::optional<TransactionLogRegistrationGuard> log_guard;
+    std::uint32_t transaction_log_id{1U};
 };
 
-ProxySide::ProxySide() : impl_{std::make_unique<Impl>()} {}
+ProxySide::ProxySide(const std::uint32_t transaction_log_id) : impl_{std::make_unique<Impl>()}
+{
+    impl_->transaction_log_id = transaction_log_id;
+}
 
 ProxySide::~ProxySide() = default;
 
@@ -332,6 +376,40 @@ int ProxySide::Subscribe(const std::uint16_t slots)
         return -1;
     }
     return static_cast<int>(found->second.subscription_control.Subscribe(slots));
+}
+
+bool ProxySide::ReceiveNewest(std::uint32_t& last_timestamp, std::uint64_t& counter)
+{
+    if (impl_->view == nullptr)
+    {
+        auto* const found = impl_->service_control->event_controls_.find(FqId());
+        if (found == impl_->service_control->event_controls_.end())
+        {
+            return false;
+        }
+        impl_->view = std::make_unique<ConsumerEventDataControlLocalView<>>(found->second.data_control);
+        // Like a subscribed proxy event: the consumer view logs its slot references in the proxy's transaction log.
+        auto guard = found->second.transaction_log_set_.RegisterProxyElement(impl_->transaction_log_id, *impl_->view);
+        if (!guard.has_value())
+        {
+            return false;
+        }
+        impl_->log_guard.emplace(std::move(guard).value());
+    }
+    const auto slot = impl_->view->ReferenceNextEvent(last_timestamp);
+    if (!slot.has_value())
+    {
+        return false;
+    }
+    const auto& storage = std::as_const(*impl_->storage);
+    SampleData sample{};
+    std::memcpy(&sample,
+                storage.GetEventDataStorage(FqId()).GetTypeErasedDataSlot(*slot, sizeof(SampleData)),
+                sizeof(SampleData));
+    last_timestamp = (*impl_->view)[*slot].GetTimeStamp();
+    impl_->view->DereferenceEvent(*slot);
+    counter = sample.counter;
+    return true;
 }
 
 std::string DataPathOf()

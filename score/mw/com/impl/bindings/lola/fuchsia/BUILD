@@ -140,6 +140,67 @@ cc_library(
     ],
 )
 
+# Event notification (eventpair of Attach instead of message passing). The interface and the message passing service
+# instance decorator are platform neutral and unit tested on the host, the notifier is the Fuchsia shell.
+
+cc_library(
+    name = "i_event_notifier",
+    srcs = ["i_event_notifier.cpp"],
+    hdrs = ["i_event_notifier.h"],
+    features = COMPILER_WARNING_FEATURES,
+    visibility = ["//quality/integration_testing/test:__subpackages__"],
+    deps = [
+        "//score/mw/com/impl:scoped_event_receive_handler",
+        "//score/mw/com/impl/bindings/lola:element_fq_id",
+    ],
+)
+
+cc_library(
+    name = "event_notifying_service_instance",
+    srcs = ["event_notifying_service_instance.cpp"],
+    hdrs = ["event_notifying_service_instance.h"],
+    features = COMPILER_WARNING_FEATURES,
+    visibility = [
+        "//quality/integration_testing/test:__subpackages__",
+        "//score/mw/com/impl/bindings/lola:__pkg__",
+    ],
+    deps = [
+        ":i_event_notifier",
+        "//score/mw/com/impl/bindings/lola/messaging:asil_specific_cfg",
+        "//score/mw/com/impl/bindings/lola/messaging:client_quality_type",
+        "//score/mw/com/impl/bindings/lola/messaging:i_message_passing_service",
+        "//score/mw/com/impl/bindings/lola/messaging:i_message_passing_service_instance",
+        "//score/mw/com/impl/bindings/lola/messaging:i_message_passing_service_instance_factory",
+    ],
+)
+
+cc_test(
+    name = "event_notifying_service_instance_test",
+    srcs = ["event_notifying_service_instance_test.cpp"],
+    features = COMPILER_WARNING_FEATURES,
+    deps = [
+        ":event_notifying_service_instance",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "fuchsia_event_notifier",
+    srcs = ["fuchsia_event_notifier.cpp"],
+    hdrs = ["fuchsia_event_notifier.h"],
+    features = COMPILER_WARNING_FEATURES,
+    tags = ["manual"],
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = ["//quality/integration_testing/test:__subpackages__"],
+    deps = [
+        ":fidl_vmo_handle_client",
+        ":fidl_vmo_handle_server",
+        ":i_event_notifier",
+        "@fuchsia_sdk//pkg/zx",
+        "@score_baselibs//score/mw/log",
+    ],
+)
+
 # Routes LoLa's shared-memory creation/opening through VMOs and FIDL Attach (instead of shm_open).
 cc_library(
     name = "vmo_shm_runtime",
@@ -152,6 +213,8 @@ cc_library(
     deps = [
         ":fidl_vmo_handle_client",
         ":fidl_vmo_handle_server",
+        ":fuchsia_event_notifier",
+        ":i_event_notifier",
         ":score_mw_com_fidl_cpp",
         ":vmo_role",
         "//score/memory/shared:shared_memory_factory",
@@ -180,14 +243,18 @@ cc_library(
         "//score/mw/com/impl:runtime",
         "//score/mw/com/impl:runtime_interfaces",
         "//score/mw/com/impl:skeleton_event_binding",
+        "//score/mw/com/impl/bindings/lola:consumer_event_data_control_local_view",
         "//score/mw/com/impl/bindings/lola:element_fq_id",
         "//score/mw/com/impl/bindings/lola:event_control",
+        "//score/mw/com/impl/bindings/lola:event_data_control_composite",
         "//score/mw/com/impl/bindings/lola:event_data_storage",
         "//score/mw/com/impl/bindings/lola:i_runtime",
+        "//score/mw/com/impl/bindings/lola:provider_event_data_control_local_view",
         "//score/mw/com/impl/bindings/lola:service_data_control",
         "//score/mw/com/impl/bindings/lola:service_data_storage",
         "//score/mw/com/impl/bindings/lola:shm_path_builder",
         "//score/mw/com/impl/bindings/lola:skeleton",
+        "//score/mw/com/impl/bindings/lola:transaction_log_set",
         "//score/mw/com/impl/configuration",
     ],
 )
