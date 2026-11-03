@@ -880,6 +880,96 @@ TEST_F(MessagePassingServiceInstanceTest, NotifyOutdatedNodeSendsOutdatedNodeIdM
     EXPECT_EQ(payload, remote_pid_);
 }
 
+// outdated incarnation (ids which do not fit a pid)
+constexpr std::uint64_t kLargeNodeWire{0x1'0000'000AULL};
+
+TEST_F(MessagePassingServiceInstanceTest, NotifyOutdatedNodeWithLargeIdSendsOutdatedIncarnationMessage)
+{
+    MessagePassingServiceInstance instance{
+        quality_type_, asil_cfg_, server_factory_mock_, client_factory_mock_, executor_mock_};
+
+    std::vector<std::uint8_t> sent{};
+    EXPECT_CALL(client_connection_mock_, Send(::testing::_))
+        .WillOnce(::testing::Invoke([&sent](const score::cpp::span<const std::uint8_t> message) {
+            sent.assign(message.begin(), message.end());
+            return score::cpp::expected_blank<score::os::Error>{};
+        }));
+
+    instance.NotifyOutdatedNodeId(message_passing::NodeId{kLargeNodeWire}, message_passing::NodeIdFromPid(remote_pid_ + 2));
+
+    ASSERT_EQ(sent.size(), 1U + sizeof(std::uint64_t));
+    EXPECT_EQ(sent[0], score::cpp::to_underlying(MessageType::kOutdatedIncarnation));
+    std::uint64_t payload{};
+    std::memcpy(&payload, sent.data() + 1, sizeof(payload));
+    EXPECT_EQ(payload, kLargeNodeWire);
+}
+
+TEST_F(MessagePassingServiceInstanceTest, DoesNotTerminateUponReceivingOutdatedIncarnationWithWrongLengthPayload)
+{
+    MessagePassingServiceInstance instance{
+        quality_type_, asil_cfg_, server_factory_mock_, client_factory_mock_, executor_mock_};
+
+    received_send_message_callback_(
+        *server_connection_mock_,
+        Serialize(std::get<uintptr_t>(user_data_), MessageType::kOutdatedIncarnation, false));
+}
+
+TEST_F(MessagePassingServiceInstanceTest, OutdatedIncarnationRemovesRegistrationOfThatNode)
+{
+    MessagePassingServiceInstance instance{
+        quality_type_, asil_cfg_, server_factory_mock_, client_factory_mock_, executor_mock_};
+
+    // Given the node with the large id is registered
+    UserData large_user_data{std::in_place_type<uintptr_t>, static_cast<uintptr_t>(kLargeNodeWire)};
+    ON_CALL(*server_connection_mock_, GetUserData()).WillByDefault(::testing::ReturnRef(large_user_data));
+    received_send_message_callback_(*server_connection_mock_,
+                                    Serialize(event_id_, MessageType::kRegisterEventNotifier));
+
+    // When it is reported as outdated
+    received_send_message_callback_(*server_connection_mock_,
+                                    Serialize(kLargeNodeWire, MessageType::kOutdatedIncarnation));
+
+    // Then it is not notified anymore
+    EXPECT_CALL(client_connection_mock_, Send(::testing::_)).Times(0);
+    instance.NotifyEvent(event_id_);
+}
+
+TEST_F(MessagePassingServiceInstanceTest, RegisterFromRecentlyOutdatedIncarnationIsDropped)
+{
+    MessagePassingServiceInstance instance{
+        quality_type_, asil_cfg_, server_factory_mock_, client_factory_mock_, executor_mock_};
+
+    UserData large_user_data{std::in_place_type<uintptr_t>, static_cast<uintptr_t>(kLargeNodeWire)};
+    ON_CALL(*server_connection_mock_, GetUserData()).WillByDefault(::testing::ReturnRef(large_user_data));
+
+    // Given the incarnation was reported as outdated
+    received_send_message_callback_(*server_connection_mock_,
+                                    Serialize(kLargeNodeWire, MessageType::kOutdatedIncarnation));
+
+    // When a late registration of that incarnation arrives
+    received_send_message_callback_(*server_connection_mock_,
+                                    Serialize(event_id_, MessageType::kRegisterEventNotifier));
+
+    // Then it is ignored
+    EXPECT_CALL(client_connection_mock_, Send(::testing::_)).Times(0);
+    instance.NotifyEvent(event_id_);
+}
+
+TEST_F(MessagePassingServiceInstanceTest, RegisterFromPidBasedNodeAfterOutdatedMessageIsAccepted)
+{
+    // pid based ids are reused by the OS: a registration after a legacy outdated message is a new process
+    MessagePassingServiceInstance instance{
+        quality_type_, asil_cfg_, server_factory_mock_, client_factory_mock_, executor_mock_};
+
+    received_send_message_callback_(*server_connection_mock_,
+                                    Serialize(static_cast<pid_t>(10), MessageType::kOutdatedNodeId));
+    received_send_message_callback_(*server_connection_mock_,
+                                    Serialize(event_id_, MessageType::kRegisterEventNotifier));
+
+    EXPECT_CALL(client_connection_mock_, Send(::testing::_)).Times(1);
+    instance.NotifyEvent(event_id_);
+}
+
 // notify event message
 TEST_F(MessagePassingServiceInstanceTest, NotifyEventMessageCallsRegisteredHandler)
 {

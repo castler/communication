@@ -99,6 +99,39 @@ TEST_F(ServiceDataStorageFixture, GetsPidFromUnistdAndStoresItOnConstruction)
     EXPECT_EQ(unit.GetSkeletonPid(), pid);
 }
 
+TEST_F(ServiceDataStorageFixture, PublishesIncarnationOfRuntimeAsEpochOnConstruction)
+{
+    EXPECT_CALL(lola_runtime_mock_, GetIncarnation()).WillOnce(Return(IncarnationId::FromRaw(0x1'0000'0007ULL)));
+
+    const ServiceDataStorage unit{kNumberOfServiceElements, GetMemoryResource()};
+
+    EXPECT_EQ(unit.GetSkeletonEpoch(), SkeletonEpoch::FromRaw(0x1'0000'0007ULL));
+    EXPECT_EQ(unit.GetProviderNode(), message_passing::NodeId{0x1'0000'0007ULL});
+}
+
+TEST_F(ServiceDataStorageFixture, ProviderNodeFallsBackToPidWhileEpochIsUnpublished)
+{
+    EXPECT_CALL(lola_runtime_mock_, GetIncarnation()).WillOnce(Return(IncarnationId::None()));
+    EXPECT_CALL(lola_runtime_mock_, GetPid()).WillOnce(Return(pid_t{77}));
+
+    const ServiceDataStorage unit{kNumberOfServiceElements, GetMemoryResource()};
+
+    EXPECT_FALSE(unit.GetSkeletonEpoch().IsPublished());
+    EXPECT_EQ(unit.GetProviderNode(), message_passing::NodeId::FromPid(77));
+}
+
+TEST_F(ServiceDataStorageFixture, PublishedEpochWinsOverPidAndFencedYieldsInvalidNode)
+{
+    ServiceDataStorage unit{kNumberOfServiceElements, GetMemoryResource()};
+    unit.UpdateSkeletonPid(5);
+
+    unit.PublishSkeletonEpoch(SkeletonEpoch::FromIncarnation(IncarnationId::FromPid(9)));
+    EXPECT_EQ(unit.GetProviderNode(), message_passing::NodeId::FromPid(9));
+
+    unit.PublishSkeletonEpoch(SkeletonEpoch::Fenced());
+    EXPECT_FALSE(unit.GetProviderNode().IsValid());
+}
+
 TEST_F(ServiceDataStorageFixture, GetsUidFromRuntimAndStoresItOnConstruction)
 {
     // Expecting that getuid will be called

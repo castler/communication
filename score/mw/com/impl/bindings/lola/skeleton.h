@@ -197,9 +197,9 @@ class Skeleton final : public SkeletonBinding
     }
 
     Result<void> OnServiceMethodsSubscribed(const ProxyInstanceIdentifier& proxy_instance_identifier,
-                                            const uid_t proxy_uid,
+                                            const message_passing::PrincipalId proxy_principal,
                                             const QualityType asil_level,
-                                            const pid_t proxy_pid);
+                                            const message_passing::NodeId proxy_node);
 
     Result<void> OnServiceMethodsUnsubscribed(const ProxyInstanceIdentifier& proxy_instance_identifier);
 
@@ -213,8 +213,8 @@ class Skeleton final : public SkeletonBinding
     std::pair<score::Result<void>, MethodIdsToUnsubscribe> SubscribeMethods(
         const MethodData& method_data,
         const ProxyInstanceIdentifier proxy_instance_identifier,
-        const uid_t proxy_uid,
-        const pid_t proxy_pid,
+        const message_passing::PrincipalId proxy_principal,
+        const message_passing::NodeId proxy_node,
         const QualityType asil_level);
     /// \brief Will unsubscribe each of the provided ProxyMethods from their corresponding SkeletonMethod.
     ///

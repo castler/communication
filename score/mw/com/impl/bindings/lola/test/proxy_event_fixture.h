@@ -117,7 +117,7 @@ class LolaProxyEventFixture : public LolaProxyEventResources
         ThatIsSubscribedWithMaxSamples(max_sample_count);
         const bool is_available = false;
         this->test_proxy_event_->NotifyServiceInstanceChangedAvailability(is_available,
-                                                                          ProxyMockedMemoryFixture::kDummyPid);
+                                                                          ProxyMockedMemoryFixture::kDummyNode);
         const auto new_subscription_state = this->test_proxy_event_->GetSubscriptionState();
         EXPECT_EQ(new_subscription_state, SubscriptionState::kSubscriptionPending);
         return *this;

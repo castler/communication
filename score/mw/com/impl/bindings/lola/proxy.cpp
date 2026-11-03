@@ -238,7 +238,7 @@ score::Result<void> ExecutePartialRestartLogic(const QualityType quality_type,
     TransactionLogRollbackExecutor transaction_log_rollback_executor{service_data_control,
                                                                      skeleton_instance_identifier,
                                                                      quality_type,
-                                                                     service_data_storage.GetSkeletonPid(),
+                                                                     service_data_storage.GetProviderNode(),
                                                                      transaction_log_id};
     const auto rollback_result = transaction_log_rollback_executor.RollbackTransactionLogs();
     if (!rollback_result.has_value())
@@ -479,7 +479,7 @@ void Proxy::ServiceAvailabilityChangeHandler(const bool is_service_available)
 {
     for (auto& event_binding : proxy_events_)
     {
-        event_binding.second.get().NotifyServiceInstanceChangedAvailability(is_service_available, GetSourcePid());
+        event_binding.second.get().NotifyServiceInstanceChangedAvailability(is_service_available, GetProviderNode());
     }
 
     // Update the state machine to track offered/stop-offered/re-offered transitions. This must happen before the
@@ -531,7 +531,7 @@ void Proxy::ServiceAvailabilityChangeHandler(const bool is_service_available)
             LolaServiceInstanceId{GetLoLaInstanceDeployment(handle_).instance_id_.value()}.GetId()};
 
         const auto subscribe_service_method_result = lola_message_passing.SubscribeServiceMethod(
-            quality_type_, skeleton_instance_identifier, proxy_instance_identifier_, message_passing::NodeIdFromPid(GetSourcePid()));
+            quality_type_, skeleton_instance_identifier, proxy_instance_identifier_, GetProviderNode());
         if (!(subscribe_service_method_result.has_value()))
         {
             // This SubscribeServiceMethod call can only be called after SetupMethods() has been called (so the methods
@@ -721,7 +721,7 @@ score::Result<void> Proxy::SetupMethods(const std::size_t additional_shm_size_by
     // ProxyMethods are only marked as subscribed if SubscribeServiceMethod succeeded.
     are_proxy_methods_setup_.store(true);
     const auto subscription_result = lola_message_passing.SubscribeServiceMethod(
-        quality_type_, skeleton_instance_identifier, proxy_instance_identifier_, message_passing::NodeIdFromPid(GetSourcePid()));
+        quality_type_, skeleton_instance_identifier, proxy_instance_identifier_, GetProviderNode());
     if (subscription_result.has_value())
     {
         std::lock_guard lock{proxy_method_registration_mutex_};
@@ -755,7 +755,7 @@ void Proxy::CleanupMethods()
             GetLoLaServiceTypeDeployment(handle_).service_id_,
             LolaServiceInstanceId{GetLoLaInstanceDeployment(handle_).instance_id_.value()}.GetId()};
         const auto result = lola_message_passing.UnsubscribeServiceMethod(
-            quality_type_, skeleton_instance_identifier, proxy_instance_identifier_, message_passing::NodeIdFromPid(GetSourcePid()));
+            quality_type_, skeleton_instance_identifier, proxy_instance_identifier_, GetProviderNode());
         if (!(result.has_value()))
         {
             score::mw::log::LogWarn("lola")
@@ -773,7 +773,7 @@ void Proxy::CleanupMethods()
 memory::shared::SharedMemoryFactory::UserPermissions Proxy::GetSkeletonShmPermissions() const
 {
     SCORE_LANGUAGE_FUTURECPP_PRECONDITION_PRD_MESSAGE(data_ != nullptr,
-                                                      "Proxy::GetSourcePid: Managed memory data pointer is Null");
+                                                      "Proxy::GetProviderNode: Managed memory data pointer is Null");
     const auto& service_data_storage = detail_proxy::GetServiceDataStorage(*data_);
     const auto skeleton_uid = service_data_storage.GetSkeletonUid();
 
@@ -903,12 +903,12 @@ QualityType Proxy::GetQualityType() const noexcept
     return quality_type_;
 }
 
-pid_t Proxy::GetSourcePid() const noexcept
+message_passing::NodeId Proxy::GetProviderNode() const noexcept
 {
     SCORE_LANGUAGE_FUTURECPP_PRECONDITION_PRD_MESSAGE(data_ != nullptr,
-                                                      "Proxy::GetSourcePid: Managed memory data pointer is Null");
+                                                      "Proxy::GetProviderNode: Managed memory data pointer is Null");
     auto& service_data_storage = detail_proxy::GetServiceDataStorage(*data_);
-    return service_data_storage.GetSkeletonPid();
+    return service_data_storage.GetProviderNode();
 }
 
 void Proxy::RegisterEvent(const std::string_view service_element_name, ProxyEvent& proxy_event) noexcept
@@ -917,7 +917,7 @@ void Proxy::RegisterEvent(const std::string_view service_element_name, ProxyEven
     const auto insert_result = proxy_events_.emplace(service_element_name, proxy_event);
     SCORE_LANGUAGE_FUTURECPP_ASSERT_PRD_MESSAGE(insert_result.second,
                                                 "Failed to insert proxy event binding into event binding map.");
-    proxy_event.NotifyServiceInstanceChangedAvailability(is_service_instance_available_, GetSourcePid());
+    proxy_event.NotifyServiceInstanceChangedAvailability(is_service_instance_available_, GetProviderNode());
 }
 
 void Proxy::RegisterMethod(const UniqueMethodIdentifier method_id, ProxyMethod& proxy_method) noexcept

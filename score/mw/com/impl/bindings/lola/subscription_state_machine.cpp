@@ -25,7 +25,7 @@ namespace score::mw::com::impl::lola
 
 SubscriptionStateMachine::SubscriptionStateMachine(const QualityType quality_type,
                                                    const ElementFqId element_fq_id,
-                                                   const pid_t event_source_pid,
+                                                   const message_passing::NodeId event_source_node,
                                                    ConsumerEventDataControlLocalView<>& event_data_control_local,
                                                    EventSubscriptionControl<>& subscription_control,
                                                    TransactionLogSet& transaction_log_set,
@@ -38,7 +38,7 @@ SubscriptionStateMachine::SubscriptionStateMachine(const QualityType quality_typ
       current_state_idx_{SubscriptionStateMachineState::NOT_SUBSCRIBED_STATE},
       subscription_data_{},
       event_receiver_handler_{},
-      event_receive_handler_manager_{quality_type, element_fq_id, event_source_pid},
+      event_receive_handler_manager_{quality_type, element_fq_id, event_source_node},
       event_data_control_local_{event_data_control_local},
       subscription_control_{subscription_control},
       transaction_log_set_{transaction_log_set},
@@ -81,10 +81,10 @@ void SubscriptionStateMachine::StopOfferEvent() noexcept
     GetCurrentEventState().StopOfferEvent();
 }
 
-void SubscriptionStateMachine::ReOfferEvent(const pid_t new_event_source_pid) noexcept
+void SubscriptionStateMachine::ReOfferEvent(const message_passing::NodeId new_event_source_node) noexcept
 {
     std::lock_guard<std::mutex> lock{state_mutex_};
-    GetCurrentEventState().ReOfferEvent(new_event_source_pid);
+    GetCurrentEventState().ReOfferEvent(new_event_source_node);
 }
 
 void SubscriptionStateMachine::SetReceiveHandler(std::weak_ptr<ScopedEventReceiveHandler> handler) noexcept

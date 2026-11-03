@@ -51,7 +51,7 @@ class "lola::Skeleton" {
   +RegisterGeneric(ElementFqId element_fq_id, const SkeletonEventProperties& event_properties, std::size_t size, std::size_t alignment): std::pair<score::memory::shared::OffsetPtr<void>, EventDataControlComposite>
   +DisconnectQmConsumers(): void
   +GetInstanceQualityType(): QualityType
-  +GetSourcePid(): pid_t
+  +GetProviderNode() : message_passing::NodeId
 }
 
 class "mw::com::impl::SkeletonEvent<SampleType>" {

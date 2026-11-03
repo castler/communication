@@ -13,6 +13,7 @@
 #ifndef SCORE_MW_COM_IMPL_BINDINGS_LOLA_PROXY_H
 #define SCORE_MW_COM_IMPL_BINDINGS_LOLA_PROXY_H
 
+#include "score/message_passing/identity_types.h"
 #include "score/mw/com/impl/bindings/lola/element_fq_id.h"
 #include "score/mw/com/impl/bindings/lola/event_control.h"
 #include "score/mw/com/impl/bindings/lola/event_data_storage.h"
@@ -175,9 +176,9 @@ class Proxy : public ProxyBinding
 
     QualityType GetQualityType() const noexcept;
 
-    /// \brief Returns pid of provider/skeleton side, this proxy is "connected" with.
+    /// \brief Returns the node (communication identity) of the provider/skeleton side, this proxy is "connected" with.
     /// \return
-    pid_t GetSourcePid() const noexcept;
+    message_passing::NodeId GetProviderNode() const noexcept;
 
     ProxyInstanceIdentifier GetProxyInstanceIdentifier() const noexcept
     {

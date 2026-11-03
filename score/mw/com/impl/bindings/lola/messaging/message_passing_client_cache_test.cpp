@@ -324,5 +324,55 @@ TEST_P(MessagePassingClientCacheTest, GetCachedMessagePassingClientReturnsExisti
     EXPECT_EQ(client1, client2);
 }
 
+class UnresolvableNodeAddressResolver final : public INodeAddressResolver
+{
+  public:
+    std::optional<std::string> Resolve(const ClientQualityType, const NodeId) const noexcept override
+    {
+        return std::nullopt;
+    }
+};
+
+TEST_P(MessagePassingClientCacheTest, UnresolvableNodeYieldsNoClientAndCreatesNoConnection)
+{
+    UnresolvableNodeAddressResolver resolver{};
+    MessagePassingClientCache cache{GetParam(), client_factory_mock_, resolver};
+
+    EXPECT_CALL(client_factory_mock_, Create(::testing::_, ::testing::_)).Times(0);
+
+    EXPECT_EQ(cache.GetMessagePassingClient(pid_), nullptr);
+}
+
+TEST_P(MessagePassingClientCacheTest, ResolvedAddressIsUsedAsServiceIdentifier)
+{
+    class FixedResolver final : public INodeAddressResolver
+    {
+      public:
+        std::optional<std::string> Resolve(const ClientQualityType, const NodeId) const noexcept override
+        {
+            return "custom_address";
+        }
+    } resolver{};
+    MessagePassingClientCache cache{GetParam(), client_factory_mock_, resolver};
+
+    std::string identifier{};
+    EXPECT_CALL(client_factory_mock_, Create(::testing::_, ::testing::_))
+        .WillOnce(::testing::Invoke([this, &identifier](const auto& protocol_config, const auto&) {
+            identifier = std::string{protocol_config.identifier};
+            return std::move(client_connection_mock_);
+        }));
+
+    EXPECT_NE(cache.GetMessagePassingClient(pid_), nullptr);
+    EXPECT_EQ(identifier, "custom_address");
+}
+
+TEST(NameBasedNodeAddressResolverTest, ResolvesToPidAndQualityDependentName)
+{
+    const NameBasedNodeAddressResolver resolver{};
+    EXPECT_EQ(resolver.Resolve(ClientQualityType::kASIL_B, NodeIdFromPid(21)), "LoLa_2_21_ASIL_B");
+    EXPECT_EQ(resolver.Resolve(ClientQualityType::kASIL_QM, NodeIdFromPid(21)), "LoLa_2_21_QM");
+    EXPECT_EQ(resolver.Resolve(ClientQualityType::kASIL_QMfromB, NodeIdFromPid(42)), "LoLa_2_42_QM");
+}
+
 }  // namespace
 }  // namespace score::mw::com::impl::lola

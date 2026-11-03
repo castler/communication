@@ -161,8 +161,15 @@ AsilSpecificCfg Runtime::GetMessagePassingCfg(const QualityType asil_level) cons
     }
     std::set<uid_t> aggregated_allowed_users = configuration_.GetAggregatedAllowedUsers(asil_level);
 
+    // The configuration format stores OS uids; they are turned into opaque principals at this boundary.
+    std::vector<message_passing::PrincipalId> allowed_principals{};
+    allowed_principals.reserve(aggregated_allowed_users.size());
+    for (const auto uid : aggregated_allowed_users)
+    {
+        allowed_principals.push_back(message_passing::PrincipalIdFromUid(uid));
+    }
     return {configuration_.GetGlobalConfiguration().GetReceiverMessageQueueSize(asil_level),
-            std::vector<uid_t>(aggregated_allowed_users.begin(), aggregated_allowed_users.end())};
+            std::move(allowed_principals)};
 }
 
 ShmSizeCalculationMode Runtime::GetShmSizeCalculationMode() const noexcept

@@ -11,6 +11,7 @@
  * SPDX-License-Identifier: Apache-2.0
  ********************************************************************************/
 #include "score/mw/com/impl/bindings/lola/element_fq_id.h"
+#include "score/mw/com/impl/bindings/lola/pid_incarnation_authority.h"
 #include "score/mw/com/impl/bindings/lola/proxy.h"
 #include "score/mw/com/impl/bindings/lola/rollback_synchronization.h"
 #include "score/mw/com/impl/bindings/lola/runtime_mock.h"
@@ -88,6 +89,11 @@ class ProxyWithRealMemFixture : public ::testing::Test
             .WillRepeatedly(::testing::Return(&lola_runtime_mock_));
         ON_CALL(lola_runtime_mock_, GetRollbackSynchronization())
             .WillByDefault(::testing::ReturnRef(rollback_synchronization_));
+        const auto pid = os::Unistd::instance().getpid();
+        incarnation_authority_ = std::make_unique<PidIncarnationAuthority>(pid);
+        ON_CALL(lola_runtime_mock_, GetIncarnation()).WillByDefault(::testing::Return(IncarnationId::FromPid(pid)));
+        ON_CALL(lola_runtime_mock_, GetIncarnationAuthority())
+            .WillByDefault(::testing::ReturnRef(*incarnation_authority_));
     }
 
     void TearDown() override
@@ -176,6 +182,7 @@ class ProxyWithRealMemFixture : public ::testing::Test
     std::vector<std::string> shm_files_{};
     RuntimeMockGuard runtime_mock_{};
     lola::RuntimeMock lola_runtime_mock_{};
+    std::unique_ptr<PidIncarnationAuthority> incarnation_authority_{};
     RollbackSynchronization rollback_synchronization_{};
     ServiceDiscoveryMock service_discovery_mock_{};
 };

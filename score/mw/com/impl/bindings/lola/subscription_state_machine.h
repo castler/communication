@@ -74,7 +74,7 @@ class SubscriptionStateMachine : public std::enable_shared_from_this<Subscriptio
   public:
     SubscriptionStateMachine(const QualityType quality_type,
                              const ElementFqId element_fq_id,
-                             const pid_t event_source_pid,
+                             const message_passing::NodeId event_source_node,
                              ConsumerEventDataControlLocalView<>& event_data_control_local,
                              EventSubscriptionControl<>& subscription_control,
                              TransactionLogSet& transaction_log_set,
@@ -106,7 +106,7 @@ class SubscriptionStateMachine : public std::enable_shared_from_this<Subscriptio
     [[nodiscard]] Result<void> SubscribeEvent(const std::size_t max_sample_count) noexcept;
     void UnsubscribeEvent() noexcept;
     void StopOfferEvent() noexcept;
-    void ReOfferEvent(const pid_t new_event_source_pid) noexcept;
+    void ReOfferEvent(const message_passing::NodeId new_event_source_node) noexcept;
 
     // State Machine Methods. These are not modeled by the state machine UML and do not cause transitions between
     // states.

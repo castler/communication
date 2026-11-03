@@ -68,8 +68,8 @@ const TypeErasedCallQueue::TypeErasedElementInfo kTypeErasedInfoWithNoInArgsOrRe
     std::optional<memory::DataTypeSizeInfo>{},
     kDummyQueueSize};
 
-const uid_t kAllowedProxyUid{10};
-const pid_t kAllowedProxyPid{12};
+const message_passing::PrincipalId kAllowedProxy{10U};
+const message_passing::NodeId kAllowedProxyNode{12U};
 const auto kAsilLevel{QualityType::kASIL_QM};
 
 constexpr auto InArgsQueueStorageSize = kValidInArgSizeInfo.Size() * kDummyQueueSize;
@@ -168,8 +168,8 @@ TEST_F(SkeletonMethodOnProxyMethodSubscribedFixture, CallingWithoutRegisteringCa
                                                                    kValidReturnStorage,
                                                                    proxy_method_instance_identifier_,
                                                                    method_call_handler_scope_,
-                                                                   kAllowedProxyUid,
-                                                                   kAllowedProxyPid,
+                                                                   kAllowedProxy,
+                                                                   kAllowedProxyNode,
                                                                    kAsilLevel));
 }
 
@@ -181,7 +181,7 @@ TEST_F(SkeletonMethodOnProxyMethodSubscribedFixture, CallingRegistersCallbackWit
     // OnProxyMethoSubscribeFinished.
     const auto asil_level = QualityType::kASIL_B;
     EXPECT_CALL(message_passing_mock_,
-                RegisterMethodCallHandler(asil_level, proxy_method_instance_identifier_, _, message_passing::PrincipalIdFromUid(kAllowedProxyUid)));
+                RegisterMethodCallHandler(asil_level, proxy_method_instance_identifier_, _, kAllowedProxy));
 
     // When calling OnProxyMethodSubscribeFinished with a registered callback
     const auto result = unit_->OnProxyMethodSubscribeFinished(kTypeErasedInfoWithInArgsAndReturn,
@@ -189,8 +189,8 @@ TEST_F(SkeletonMethodOnProxyMethodSubscribedFixture, CallingRegistersCallbackWit
                                                               kValidReturnStorage,
                                                               proxy_method_instance_identifier_,
                                                               method_call_handler_scope_,
-                                                              kAllowedProxyUid,
-                                                              kAllowedProxyPid,
+                                                              kAllowedProxy,
+                                                              kAllowedProxyNode,
                                                               asil_level);
 
     // Then the result will be valid
@@ -222,8 +222,8 @@ TEST_F(SkeletonMethodOnProxyMethodSubscribedFixture, CallingRegistersRegisteredC
                                                               kValidReturnStorage,
                                                               proxy_method_instance_identifier_,
                                                               method_call_handler_scope_,
-                                                              kAllowedProxyUid,
-                                                              kAllowedProxyPid,
+                                                              kAllowedProxy,
+                                                              kAllowedProxyNode,
                                                               kAsilLevel);
 
     // Then the result will be valid
@@ -245,8 +245,8 @@ TEST_F(SkeletonMethodOnProxyMethodSubscribedFixture, PropagatesErrorFromMessageP
                                                               kValidReturnStorage,
                                                               proxy_method_instance_identifier_,
                                                               method_call_handler_scope_,
-                                                              kAllowedProxyUid,
-                                                              kAllowedProxyPid,
+                                                              kAllowedProxy,
+                                                              kAllowedProxyNode,
                                                               kAsilLevel);
 
     // Then the result will contain an error
@@ -269,8 +269,8 @@ TEST_F(SkeletonMethodOnProxyMethodSubscribedFixture, FailingToGetLolaRuntimeTerm
                                                                    kValidReturnStorage,
                                                                    proxy_method_instance_identifier_,
                                                                    method_call_handler_scope_,
-                                                                   kAllowedProxyUid,
-                                                                   kAllowedProxyPid,
+                                                                   kAllowedProxy,
+                                                                   kAllowedProxyNode,
                                                                    kAsilLevel));
 }
 
@@ -292,8 +292,8 @@ TEST_F(SkeletonMethodOnProxyMethodSubscribedFixture, CallingWillNotCallUnregiste
                                                               kValidReturnStorage,
                                                               proxy_method_instance_identifier_,
                                                               method_call_handler_scope_,
-                                                              kAllowedProxyUid,
-                                                              kAllowedProxyPid,
+                                                              kAllowedProxy,
+                                                              kAllowedProxyNode,
                                                               QualityType::kASIL_QM);
     EXPECT_TRUE(result.has_value());
 }
@@ -322,8 +322,8 @@ TEST_F(SkeletonMethodOnProxyMethodSubscribedFixture, UnregisterWillBeCalledOnAll
                                                               kValidReturnStorage,
                                                               proxy_method_instance_identifier_,
                                                               method_call_handler_scope_,
-                                                              kAllowedProxyUid,
-                                                              kAllowedProxyPid,
+                                                              kAllowedProxy,
+                                                              kAllowedProxyNode,
                                                               QualityType::kASIL_QM);
     EXPECT_TRUE(result.has_value());
 
@@ -332,8 +332,8 @@ TEST_F(SkeletonMethodOnProxyMethodSubscribedFixture, UnregisterWillBeCalledOnAll
                                                                 kValidReturnStorage,
                                                                 proxy_method_instance_identifier_2_,
                                                                 method_call_handler_scope_,
-                                                                kAllowedProxyUid,
-                                                                kAllowedProxyPid,
+                                                                kAllowedProxy,
+                                                                kAllowedProxyNode,
                                                                 QualityType::kASIL_B);
     EXPECT_TRUE(result_2.has_value());
 
@@ -368,8 +368,8 @@ TEST_F(SkeletonMethodUnregisterHandlersFixture, CallingWillUnregisterAllHandlers
                                                               kValidReturnStorage,
                                                               proxy_method_instance_identifier_,
                                                               method_call_handler_scope_,
-                                                              kAllowedProxyUid,
-                                                              kAllowedProxyPid,
+                                                              kAllowedProxy,
+                                                              kAllowedProxyNode,
                                                               QualityType::kASIL_QM);
     EXPECT_TRUE(result.has_value());
 
@@ -378,8 +378,8 @@ TEST_F(SkeletonMethodUnregisterHandlersFixture, CallingWillUnregisterAllHandlers
                                                                 kValidReturnStorage,
                                                                 proxy_method_instance_identifier_2,
                                                                 method_call_handler_scope_,
-                                                                kAllowedProxyUid,
-                                                                kAllowedProxyPid,
+                                                                kAllowedProxy,
+                                                                kAllowedProxyNode,
                                                                 QualityType::kASIL_B);
     EXPECT_TRUE(result_2.has_value());
 
@@ -417,8 +417,8 @@ TEST_F(SkeletonMethodOnProxyMethodUnsubscribedFixture, CallingWillUnregisterHand
                                                               kValidReturnStorage,
                                                               proxy_method_instance_identifier_,
                                                               method_call_handler_scope_,
-                                                              kAllowedProxyUid,
-                                                              kAllowedProxyPid,
+                                                              kAllowedProxy,
+                                                              kAllowedProxyNode,
                                                               QualityType::kASIL_QM);
     EXPECT_TRUE(result.has_value());
 
@@ -427,8 +427,8 @@ TEST_F(SkeletonMethodOnProxyMethodUnsubscribedFixture, CallingWillUnregisterHand
                                                                 kValidReturnStorage,
                                                                 proxy_method_instance_identifier_2,
                                                                 method_call_handler_scope_,
-                                                                kAllowedProxyUid,
-                                                                kAllowedProxyPid,
+                                                                kAllowedProxy,
+                                                                kAllowedProxyNode,
                                                                 QualityType::kASIL_B);
     EXPECT_TRUE(result_2.has_value());
 
@@ -467,8 +467,8 @@ TEST_F(SkeletonMethodOnProxyMethodUnsubscribedFixture, CallingASecondTimeWithSam
                                                               kValidReturnStorage,
                                                               proxy_method_instance_identifier_,
                                                               method_call_handler_scope_,
-                                                              kAllowedProxyUid,
-                                                              kAllowedProxyPid,
+                                                              kAllowedProxy,
+                                                              kAllowedProxyNode,
                                                               QualityType::kASIL_QM);
     EXPECT_TRUE(result.has_value());
 
@@ -512,8 +512,8 @@ TEST_F(SkeletonMethodOnProxyMethodUnsubscribedFixture,
                                                      kEmptyReturnStorage,
                                                      proxy_method_instance_identifier_,
                                                      method_call_handler_scope_,
-                                                     kAllowedProxyUid,
-                                                     kAllowedProxyPid,
+                                                     kAllowedProxy,
+                                                     kAllowedProxyNode,
                                                      kAsilLevel)
                     .has_value());
     ASSERT_TRUE(unit_
@@ -522,8 +522,8 @@ TEST_F(SkeletonMethodOnProxyMethodUnsubscribedFixture,
                                                      kEmptyReturnStorage,
                                                      proxy_method_instance_identifier_same_app,
                                                      method_call_handler_scope_,
-                                                     kAllowedProxyUid,
-                                                     kAllowedProxyPid,
+                                                     kAllowedProxy,
+                                                     kAllowedProxyNode,
                                                      kAsilLevel)
                     .has_value());
 
@@ -566,8 +566,8 @@ TEST_F(SkeletonMethodOnProxyMethodUnsubscribedFixture, DestroyingUnregistersHand
                                                      kEmptyReturnStorage,
                                                      proxy_method_instance_identifier_,
                                                      method_call_handler_scope_,
-                                                     kAllowedProxyUid,
-                                                     kAllowedProxyPid,
+                                                     kAllowedProxy,
+                                                     kAllowedProxyNode,
                                                      kAsilLevel)
                     .has_value());
     ASSERT_TRUE(unit_
@@ -576,8 +576,8 @@ TEST_F(SkeletonMethodOnProxyMethodUnsubscribedFixture, DestroyingUnregistersHand
                                                      kEmptyReturnStorage,
                                                      proxy_method_instance_identifier_same_app,
                                                      method_call_handler_scope_,
-                                                     kAllowedProxyUid,
-                                                     kAllowedProxyPid,
+                                                     kAllowedProxy,
+                                                     kAllowedProxyNode,
                                                      kAsilLevel)
                     .has_value());
 
@@ -609,8 +609,8 @@ TEST_F(SkeletonMethodCallFixture, CallingWithInArgTypeInfoAndStorageDispatchesTo
                                                                kEmptyReturnStorage,
                                                                proxy_method_instance_identifier_,
                                                                method_call_handler_scope_,
-                                                               kAllowedProxyUid,
-                                                               kAllowedProxyPid,
+                                                               kAllowedProxy,
+                                                               kAllowedProxyNode,
                                                                kAsilLevel);
 
     // When the method call handler is called by the message passing (i.e. when a Proxy sends a message passing message
@@ -637,8 +637,8 @@ TEST_F(SkeletonMethodCallFixture,
                                                                kValidReturnStorage,
                                                                proxy_method_instance_identifier_,
                                                                method_call_handler_scope_,
-                                                               kAllowedProxyUid,
-                                                               kAllowedProxyPid,
+                                                               kAllowedProxy,
+                                                               kAllowedProxyNode,
                                                                kAsilLevel);
 
     // When the method call handler is called by the message passing (i.e. when a Proxy sends a message passing message
@@ -666,8 +666,8 @@ TEST_F(SkeletonMethodCallFixture,
                                                                kValidReturnStorage,
                                                                proxy_method_instance_identifier_,
                                                                method_call_handler_scope_,
-                                                               kAllowedProxyUid,
-                                                               kAllowedProxyPid,
+                                                               kAllowedProxy,
+                                                               kAllowedProxyNode,
                                                                kAsilLevel);
 
     // When the method call handler is called by the message passing (i.e. when a Proxy sends a message passing message
@@ -693,8 +693,8 @@ TEST_F(SkeletonMethodCallFixture, CallingWithNoTypeInfosAndStoragesDispatchesToR
                                                                kEmptyReturnStorage,
                                                                proxy_method_instance_identifier_,
                                                                method_call_handler_scope_,
-                                                               kAllowedProxyUid,
-                                                               kAllowedProxyPid,
+                                                               kAllowedProxy,
+                                                               kAllowedProxyNode,
                                                                kAsilLevel);
 
     // When the method call handler is called by the message passing (i.e. when a Proxy sends a message passing message
@@ -714,8 +714,8 @@ TEST_F(SkeletonMethodCallFixture, CallingWithInArgTypeInfoAndNoValidStorageTermi
                                                                kEmptyReturnStorage,
                                                                proxy_method_instance_identifier_,
                                                                method_call_handler_scope_,
-                                                               kAllowedProxyUid,
-                                                               kAllowedProxyPid,
+                                                               kAllowedProxy,
+                                                               kAllowedProxyNode,
                                                                kAsilLevel);
 
     // When the method call handler is called by the message passing (i.e. when a Proxy sends a message passing message
@@ -737,8 +737,8 @@ TEST_F(SkeletonMethodCallFixture, CallingAfterScopeHasExpiredDoesNotCallTypeEras
                                                                kEmptyReturnStorage,
                                                                proxy_method_instance_identifier_,
                                                                method_call_handler_scope_,
-                                                               kAllowedProxyUid,
-                                                               kAllowedProxyPid,
+                                                               kAllowedProxy,
+                                                               kAllowedProxyNode,
                                                                kAsilLevel);
     // and given that the method call handler scope has expired
     method_call_handler_scope_.Expire();

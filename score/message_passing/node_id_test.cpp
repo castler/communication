@@ -10,6 +10,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  ********************************************************************************/
+#include "score/message_passing/identity_types.h"
 #include "score/message_passing/node_id.h"
 
 #include <gtest/gtest.h>
@@ -65,6 +66,12 @@ TEST(NodeIdTest, HashIsConsistentWithEquality)
 TEST(NodeIdTest, ToStringContainsValue)
 {
     EXPECT_EQ(NodeId::FromPid(10).ToString(), "node=10");
+}
+
+TEST(NodeIdTest, GtestPrintsReadableValue)
+{
+    EXPECT_EQ(::testing::PrintToString(NodeId::FromPid(10)), "node=10");
+    EXPECT_EQ(::testing::PrintToString(PrincipalId{7U}), "7");
 }
 
 TEST(NodeIdTest, HasSharedMemorySafeLayout)

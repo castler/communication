@@ -17,6 +17,7 @@
 #include "score/mw/com/impl/bindings/lola/event_subscription_control.h"
 #include "score/mw/com/impl/bindings/lola/i_runtime.h"
 #include "score/mw/com/impl/bindings/lola/messaging/message_passing_service_mock.h"
+#include "score/mw/com/impl/bindings/lola/pid_incarnation_authority.h"
 #include "score/mw/com/impl/bindings/lola/provider_event_data_control_local_view.h"
 #include "score/mw/com/impl/bindings/lola/proxy.h"
 #include "score/mw/com/impl/bindings/lola/proxy_event.h"
@@ -143,6 +144,7 @@ class ProxyMockedMemoryFixture : public ::testing::Test
 
   protected:
     static constexpr pid_t kDummyPid{123456};
+    static constexpr message_passing::NodeId kDummyNode{message_passing::NodeId::FromPid(kDummyPid)};
     static constexpr uid_t kDummyUid{2543};
     static constexpr GlobalConfiguration::ApplicationId kDummyApplicationId{6543};
 
@@ -198,6 +200,7 @@ class ProxyMockedMemoryFixture : public ::testing::Test
 
     std::shared_ptr<MessagePassingServiceMock> mock_service_{std::make_shared<MessagePassingServiceMock>()};
     ::testing::NiceMock<LolaRuntimeMock<std::shared_ptr>> binding_runtime_{false, mock_service_};
+    PidIncarnationAuthority incarnation_authority_{kDummyPid};
 
     std::unique_ptr<Proxy> proxy_{nullptr};
 
@@ -213,9 +216,9 @@ class LolaProxyEventResources : public ProxyMockedMemoryFixture
     ~LolaProxyEventResources() override;
 
     std::future<std::shared_ptr<ScopedEventReceiveHandler>> ExpectRegisterEventNotification(
-        std::optional<pid_t> pid = {});
-    void ExpectReregisterEventNotification(std::optional<pid_t> pid = {});
-    void ExpectUnregisterEventNotification(std::optional<pid_t> pid = {});
+        std::optional<message_passing::NodeId> node = {});
+    void ExpectReregisterEventNotification(std::optional<message_passing::NodeId> node = {});
+    void ExpectUnregisterEventNotification(std::optional<message_passing::NodeId> node = {});
 
     SlotIndexType PutData(const std::uint32_t value = 42, const EventSlotStatus::EventTimeStamp timestamp = 1);
 

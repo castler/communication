@@ -21,7 +21,7 @@
 namespace score::mw::com::impl::lola
 {
 
-bool MethodResourceMap::Contains(const ProxyInstanceIdentifier proxy_instance_identifier, const pid_t proxy_pid) const
+bool MethodResourceMap::Contains(const ProxyInstanceIdentifier proxy_instance_identifier, const message_passing::NodeId proxy_node) const
 {
     const auto resources_it = resource_map_.find(proxy_instance_identifier.application_id);
     if (resources_it == resource_map_.cend())
@@ -29,8 +29,8 @@ bool MethodResourceMap::Contains(const ProxyInstanceIdentifier proxy_instance_id
         return false;
     }
 
-    const auto& [pid, resources] = resources_it->second;
-    if (pid != proxy_pid)
+    const auto& [node, resources] = resources_it->second;
+    if (node != proxy_node)
     {
         return false;
     }
@@ -39,7 +39,7 @@ bool MethodResourceMap::Contains(const ProxyInstanceIdentifier proxy_instance_id
 }
 
 auto MethodResourceMap::Insert(const ProxyInstanceIdentifier proxy_instance_identifier,
-                               const pid_t proxy_pid,
+                               const message_passing::NodeId proxy_node,
                                const std::shared_ptr<memory::shared::ISharedMemoryResource>& methods_shm_resource)
     -> iterator
 {
@@ -47,24 +47,24 @@ auto MethodResourceMap::Insert(const ProxyInstanceIdentifier proxy_instance_iden
     auto inner_pair_it = resource_map_.insert({proxy_instance_identifier.application_id, {}});
 
     auto& process_specific_resource_map = inner_pair_it.first->second;
-    process_specific_resource_map.pid = proxy_pid;
+    process_specific_resource_map.node = proxy_node;
     const auto [inserted_resource_it, _] = process_specific_resource_map.inner_resource_map.insert(
         {proxy_instance_identifier.proxy_instance_counter, methods_shm_resource});
     return inserted_resource_it;
 }
 
 auto MethodResourceMap::CleanUpOldRegions(const ProxyInstanceIdentifier proxy_instance_identifier,
-                                          const pid_t proxy_pid) -> CleanUpResult
+                                          const message_passing::NodeId proxy_node) -> CleanUpResult
 {
     SCORE_LANGUAGE_FUTURECPP_PRECONDITION_PRD_MESSAGE(
-        !Contains(proxy_instance_identifier, proxy_pid),
+        !Contains(proxy_instance_identifier, proxy_node),
         "Contains() should be checked before trying to insert element: The same memory region "
         "should not be created / inserted twice.");
-    return EraseRegionsFromCrashedProcesses(proxy_instance_identifier.application_id, proxy_pid);
+    return EraseRegionsFromCrashedProcesses(proxy_instance_identifier.application_id, proxy_node);
 }
 
 auto MethodResourceMap::EraseRegionsFromCrashedProcesses(const GlobalConfiguration::ApplicationId proxy_app_id,
-                                                         const pid_t proxy_pid) -> CleanUpResult
+                                                         const message_passing::NodeId proxy_node) -> CleanUpResult
 {
     // If no entry currently exists for the provided application ID, then there were no entries from a crashed process
     // for this service so we can return without cleaning anything up.
@@ -74,13 +74,13 @@ auto MethodResourceMap::EraseRegionsFromCrashedProcesses(const GlobalConfigurati
         return CleanUpResult::NO_REGIONS_REMOVED;
     }
 
-    // If the found memory region has the same PID as the process which is trying to insert a new region, then any
+    // If the found memory region has the same node as the process which is trying to insert a new region, then any
     // existing regions are from the currently running process and therefore should not be cleaned up!
-    const auto& [old_pid, resources] = resources_it->second;
-    if (old_pid != proxy_pid)
+    const auto& [old_node, resources] = resources_it->second;
+    if (old_node != proxy_node)
     {
         score::mw::log::LogDebug("lola") << "Removing old methods shared memory regions with ApplicationID:"
-                                         << proxy_app_id << "and PID:" << old_pid;
+                                         << proxy_app_id << "and node:" << old_node.Raw();
         std::ignore = resource_map_.erase(resources_it);
         return CleanUpResult::OLD_REGIONS_REMOVED;
     }

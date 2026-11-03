@@ -19,6 +19,7 @@
 #include "score/mw/com/impl/bindings/lola/transaction_log_id.h"
 #include "score/mw/com/impl/configuration/quality_type.h"
 
+#include <optional>
 namespace score::mw::com::impl::lola
 {
 
@@ -28,18 +29,20 @@ class TransactionLogRollbackExecutor
     /// \brief ctor of proxy instance specific TransactionLogRollbackExecutor
     /// \param service_data_control pointer to service instance specific control within shared-mem.
     /// \param asil_level asil level of the proxy instance owning this executor.
-    /// \param provider_pid pid/node-id of the service instance provider
+    /// \param provider_node node of the service instance provider
     /// \param transaction_log_id id of transaction logs to be rolled back.
     /// \param ambiguity_policy how to handle logs of a previous incarnation, which was interrupted while the effect of
-    ///        a slot/subscription transaction is unknown. kFail (default) keeps such a log stuck and fails the rollback
-    ///        with kCouldNotRestartProxy; kQuarantine resolves it (see RollbackAmbiguityPolicy).
+    ///        a slot/subscription transaction is unknown. kFail keeps such a log stuck and fails the rollback with
+    ///        kCouldNotRestartProxy; kQuarantine resolves it (see RollbackAmbiguityPolicy). If not given, it is chosen
+    ///        from the incarnation authority: kQuarantine only where a takeover requires the previous incarnation to
+    ///        be confirmed dead (TakeoverPolicy::kRequireDead), otherwise kFail. Linux/QNX (kAlwaysTakeover, no
+    ///        liveness information) therefore keep the kFail behaviour.
     TransactionLogRollbackExecutor(ServiceDataControl& service_data_control,
                                    const SkeletonInstanceIdentifier skeleton_instance_identifier,
                                    const QualityType asil_level,
-                                   const pid_t provider_pid,
+                                   const message_passing::NodeId provider_node,
                                    const TransactionLogId transaction_log_id,
-                                   const RollbackAmbiguityPolicy ambiguity_policy =
-                                       RollbackAmbiguityPolicy::kFail) noexcept;
+                                   const std::optional<RollbackAmbiguityPolicy> ambiguity_policy = std::nullopt) noexcept;
 
     /// \brief Does a rollback of all transaction logs (log per service element) related to service_data_control/
     ///        transaction_log_id specific to a proxy instance given in the ctor.
@@ -56,20 +59,22 @@ class TransactionLogRollbackExecutor
     ///          for the same service-instance, only the call to this func by the 1st proxy instance will do the
     ///          preparation, further calls will return early.
     ///          The func does mainly two things:
-    ///          1. It registers current process uid/pid pair within service_data_control and if it detects an old/
-    ///             previous registration for its uid, it notifies the provider side about an outdated pid.
+    ///          1. It makes the current incarnation the owner of the application id within service_data_control
+    ///             (ApplicationIdPidMapping::Takeover). If it took over from a different previous incarnation, it
+    ///             notifies the provider side about the outdated incarnation. If the authority requires the previous
+    ///             incarnation to be dead and it is not, nothing is changed and kBindingFailure is returned.
     ///          2. It marks any transaction-log within service_data_control with its transaction_log_id as
     ///             "to-be-rolled-back".
-    void PrepareRollback(lola::IRuntime& lola_runtime) noexcept;
+    Result<void> PrepareRollback(lola::IRuntime& lola_runtime) noexcept;
 
     ServiceDataControl& service_data_control_;
     /// asil level of the service_data_control_
     const QualityType asil_level_;
     /// pid of the provider of the service instance represented by service_data_control_
-    const pid_t provider_pid_;
+    const message_passing::NodeId provider_node_;
     TransactionLogId transaction_log_id_;
     SkeletonInstanceIdentifier skeleton_instance_identifier_;
-    RollbackAmbiguityPolicy ambiguity_policy_;
+    std::optional<RollbackAmbiguityPolicy> ambiguity_policy_;
 };
 
 }  // namespace score::mw::com::impl::lola

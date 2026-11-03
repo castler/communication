@@ -13,6 +13,7 @@
 #ifndef SCORE_MW_COM_IMPL_BINDINGS_LOLA_SUBSCRIPTION_SUBSCRIPTION_STATE_BASE_H
 #define SCORE_MW_COM_IMPL_BINDINGS_LOLA_SUBSCRIPTION_SUBSCRIPTION_STATE_BASE_H
 
+#include "score/message_passing/identity_types.h"
 #include "score/mw/com/impl/bindings/lola/slot_collector.h"
 #include "score/mw/com/impl/scoped_event_receive_handler.h"
 
@@ -43,7 +44,7 @@ class SubscriptionStateBase
     virtual Result<void> SubscribeEvent(const std::size_t max_sample_count) = 0;
     virtual void UnsubscribeEvent() = 0;
     virtual void StopOfferEvent() = 0;
-    virtual void ReOfferEvent(const pid_t new_event_source_pid) = 0;
+    virtual void ReOfferEvent(const message_passing::NodeId new_event_source_node) = 0;
 
     virtual void SetReceiveHandler(std::weak_ptr<ScopedEventReceiveHandler> handler) = 0;
     virtual void UnsetReceiveHandler() = 0;

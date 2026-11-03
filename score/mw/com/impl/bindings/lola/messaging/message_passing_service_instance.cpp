@@ -407,6 +407,10 @@ void MessagePassingServiceInstance::MessageCallback(const NodeId sender_node,
         case score::cpp::to_underlying(MessageType::kOutdatedNodeId):
             HandleOutdatedNodeIdMsg(payload, sender_node);
             break;
+        // Deviation of MISRA RULE-7-0-5: codeql::misra_deviation_next_line(switch-enum-underlying-type-discriminant)
+        case score::cpp::to_underlying(MessageType::kOutdatedIncarnation):
+            HandleOutdatedIncarnationMsg(payload, sender_node);
+            break;
         default:
             score::mw::log::LogError("lola")
                 << "MessagePassingService: Unsupported MessageType received from " << sender_node.Raw();
@@ -480,6 +484,13 @@ void MessagePassingServiceInstance::HandleRegisterNotificationMsg(const score::c
     ElementFqId elementFqId{};
     if (!DeserializeFromPayload(payload, elementFqId))
     {
+        return;
+    }
+
+    if (IsRecentlyOutdated(sender_node_id))
+    {
+        score::mw::log::LogWarn("lola") << "MessagePassingService: Dropping RegisterEventNotificationMessage from node "
+                                        << sender_node_id.Raw() << " which was reported outdated.";
         return;
     }
 
@@ -599,7 +610,41 @@ void MessagePassingServiceInstance::HandleOutdatedNodeIdMsg(const score::cpp::sp
         return;
     }
     const auto node_to_unregister = score::message_passing::NodeIdFromPid(outdated_pid);
+    RemoveOutdatedNode(node_to_unregister, sender_node_id);
+}
 
+void MessagePassingServiceInstance::HandleOutdatedIncarnationMsg(const score::cpp::span<const std::uint8_t> payload,
+                                                                 const NodeId sender_node_id) noexcept
+{
+    std::uint64_t outdated_wire{};
+    if (!DeserializeFromPayload(payload, outdated_wire))
+    {
+        return;
+    }
+    RemoveOutdatedNode(NodeId::FromWire(outdated_wire), sender_node_id);
+}
+
+bool MessagePassingServiceInstance::IsRecentlyOutdated(const NodeId node) noexcept
+{
+    std::lock_guard<std::mutex> lock(recently_outdated_mutex_);
+    return std::find(recently_outdated_.begin(), recently_outdated_.end(), node) != recently_outdated_.end();
+}
+
+void MessagePassingServiceInstance::RemoveOutdatedNode(const NodeId node_to_unregister,
+                                                       const NodeId sender_node_id) noexcept
+{
+    if (!node_to_unregister.IsValid())
+    {
+        return;
+    }
+    // Pid based ids are reused by the OS, so a later registration from the same id can be a new, legitimate process.
+    // Only ids which carry an incarnation are unique over time and can be rejected safely.
+    if (node_to_unregister.Raw() > static_cast<std::uint64_t>(std::numeric_limits<std::int32_t>::max()))
+    {
+        std::lock_guard<std::mutex> lock(recently_outdated_mutex_);
+        recently_outdated_.at(recently_outdated_next_) = node_to_unregister;
+        recently_outdated_next_ = (recently_outdated_next_ + 1U) % kRecentlyOutdatedCapacity;
+    }
     EventUpdateNodeIdMapType::size_type remove_count{0U};
     std::unique_lock<std::shared_mutex> write_lock(event_update_interested_nodes_mutex_);
     for (auto& element : event_update_interested_nodes_)
@@ -782,6 +827,11 @@ Result<void> MessagePassingServiceInstance::CallSubscribeServiceMethodRemotely(
     const auto message = SerializeToMessage(score::cpp::to_underlying(MessageWithReplyType::kSubscribeServiceMethod),
                                             unserialized_payload);
     auto sender = client_cache_.GetMessagePassingClient(target_node_id);
+    if (sender == nullptr)
+    {
+        score::mw::log::LogError("lola") << "MessagePassingService: Cannot reach node_id " << target_node_id.Raw();
+        return MakeUnexpected(MethodErrc::kMessagePassingError);
+    }
 
     std::array<std::uint8_t, sizeof(MethodReplyPayload)> reply{};
     score::cpp::span<std::uint8_t> reply_buffer{reply.data(), reply.size()};
@@ -815,6 +865,11 @@ Result<void> MessagePassingServiceInstance::CallUnsubscribeServiceMethodRemotely
     const auto message = SerializeToMessage(score::cpp::to_underlying(MessageWithReplyType::kUnsubscribeServiceMethod),
                                             unserialized_payload);
     auto sender = client_cache_.GetMessagePassingClient(target_node_id);
+    if (sender == nullptr)
+    {
+        score::mw::log::LogError("lola") << "MessagePassingService: Cannot reach node_id " << target_node_id.Raw();
+        return MakeUnexpected(MethodErrc::kMessagePassingError);
+    }
 
     std::array<std::uint8_t, sizeof(MethodReplyPayload)> reply{};
     score::cpp::span<std::uint8_t> reply_buffer{reply.data(), reply.size()};
@@ -847,6 +902,11 @@ Result<void> MessagePassingServiceInstance::CallServiceMethodRemotely(
     const auto message =
         SerializeToMessage(score::cpp::to_underlying(MessageWithReplyType::kCallMethod), unserialized_payload);
     auto sender = client_cache_.GetMessagePassingClient(target_node_id);
+    if (sender == nullptr)
+    {
+        score::mw::log::LogError("lola") << "MessagePassingService: Cannot reach node_id " << target_node_id.Raw();
+        return MakeUnexpected(MethodErrc::kMessagePassingError);
+    }
 
     std::array<std::uint8_t, sizeof(MethodReplyPayload)> reply{};
     score::cpp::span<std::uint8_t> reply_buffer{reply.data(), reply.size()};
@@ -922,7 +982,12 @@ void MessagePassingServiceInstance::NotifyEventRemote(const ElementFqId event_id
             // shall have automatic storage duration". The object is a shared_ptr which is allocated in the heap.
             // coverity[autosar_cpp14_a18_5_8_violation]
             auto sender = client_cache_.GetMessagePassingClient(node_identifier);
-            const auto result = sender->Send(message);
+            if (sender == nullptr)
+            {
+                score::mw::log::LogWarn("lola") << "MessagePassingService: Cannot reach node_id "
+                                                << node_identifier.Raw() << " to send NotifyEventUpdateMessage.";
+                continue;
+            }            const auto result = sender->Send(message);
             if (!result.has_value())
             {
                 score::mw::log::LogError("lola")
@@ -1324,15 +1389,33 @@ void MessagePassingServiceInstance::UnregisterMethodCallHandler(
 void MessagePassingServiceInstance::NotifyOutdatedNodeId(const NodeId outdated_node_id,
                                                          const NodeId target_node_id) noexcept
 {
-    const auto message = SerializeToMessage(score::cpp::to_underlying(MessageType::kOutdatedNodeId),
-                                            score::message_passing::NodeIdToPid(outdated_node_id));
+    // Ids which fit a pid use the legacy message, so the wire stays unchanged for pid based peers.
+    const bool fits_legacy_pid =
+        outdated_node_id.Raw() <= static_cast<std::uint64_t>(std::numeric_limits<std::int32_t>::max());
+    const auto make_message = [&]() -> std::vector<std::uint8_t> {
+        if (fits_legacy_pid)
+        {
+            const auto legacy = SerializeToMessage(score::cpp::to_underlying(MessageType::kOutdatedNodeId),
+                                                   score::message_passing::NodeIdToPid(outdated_node_id));
+            return {legacy.begin(), legacy.end()};
+        }
+        const auto wide = SerializeToMessage(score::cpp::to_underlying(MessageType::kOutdatedIncarnation),
+                                             outdated_node_id.ToWire());
+        return {wide.begin(), wide.end()};
+    };
+    const auto message = make_message();
 
     // Suppress "AUTOSAR C++14 A18-5-8" rule finding. This rule states: "Objects that do not outlive a function shall
     // have automatic storage duration".
     // The object is a shared_ptr which is allocated in the heap.
     // coverity[autosar_cpp14_a18_5_8_violation]
     auto sender = client_cache_.GetMessagePassingClient(target_node_id);
-    const auto result = sender->Send(message);
+    if (sender == nullptr)
+    {
+        score::mw::log::LogWarn("lola") << "MessagePassingService: Cannot reach node_id " << target_node_id.Raw()
+                                        << " to send OutdatedNodeIdMessage.";
+        return;
+    }    const auto result = sender->Send(message);
     if (!result.has_value())
     {
         score::mw::log::LogError("lola") << "MessagePassingService: Sending OutdatedNodeIdMessage to node_id "
@@ -1468,6 +1551,12 @@ void MessagePassingServiceInstance::SendRegisterEventNotificationMessage(const E
     // The object is a shared_ptr which is allocated in the heap.
     // coverity[autosar_cpp14_a18_5_8_violation]
     auto sender = client_cache_.GetMessagePassingClient(target_node_id);
+    if (sender == nullptr)
+    {
+        score::mw::log::LogWarn("lola") << "MessagePassingService: Cannot reach node_id " << target_node_id.Raw()
+                                        << " to send RegisterEventNotificationMessage.";
+        return;
+    }
     const auto result = sender->Send(message);
     if (!result.has_value())
     {

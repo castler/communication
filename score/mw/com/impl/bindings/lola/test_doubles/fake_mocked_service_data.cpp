@@ -49,6 +49,7 @@ FakeMockedServiceData::FakeMockedServiceData(const pid_t skeleton_process_pid_in
         data_memory_resource->construct<ServiceDataStorage>(kMaxNumberOfServiceElements, *data_memory_resource);
 
     data_storage->UpdateSkeletonPid(skeleton_process_pid_in);
+    data_storage->PublishSkeletonEpoch(SkeletonEpoch::FromIncarnation(IncarnationId::FromPid(skeleton_process_pid_in)));
     data_storage->UpdateSkeletonUid(skeleton_uid_in);
 }
 

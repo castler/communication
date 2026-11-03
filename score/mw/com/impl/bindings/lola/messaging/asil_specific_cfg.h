@@ -1,6 +1,8 @@
 #ifndef SCORE_MW_COM_IMPL_BINDINGS_LOLA_MESSAGING_ASIL_SPECIFIC_CFG_H
 #define SCORE_MW_COM_IMPL_BINDINGS_LOLA_MESSAGING_ASIL_SPECIFIC_CFG_H
 
+#include "score/message_passing/identity_types.h"
+
 #include <unistd.h>
 
 #include <cstdint>
@@ -17,7 +19,7 @@ struct AsilSpecificCfg
     // coverity[autosar_cpp14_m11_0_1_violation]
     std::int32_t message_queue_rx_size_;
     // coverity[autosar_cpp14_m11_0_1_violation]
-    std::vector<uid_t> allowed_user_ids_;
+    std::vector<score::message_passing::PrincipalId> allowed_user_ids_;
 };
 }  // namespace score::mw::com::impl::lola
 

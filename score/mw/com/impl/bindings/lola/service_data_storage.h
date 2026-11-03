@@ -19,6 +19,7 @@
 #include "score/mw/com/impl/bindings/lola/event_data_storage.h"
 #include "score/mw/com/impl/bindings/lola/event_meta_info.h"
 #include "score/mw/com/impl/bindings/lola/i_runtime.h"
+#include "score/mw/com/impl/bindings/lola/incarnation.h"
 #include "score/mw/com/impl/bindings/lola/linear_search_map.h"
 #include "score/mw/com/impl/initialize_sample_callback.h"
 #include "score/mw/com/impl/runtime.h"
@@ -31,6 +32,7 @@
 
 #include <score/span.hpp>
 
+#include <atomic>
 #include <cstddef>
 #include <optional>
 
@@ -63,7 +65,10 @@ class ServiceDataStorage
           skeleton_pid_{impl::GetBindingRuntime<lola::IRuntime>(BindingType::kLoLa).GetPid()},
           skeleton_uid_{os::Unistd::instance().getuid()},
           allocator_{resource},
-          resource_proxy_{*resource.getMemoryResourceProxy()}
+          resource_proxy_{*resource.getMemoryResourceProxy()},
+          skeleton_epoch_{SkeletonEpoch::FromIncarnation(
+                              impl::GetBindingRuntime<lola::IRuntime>(BindingType::kLoLa).GetIncarnation())
+                              .Raw()}
     {
     }
 
@@ -112,6 +117,21 @@ class ServiceDataStorage
     /// \brief Updates the uid of the skeleton-process that owns this ServiceDataStorage.
     void UpdateSkeletonUid(const uid_t uid);
 
+    /// \brief Returns the epoch (generation) of the skeleton data; Unpublished() until a skeleton published one.
+    SkeletonEpoch GetSkeletonEpoch() const noexcept;
+
+    /// \brief Publishes the epoch of the skeleton data with release semantics.
+    /// \details Must be called after the skeleton finished repairing the shared memory after a crash (see
+    ///          SkeletonMemoryManager::OpenSharedMemoryForData()), so that a proxy observing the new epoch also
+    ///          observes the repaired data.
+    void PublishSkeletonEpoch(const SkeletonEpoch epoch) noexcept;
+
+    /// \brief Address of the provider (skeleton) for message passing.
+    /// \details Derived from the published epoch. If no epoch is published (data written by a skeleton which does
+    ///          not publish epochs), the legacy skeleton pid is used, which is identical on Linux/QNX. A fenced epoch
+    ///          yields an invalid NodeId: the data belongs to no live skeleton.
+    message_passing::NodeId GetProviderNode() const noexcept;
+
   private:
     EventDataStorageMap events_;
     EventMetaInfoMap events_metainfo_;
@@ -120,6 +140,25 @@ class ServiceDataStorage
 
     memory::shared::PolymorphicOffsetPtrAllocator<EventDataStorage> allocator_;
     const memory::shared::MemoryResourceProxy& resource_proxy_;
+
+    // Appended after all pre-existing members, so that their offsets are unchanged. The ServiceDataStorage layout
+    // has no version field and cannot be given one without moving members: it is only supported for skeletons and
+    // proxies built from the same version. Within one build, 0 ("unpublished") is the safe fallback to the pid.
+    // ServiceDataStorage is copied/moved by test code, therefore the atomic is wrapped to be copyable.
+    struct CopyableAtomicEpoch
+    {
+        constexpr explicit CopyableAtomicEpoch(const SkeletonEpoch::RawType initial) noexcept : value{initial} {}
+        CopyableAtomicEpoch(const CopyableAtomicEpoch& other) noexcept : value{other.value.load()} {}
+        CopyableAtomicEpoch& operator=(const CopyableAtomicEpoch& other) noexcept
+        {
+            value.store(other.value.load());
+            return *this;
+        }
+        std::atomic<SkeletonEpoch::RawType> value;
+    };
+    static_assert(std::atomic<SkeletonEpoch::RawType>::is_always_lock_free,
+                  "skeleton_epoch_ lives in shared memory and must be lock-free");
+    CopyableAtomicEpoch skeleton_epoch_{0U};
 };
 
 /// \brief Analytically calculates the exact number of bytes a ServiceDataStorage (the data shm-object) occupies.

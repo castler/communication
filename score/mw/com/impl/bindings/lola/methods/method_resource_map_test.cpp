@@ -37,8 +37,8 @@ constexpr GlobalConfiguration::ApplicationId kProcessIdentifier2{11};
 constexpr ProxyInstanceIdentifier::ProxyInstanceCounter kProxyInstanceCounter1{1};
 constexpr ProxyInstanceIdentifier::ProxyInstanceCounter kProxyInstanceCounter2{2};
 
-constexpr pid_t kDummyPid1{20};
-constexpr pid_t kDummyPid2{30};
+constexpr message_passing::NodeId kDummyPid1{20};
+constexpr message_passing::NodeId kDummyPid2{30};
 
 class MethodResourceMapFixture : public ::testing::Test
 {
@@ -50,7 +50,7 @@ class MethodResourceMapFixture : public ::testing::Test
     }
 
     MethodResourceMapFixture& WithAnInsertedRegion(const ProxyInstanceIdentifier proxy_instance_identifier,
-                                                   const pid_t proxy_pid)
+                                                   const message_passing::NodeId proxy_pid)
     {
         method_resource_map_->Insert(
             proxy_instance_identifier, proxy_pid, std::make_shared<memory::shared::SharedMemoryResourceMock>());

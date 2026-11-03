@@ -37,6 +37,7 @@
 #include <cstdint>
 #include <iterator>
 #include <memory>
+#include <mutex>
 #include <set>
 #include <shared_mutex>
 #include <unordered_map>
@@ -145,8 +146,12 @@ class MessagePassingServiceInstance : public IMessagePassingServiceInstance
         kUnregisterEventNotifier,    //< event notifier un-registration message sent by proxy_events
         kNotifyEvent,                //< event update notification message sent by skeleton_events
         kOutdatedNodeId,  //< outdated node id message (sent from a LoLa process in the role as consumer to the
-                          // producer)
+                          // producer). Payload: pid (4 byte); legacy format, only usable for ids which fit a pid.
+        kOutdatedIncarnation,  //< same meaning as kOutdatedNodeId but the payload is the full 8 byte NodeId
     };
+
+    /// \brief number of outdated nodes remembered to reject late registrations from them (see S3)
+    static constexpr std::size_t kRecentlyOutdatedCapacity{16U};
 
     enum class MessageWithReplyType : std::uint8_t
     {
@@ -207,6 +212,10 @@ class MessagePassingServiceInstance : public IMessagePassingServiceInstance
                                          const NodeId sender_node_id) noexcept;
     void HandleOutdatedNodeIdMsg(const score::cpp::span<const std::uint8_t> payload,
                                  const NodeId sender_node_id) noexcept;
+    void HandleOutdatedIncarnationMsg(const score::cpp::span<const std::uint8_t> payload,
+                                     const NodeId sender_node_id) noexcept;
+    void RemoveOutdatedNode(const NodeId outdated_node, const NodeId sender_node_id) noexcept;
+    bool IsRecentlyOutdated(const NodeId node) noexcept;
     score::Result<void> HandleSubscribeServiceMethodMsg(const score::cpp::span<const std::uint8_t> payload,
                                                         const score::message_passing::ClientIdentity& sender);
     score::Result<void> HandleUnsubscribeServiceMethodMsg(const score::cpp::span<const std::uint8_t> payload,
@@ -350,6 +359,12 @@ class MessagePassingServiceInstance : public IMessagePassingServiceInstance
     EventUpdateNodeIdMapType event_update_interested_nodes_;
 
     std::shared_mutex event_update_interested_nodes_mutex_;
+
+    /// \brief bounded ring of nodes reported as outdated. A RegisterEventNotifier from such a node is a late message
+    ///        of the dead incarnation and is dropped.
+    std::array<NodeId, kRecentlyOutdatedCapacity> recently_outdated_{};
+    std::size_t recently_outdated_next_{0U};
+    std::mutex recently_outdated_mutex_;
 
     /// \brief map holding per event_id a node counter, how many local proxy-event instances have registered a
     ///       receive-handler for this event at the given node. This map only contains events provided by remote

@@ -36,7 +36,7 @@ class StateMachineThreadingFixture : public LolaProxyEventResources
           consumer_event_data_control_local_view_{proxy_->GetConsumerEventDataControlLocalView(element_fq_id_)},
           state_machine_{proxy_->GetQualityType(),
                          element_fq_id_,
-                         kDummyPid,
+                         kDummyNode,
                          consumer_event_data_control_local_view_,
                          proxy_->GetEventSubscriptionControl(element_fq_id_),
                          proxy_->GetTransactionLogSet(element_fq_id_),
@@ -102,7 +102,7 @@ TEST_F(StateMachineThreadingFixture, StopOfferEventAndGetSlotCollectorLockFreeRa
     for (std::size_t i = 0U; i < kIterations; ++i)
     {
         state_machine_.StopOfferEvent();         // SUBSCRIBED -> PENDING: writes current_state_idx_
-        state_machine_.ReOfferEvent(kDummyPid);  // PENDING -> SUBSCRIBED: writes current_state_idx_
+        state_machine_.ReOfferEvent(kDummyNode);  // PENDING -> SUBSCRIBED: writes current_state_idx_
     }
 
     keep_reading.store(false, std::memory_order_relaxed);

@@ -62,8 +62,8 @@ Result<void> SkeletonMethod::OnProxyMethodSubscribeFinished(
     const std::optional<score::cpp::span<std::byte>> return_queue_storage,
     const ProxyMethodInstanceIdentifier proxy_method_instance_identifier,
     const safecpp::Scope<>& method_call_handler_scope,
-    uid_t allowed_proxy_uid,
-    pid_t proxy_pid,
+    const message_passing::PrincipalId allowed_proxy,
+    const message_passing::NodeId proxy_node,
     const QualityType asil_level)
 {
     SCORE_LANGUAGE_FUTURECPP_ASSERT_PRD_MESSAGE(
@@ -96,13 +96,13 @@ Result<void> SkeletonMethod::OnProxyMethodSubscribeFinished(
         }};
 
     // Check SubscribeMethods for this skeleton_methods_ loop
-    CleanUpOldHandlers(proxy_method_instance_identifier.proxy_instance_identifier.application_id, proxy_pid);
+    CleanUpOldHandlers(proxy_method_instance_identifier.proxy_instance_identifier.application_id, proxy_node);
 
     auto& lola_runtime = GetBindingRuntime<lola::IRuntime>(BindingType::kLoLa);
     auto& lola_message_passing = lola_runtime.GetLolaMessaging();
     auto registration_result = lola_message_passing.RegisterMethodCallHandler(
         asil_level, proxy_method_instance_identifier, std::move(method_call_callback),
-        message_passing::PrincipalIdFromUid(allowed_proxy_uid));
+        allowed_proxy);
     if (!(registration_result.has_value()))
     {
         return MakeUnexpected<void>(registration_result.error());
@@ -110,7 +110,7 @@ Result<void> SkeletonMethod::OnProxyMethodSubscribeFinished(
 
     const std::lock_guard lock{registration_guards_mutex_};
     const auto insertion_result = registration_guards_.emplace(
-        proxy_method_instance_identifier, std::make_pair(proxy_pid, std::move(registration_result).value()));
+        proxy_method_instance_identifier, std::make_pair(proxy_node, std::move(registration_result).value()));
     SCORE_LANGUAGE_FUTURECPP_ASSERT_PRD_MESSAGE(
         insertion_result.second,
         "Any old registered handlers must have been unregistered (by destroying its registration "
@@ -149,13 +149,13 @@ void SkeletonMethod::Call(const QualityType quality_type,
     std::invoke(type_erased_callback_.value(), quality_type, in_args, return_arg);
 }
 
-void SkeletonMethod::CleanUpOldHandlers(const GlobalConfiguration::ApplicationId application_id, pid_t proxy_pid)
+void SkeletonMethod::CleanUpOldHandlers(const GlobalConfiguration::ApplicationId application_id, const message_passing::NodeId proxy_node)
 {
     const std::lock_guard lock{registration_guards_mutex_};
     const bool already_registered = std::any_of(
-        registration_guards_.cbegin(), registration_guards_.cend(), [&application_id, proxy_pid](const auto& entry) {
+        registration_guards_.cbegin(), registration_guards_.cend(), [&application_id, proxy_node](const auto& entry) {
             return (entry.first.proxy_instance_identifier.application_id == application_id) &&
-                   (entry.second.first == proxy_pid);
+                   (entry.second.first == proxy_node);
         });
 
     if (already_registered)
@@ -163,7 +163,7 @@ void SkeletonMethod::CleanUpOldHandlers(const GlobalConfiguration::ApplicationId
         return;
     }
 
-    // Linear scan to erase all stale guards from a crashed application (same application_id, different pid).
+    // Linear scan to erase all stale guards from a crashed application (same application_id, different node).
     // If benchmarking identifies this as a bottleneck, the data structure can be revisited.
     // NOTE: this can be replaced with erase_if in c++20
     std::vector<ProxyMethodInstanceIdentifier> keys_to_erase;

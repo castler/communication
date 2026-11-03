@@ -46,7 +46,7 @@ class StateMachineEventsFixture : public LolaProxyEventResources
           consumer_event_data_control_local_view_{proxy_->GetConsumerEventDataControlLocalView(element_fq_id_)},
           state_machine_{proxy_->GetQualityType(),
                          element_fq_id_,
-                         kDummyPid,
+                         kDummyNode,
                          consumer_event_data_control_local_view_,
                          proxy_->GetEventSubscriptionControl(element_fq_id_),
                          proxy_->GetTransactionLogSet(element_fq_id_),
@@ -127,7 +127,7 @@ class StateMachineEventsFixture : public LolaProxyEventResources
     ConsumerEventDataControlLocalView<> consumer_event_data_control_local_view_;
     SubscriptionStateMachine state_machine_;
     std::vector<TransactionLogRegistrationGuard> transaction_log_registration_guards_{};
-    pid_t new_event_source_pid_{kDummyPid + 1};
+    message_passing::NodeId new_event_source_node_{kDummyNode.Raw() + 1U};
     std::optional<SubscriptionState> observed_subscription_state_{};
 };
 
@@ -221,7 +221,7 @@ TEST_F(StateMachineNotSubscribedStateFixture, CallingStopOfferEventBeforeSubscri
 
 TEST_F(StateMachineNotSubscribedStateFixture, CallingReOfferEventBeforeSubscribeWillTransitionToSubscribed)
 {
-    state_machine_.ReOfferEvent(new_event_source_pid_);
+    state_machine_.ReOfferEvent(new_event_source_node_);
     EXPECT_EQ(state_machine_.GetCurrentState(), SubscriptionStateMachineState::NOT_SUBSCRIBED_STATE);
 
     const auto subscription_result = state_machine_.SubscribeEvent(max_num_slots_);
@@ -234,7 +234,7 @@ TEST_F(StateMachineNotSubscribedStateFixture,
 {
     state_machine_.StopOfferEvent();
 
-    state_machine_.ReOfferEvent(new_event_source_pid_);
+    state_machine_.ReOfferEvent(new_event_source_node_);
     EXPECT_EQ(state_machine_.GetCurrentState(), SubscriptionStateMachineState::NOT_SUBSCRIBED_STATE);
 
     const auto subscription_result = state_machine_.SubscribeEvent(max_num_slots_);
@@ -296,7 +296,7 @@ TEST_F(StateMachineSubscriptionPendingStateDeathTest, CallingStopOfferEventTermi
 TEST_F(StateMachineSubscriptionPendingStateFixture, CallingReOfferEventTransitionsToSubscribed)
 {
     EnterSubscriptionPending(max_num_slots_);
-    state_machine_.ReOfferEvent(new_event_source_pid_);
+    state_machine_.ReOfferEvent(new_event_source_node_);
     EXPECT_EQ(state_machine_.GetCurrentState(), SubscriptionStateMachineState::SUBSCRIBED_STATE);
 }
 
@@ -366,7 +366,7 @@ TEST_F(StateMachineSubscribedStateFixture,
     ASSERT_TRUE(subscription_result.has_value());
     EXPECT_EQ(state_machine_.GetCurrentState(), SubscriptionStateMachineState::SUBSCRIPTION_PENDING_STATE);
 
-    state_machine_.ReOfferEvent(new_event_source_pid_);
+    state_machine_.ReOfferEvent(new_event_source_node_);
     EXPECT_EQ(state_machine_.GetCurrentState(), SubscriptionStateMachineState::SUBSCRIBED_STATE);
 }
 
@@ -392,7 +392,7 @@ TEST_F(StateMachineSubscribedStateFixture, CallingReOfferEventDoesNothing)
 {
     EnterSubscribed(max_num_slots_);
 
-    state_machine_.ReOfferEvent(new_event_source_pid_);
+    state_machine_.ReOfferEvent(new_event_source_node_);
     EXPECT_EQ(state_machine_.GetCurrentState(), SubscriptionStateMachineState::SUBSCRIBED_STATE);
 }
 

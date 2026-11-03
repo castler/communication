@@ -22,6 +22,7 @@ cc_library(
     features = COMPILER_WARNING_FEATURES,
     tags = ["FFI"],
     visibility = ["//score/mw/com/impl/bindings/lola/fuchsia:__pkg__"],
+    deps = ["//score/message_passing:common_headers"],
 )
 
 cc_library(
@@ -176,13 +177,21 @@ cc_library(
 
 cc_library(
     name = "message_passing_client_cache",
-    srcs = ["message_passing_client_cache.cpp"],
-    hdrs = ["message_passing_client_cache.h"],
+    srcs = [
+        "message_passing_client_cache.cpp",
+        "name_based_node_address_resolver.cpp",
+    ],
+    hdrs = [
+        "i_node_address_resolver.h",
+        "message_passing_client_cache.h",
+        "name_based_node_address_resolver.h",
+    ],
     features = COMPILER_WARNING_FEATURES,
     tags = ["FFI"],
     deps = [
         ":asil_specific_cfg",
         ":client_quality_type",
+        "//score/message_passing:common_headers",
         "//score/mw/com/impl/configuration",
         "@score_communication//score/message_passing",
     ],

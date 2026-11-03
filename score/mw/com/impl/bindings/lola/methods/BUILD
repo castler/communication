@@ -71,6 +71,7 @@ cc_library(
     visibility = ["//score/mw/com/impl/bindings/lola:__pkg__"],
     deps = [
         "//score/memory/shared",
+        "//score/message_passing:common_headers",
         "//score/mw/com/impl/bindings/lola:proxy_instance_identifier",
         "//score/mw/com/impl/configuration",
     ],
