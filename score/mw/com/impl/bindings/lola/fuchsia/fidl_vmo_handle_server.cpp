@@ -12,6 +12,7 @@
  ********************************************************************************/
 #include "score/mw/com/impl/bindings/lola/fuchsia/fidl_vmo_handle_server.h"
 
+#include "score/mw/com/impl/bindings/lola/fuchsia/integrity_policy.h"
 #include "score/mw/log/logging.h"
 
 #include <lib/fidl/cpp/wire/channel.h>
@@ -97,6 +98,7 @@ struct FidlVmoHandleServer::State
     std::uint64_t epoch{0U};
     std::vector<std::uint8_t> layout;
     std::optional<std::set<std::uint64_t>> allowed;
+    std::map<std::uint64_t, Integrity> consumer_integrity;
     std::map<std::uint64_t, std::size_t> attach_counts;
     std::vector<Session> sessions;
 };
@@ -130,6 +132,21 @@ class FidlVmoHandleServer::Connection final : public fidl::Server<score_mw_com::
         if (data == state_->published.end() || control == state_->published.end())
         {
             completer.Reply(fit::error(score_mw_com::AttachError::kNotFound));
+            return;
+        }
+        // Profile 1: the control regions are consumer-writable, so only consumers developed to the integrity of the
+        // service may receive them. Unknown consumers count as QM (fail closed).
+        const auto consumer_it = state_->consumer_integrity.find(application_id_);
+        const Integrity consumer =
+            (consumer_it == state_->consumer_integrity.end()) ? Integrity::kQm : consumer_it->second;
+        const Integrity service = ServiceIntegrity(state_->published.count(VmoRole::kControlAsilB) != 0U);
+        if (!MayReceiveWritableControl(consumer, service))
+        {
+            score::mw::log::LogWarn(kLogContext)
+                << "Attach on the endpoint of application " << application_id_
+                << " refused: consumer integrity is below the integrity of the service, no writable control region "
+                   "is handed out.";
+            completer.Reply(fit::error(score_mw_com::AttachError::kInsufficientIntegrity));
             return;
         }
         auto data_copy = DuplicateForSending(data->second.handle, kDataRights);
@@ -239,6 +256,13 @@ auto FidlVmoHandleServer::SetAllowedApplications(std::optional<std::set<std::uin
 {
     const std::lock_guard<std::mutex> lock{state_->mutex};
     state_->allowed = std::move(allowed);
+}
+
+auto FidlVmoHandleServer::SetConsumerIntegrity(const std::uint64_t application_id, const Integrity integrity) noexcept
+    -> void
+{
+    const std::lock_guard<std::mutex> lock{state_->mutex};
+    state_->consumer_integrity[application_id] = integrity;
 }
 
 auto FidlVmoHandleServer::CreateHandler(const std::uint64_t application_id)

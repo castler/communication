@@ -260,6 +260,7 @@ int RunParent()
     CHECK(loop.StartThread("attach-server") == ZX_OK);
     auto runtime = std::make_unique<VmoShmRuntime>(
         loop.dispatcher(), []() -> std::optional<fidl::ClientEnd<score_mw_com::Endpoint>> { return std::nullopt; });
+    runtime->server().SetConsumerIntegrity(kApplicationId, score::mw::com::impl::lola::fuchsia::Integrity::kAsilB);
     {
         harness::SkeletonSide skeleton{true};
         harness::SampleData sample{};
