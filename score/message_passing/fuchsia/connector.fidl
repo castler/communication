@@ -23,13 +23,14 @@ type ConnectError = strict enum : uint32 {
 /// Control plane of the message_passing Fuchsia backend.
 /// A server exposes this protocol; a client hands over one end of a stream socket pair that
 /// then carries the message_passing protocol messages without further FIDL involvement.
+/// The request carries no identity of the client. The server derives it from the endpoint the
+/// connection arrived on (one routed endpoint per consumer) and from the channel (one per client
+/// process).
 @discoverable
 closed protocol Connector {
     /// Connects `socket` to the server listening on `identifier`.
     strict Connect(resource struct {
         identifier string:MAX_IDENTIFIER_LENGTH;
         socket zx.Handle:SOCKET;
-        /// Capability identity of the connecting consumer, as assigned at its registration.
-        consumer_id uint32;
     }) -> () error ConnectError;
 };

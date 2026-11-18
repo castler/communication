@@ -1,0 +1,26 @@
+{
+    include: [ "syslog/client.shard.cml" ],
+
+    program: {
+        runner: "elf",
+        binary: "bin/identity_server",
+        forward_stderr_to: "log",
+        forward_stdout_to: "log",
+    },
+
+    // One Connector endpoint per consumer id; the test realm routes each only to its consumer. The server derives the
+    // principal of a connection from the endpoint it arrived on.
+    capabilities: [
+        { protocol: "score.messagepassing.Connector.7" },
+        { protocol: "score.messagepassing.Connector.8" },
+    ],
+    expose: [
+        {
+            protocol: [
+                "score.messagepassing.Connector.7",
+                "score.messagepassing.Connector.8",
+            ],
+            from: "self",
+        },
+    ],
+}

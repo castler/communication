@@ -23,6 +23,8 @@ class FuchsiaEngine;
 class FuchsiaClientFactory final : public IClientFactory
 {
   public:
+    /// \param consumer_id principal for servers in the same process only; other servers derive it from the routed
+    ///        endpoint and the client cannot influence it
     explicit FuchsiaClientFactory(
         score::cpp::pmr::memory_resource* const resource = score::cpp::pmr::get_default_resource(),
         const std::uint32_t consumer_id = 0U) noexcept;

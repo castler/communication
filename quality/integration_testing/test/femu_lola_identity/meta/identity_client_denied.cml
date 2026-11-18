@@ -1,0 +1,15 @@
+{
+    include: [ "syslog/client.shard.cml" ],
+
+    program: {
+        runner: "elf",
+        binary: "bin/identity_client",
+        args: [ "--role=denied" ],
+        forward_stderr_to: "log",
+        forward_stdout_to: "log",
+    },
+
+    use: [
+        { protocol: "score.messagepassing.Connector" },
+    ],
+}

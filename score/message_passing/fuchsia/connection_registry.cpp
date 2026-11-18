@@ -36,6 +36,7 @@ namespace
 {
 
 using Connector = score_messagepassing::Connector;
+constexpr const char* kConnectorName = "score.messagepassing.Connector";
 
 score::cpp::expected<std::int32_t, score::os::Error> SocketToFd(zx::socket socket) noexcept
 {
@@ -50,7 +51,46 @@ score::cpp::expected<std::int32_t, score::os::Error> SocketToFd(zx::socket socke
 
 }  // namespace
 
-class FuchsiaConnectionRegistry::Service final : public fidl::Server<Connector>
+/// One Connector channel: knows the principal of the endpoint it was opened on and the peer id of its client.
+class FuchsiaConnectionRegistry::Session final : public fidl::Server<Connector>
+{
+  public:
+    Session(FuchsiaConnectionRegistry& registry, const std::uint32_t principal) noexcept
+        : registry_{registry}, principal_{principal}, peer_id_{registry.NewPeerId()}
+    {
+    }
+
+    void Connect(ConnectRequest& request, ConnectCompleter::Sync& completer) override
+    {
+        auto fd = SocketToFd(std::move(request.socket()));
+        if (!fd.has_value())
+        {
+            completer.Reply(fit::error(score_messagepassing::ConnectError::kNotFound));
+            return;
+        }
+        if (!registry_.Enqueue(request.identifier(), fd.value(), principal_, peer_id_))
+        {
+            std::ignore = ::close(fd.value());
+            completer.Reply(fit::error(score_messagepassing::ConnectError::kNotFound));
+            return;
+        }
+        completer.Reply(fit::ok());
+    }
+
+  private:
+    FuchsiaConnectionRegistry& registry_;
+    std::uint32_t principal_;
+    std::uint32_t peer_id_;
+};
+
+class FuchsiaConnectionRegistry::ConnectorClient
+{
+  public:
+    explicit ConnectorClient(fidl::ClientEnd<Connector> end) noexcept : client{std::move(end)} {}
+    fidl::SyncClient<Connector> client;
+};
+
+class FuchsiaConnectionRegistry::Service final
 {
   public:
     explicit Service(FuchsiaConnectionRegistry& registry) noexcept
@@ -58,7 +98,7 @@ class FuchsiaConnectionRegistry::Service final : public fidl::Server<Connector>
     {
     }
 
-    ~Service() noexcept override
+    ~Service() noexcept
     {
         std::promise<void> destroyed;
         if (thread_started_ && (async::PostTask(loop_.dispatcher(), [this, &destroyed]() {
@@ -71,7 +111,7 @@ class FuchsiaConnectionRegistry::Service final : public fidl::Server<Connector>
         loop_.Shutdown();
     }
 
-    bool Start() noexcept
+    bool Start(const std::set<std::uint32_t>& routed_principals) noexcept
     {
         if (loop_.StartThread("message_passing_connector") != ZX_OK)
         {
@@ -81,12 +121,14 @@ class FuchsiaConnectionRegistry::Service final : public fidl::Server<Connector>
         // OutgoingDirectory is thread-unsafe and must be created, used and destroyed on the dispatcher thread
         std::promise<bool> served;
         auto served_future = served.get_future();
-        const auto posted = async::PostTask(loop_.dispatcher(), [this, &served]() {
+        const auto posted = async::PostTask(loop_.dispatcher(), [this, &served, &routed_principals]() {
             outgoing_.emplace(loop_.dispatcher());
-            if (outgoing_
-                    ->AddUnmanagedProtocol<Connector>(
-                        bindings_.CreateHandler(this, loop_.dispatcher(), fidl::kIgnoreBindingClosure))
-                    .is_error())
+            bool added = AddEndpoint(std::string{kConnectorName}, kUnroutedPrincipal);
+            for (const auto principal : routed_principals)
+            {
+                added = added && AddEndpoint(RoutedConnectorName(principal), principal);
+            }
+            if (!added)
             {
                 served.set_value(false);
                 return;
@@ -99,30 +141,43 @@ class FuchsiaConnectionRegistry::Service final : public fidl::Server<Connector>
         return (posted == ZX_OK) && served_future.get();
     }
 
-    void Connect(ConnectRequest& request, ConnectCompleter::Sync& completer) override
+    // The posted task only touches the outgoing directory and must never take the registry mutex: the caller holds
+    // it while waiting, and Session creation (on the dispatcher) takes it in NewPeerId().
+    void AddRoutedPrincipal(const std::uint32_t principal) noexcept
     {
-        auto fd = SocketToFd(std::move(request.socket()));
-        if (!fd.has_value())
+        if (!thread_started_)
         {
-            completer.Reply(fit::error(score_messagepassing::ConnectError::kNotFound));
             return;
         }
-        if (!registry_.Enqueue(request.identifier(), fd.value(), request.consumer_id()))
+        std::promise<void> added;
+        if (async::PostTask(loop_.dispatcher(), [this, principal, &added]() {
+                std::ignore = AddEndpoint(RoutedConnectorName(principal), principal);
+                added.set_value();
+            }) == ZX_OK)
         {
-            std::ignore = ::close(fd.value());
-            completer.Reply(fit::error(score_messagepassing::ConnectError::kNotFound));
-            return;
+            added.get_future().wait();
         }
-        completer.Reply(fit::ok());
     }
 
   private:
+    bool AddEndpoint(const std::string& name, const std::uint32_t principal) noexcept
+    {
+        auto handler = [this, principal](fidl::ServerEnd<Connector> server_end) {
+            fidl::BindServer(loop_.dispatcher(), std::move(server_end), std::make_unique<Session>(registry_, principal));
+        };
+        return !outgoing_->AddUnmanagedProtocol<Connector>(std::move(handler), name).is_error();
+    }
+
     FuchsiaConnectionRegistry& registry_;
     async::Loop loop_;
     bool thread_started_{false};
     std::optional<component::OutgoingDirectory> outgoing_;
-    fidl::ServerBindingGroup<Connector> bindings_;
 };
+
+std::string FuchsiaConnectionRegistry::RoutedConnectorName(const std::uint32_t principal)
+{
+    return std::string{kConnectorName} + "." + std::to_string(principal);
+}
 
 FuchsiaConnectionRegistry::FuchsiaConnectionRegistry(ServiceStarter service_starter) noexcept
     : service_starter_{std::move(service_starter)}
@@ -153,7 +208,7 @@ score::cpp::expected<std::int32_t, score::os::Error> FuchsiaConnectionRegistry::
     if (service_ == nullptr)
     {
         auto service = std::make_unique<Service>(*this);
-        const bool started = service_starter_ ? service_starter_() : service->Start();
+        const bool started = service_starter_ ? service_starter_() : service->Start(routed_principals_);
         if (!started)
         {
             std::ignore = ::close(wake_fds[0]);
@@ -164,6 +219,21 @@ score::cpp::expected<std::int32_t, score::os::Error> FuchsiaConnectionRegistry::
     }
     listeners_.emplace(std::string{identifier}, Listener{wake_fds[1], wake_fds[0], {}});
     return wake_fds[0];
+}
+
+void FuchsiaConnectionRegistry::ServeRoutedPrincipal(const std::uint32_t principal) noexcept
+{
+    std::lock_guard<std::mutex> guard{mutex_};
+    if (routed_principals_.insert(principal).second && (service_ != nullptr))
+    {
+        service_->AddRoutedPrincipal(principal);
+    }
+}
+
+std::uint32_t FuchsiaConnectionRegistry::NewPeerId() noexcept
+{
+    std::lock_guard<std::mutex> guard{mutex_};
+    return next_peer_id_++;
 }
 
 void FuchsiaConnectionRegistry::StopListening(const std::string_view identifier) noexcept
@@ -200,7 +270,8 @@ score::cpp::expected<FuchsiaConnectionRegistry::AcceptedConnection, score::os::E
 
 bool FuchsiaConnectionRegistry::Enqueue(const std::string_view identifier,
                                         const std::int32_t server_fd,
-                                        const std::uint32_t consumer_id) noexcept
+                                        const std::uint32_t principal,
+                                        const std::uint32_t node_id) noexcept
 {
     std::lock_guard<std::mutex> guard{mutex_};
     const auto found = listeners_.find(identifier);
@@ -208,7 +279,7 @@ bool FuchsiaConnectionRegistry::Enqueue(const std::string_view identifier,
     {
         return false;
     }
-    found->second.pending.push_back({server_fd, next_connection_id_++, consumer_id});
+    found->second.pending.push_back({server_fd, next_connection_id_++, node_id, principal});
     const std::uint8_t token{1U};
     std::ignore = ::write(found->second.wake_write_fd, &token, sizeof(token));
     return true;
@@ -216,7 +287,7 @@ bool FuchsiaConnectionRegistry::Enqueue(const std::string_view identifier,
 
 score::cpp::expected<std::int32_t, score::os::Error> FuchsiaConnectionRegistry::Connect(
     const std::string_view identifier,
-    const std::uint32_t consumer_id) noexcept
+    const std::uint32_t local_principal) noexcept
 {
     zx::socket client_end;
     zx::socket server_end;
@@ -237,7 +308,13 @@ score::cpp::expected<std::int32_t, score::os::Error> FuchsiaConnectionRegistry::
         {
             return score::cpp::make_unexpected(server_fd.error());
         }
-        if (!Enqueue(identifier, server_fd.value(), consumer_id))
+        std::uint32_t node_id{};
+        {
+            std::lock_guard<std::mutex> guard{mutex_};
+            const auto known = local_nodes_.find(local_principal);
+            node_id = (known != local_nodes_.end()) ? known->second : (local_nodes_[local_principal] = next_peer_id_++);
+        }
+        if (!Enqueue(identifier, server_fd.value(), local_principal, node_id))
         {
             std::ignore = ::close(server_fd.value());
             return score::cpp::make_unexpected(score::os::Error::createFromErrno(ECONNREFUSED));
@@ -245,17 +322,36 @@ score::cpp::expected<std::int32_t, score::os::Error> FuchsiaConnectionRegistry::
         return SocketToFd(std::move(client_end));
     }
 
-    auto connector_end = component::Connect<Connector>();
-    if (connector_end.is_error())
+    // The channel is kept, so that all connections of this process share one peer id on the server. The server
+    // derives the principal from the endpoint the channel was opened on; nothing identifying is sent.
+    std::lock_guard<std::mutex> guard{connector_mutex_};
+    for (int attempt = 0; attempt < 2; ++attempt)
     {
-        return score::cpp::make_unexpected(score::os::Error::createFromErrno(ECONNREFUSED));
-    }
-    fidl::SyncClient<Connector> connector{std::move(connector_end.value())};
-    auto result = connector->Connect(
-        {{.identifier = std::string{identifier}, .socket = std::move(server_end), .consumer_id = consumer_id}});
-    if (result.is_error())
-    {
-        return score::cpp::make_unexpected(score::os::Error::createFromErrno(ECONNREFUSED));
+        if (connector_ == nullptr)
+        {
+            auto connector_end = component::Connect<Connector>();
+            if (connector_end.is_error())
+            {
+                return score::cpp::make_unexpected(score::os::Error::createFromErrno(ECONNREFUSED));
+            }
+            connector_ = std::make_unique<ConnectorClient>(std::move(connector_end.value()));
+        }
+        auto result = connector_->client->Connect({{.identifier = std::string{identifier}, .socket = std::move(server_end)}});
+        if (result.is_ok())
+        {
+            break;
+        }
+        if (result.error_value().is_domain_error() || (attempt == 1))
+        {
+            return score::cpp::make_unexpected(score::os::Error::createFromErrno(ECONNREFUSED));
+        }
+        // The channel is broken (the server restarted): retry on a new channel, which is a new peer
+        connector_.reset();
+        client_end.reset();
+        if (zx::socket::create(ZX_SOCKET_STREAM, &client_end, &server_end) != ZX_OK)
+        {
+            return score::cpp::make_unexpected(score::os::Error::createFromErrno(ENOMEM));
+        }
     }
     return SocketToFd(std::move(client_end));
 }

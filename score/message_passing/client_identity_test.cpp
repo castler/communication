@@ -131,5 +131,15 @@ TEST(ClientIdentityTest, EndpointIdentityIsAllowedByConsumerId)
     EXPECT_FALSE(identity.IsAllowed(ClientIdentity::AllowedPrincipals{{PrincipalId{6U}}}));
 }
 
+TEST(ClientIdentityTest, TwoRoutedConsumersAreToldApartByAllowedList)
+{
+    // Consumers 7 and 8 are routed their own endpoints; only 7 is configured as allowed consumer
+    const ClientIdentity::AllowedPrincipals allowed{{PrincipalId{7U}}};
+    EXPECT_TRUE(ClientIdentity::FromEndpoint(1, 7).IsAllowed(allowed));
+    EXPECT_FALSE(ClientIdentity::FromEndpoint(2, 8).IsAllowed(allowed));
+    // The unrouted endpoint of the Fuchsia connector (0xFFFFFFFF) is not in any configured list
+    EXPECT_FALSE(ClientIdentity::FromEndpoint(3, 0xFFFFFFFFU).IsAllowed(allowed));
+}
+
 }  // namespace
 }  // namespace score::message_passing

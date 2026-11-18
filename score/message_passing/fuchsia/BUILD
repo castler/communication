@@ -44,7 +44,11 @@ cc_library(
     features = COMPILER_WARNING_FEATURES,
     tags = ["manual"],
     target_compatible_with = ["@platforms//os:fuchsia"],
-    visibility = ["//score/message_passing:__subpackages__"],
+    visibility = [
+        "//score/message_passing:__subpackages__",
+        "//quality/integration_testing:__subpackages__",
+        "//score/mw/com/impl:__subpackages__",
+    ],
     deps = [
         ":connector_fidl_cpp",
         "//score/message_passing:common_headers",

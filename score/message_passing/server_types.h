@@ -58,11 +58,11 @@ class ClientIdentity
     }
 
     /// \brief Identity derived from the endpoint, used on Fuchsia.
-    /// \param connection_id identifies this connection incarnation (the node); differs for every new connection
-    /// \param consumer_id capability identity (the principal) assigned when the consumer registered
-    static ClientIdentity FromEndpoint(const std::uint32_t connection_id, const std::uint32_t consumer_id) noexcept
+    /// \param node_id identifies the peer process (the node), assigned by the serving side
+    /// \param principal_id the consumer/application id the realm routed the endpoint to (the principal)
+    static ClientIdentity FromEndpoint(const std::uint32_t node_id, const std::uint32_t principal_id) noexcept
     {
-        return ClientIdentity{Kind::kEndpoint, NodeId{connection_id}, PrincipalId{consumer_id}, 0};
+        return ClientIdentity{Kind::kEndpoint, NodeId{node_id}, PrincipalId{principal_id}, 0};
     }
 
     /// \brief Checks the identity against a configured list of allowed principals; no list means everybody is allowed.
@@ -76,13 +76,13 @@ class ClientIdentity
         return principal_ == allowed;
     }
 
-    /// \brief Key identifying the peer as a communication partner (pid on Linux/QNX, connection id on Fuchsia).
+    /// \brief Key identifying the peer as a communication partner (pid on Linux/QNX, peer process on Fuchsia).
     NodeId GetNodeId() const noexcept
     {
         return node_;
     }
 
-    /// \brief Key used for permission checks (uid on Linux/QNX, consumer id on Fuchsia).
+    /// \brief Key used for permission checks (uid on Linux/QNX, routed consumer id on Fuchsia).
     PrincipalId GetPrincipalId() const noexcept
     {
         return principal_;

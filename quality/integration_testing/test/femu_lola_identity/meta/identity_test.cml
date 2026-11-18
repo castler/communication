@@ -1,0 +1,61 @@
+{
+    include: [
+        "sys/testing/elf_test_runner.shard.cml",
+        "syslog/client.shard.cml",
+    ],
+
+    program: {
+        binary: "bin/identity_client",
+        args: [ "--role=test" ],
+    },
+
+    children: [
+        {
+            name: "provider",
+            url: "#meta/identity_server.cm",
+        },
+        {
+            name: "consumer_c",
+            url: "#meta/identity_client_allowed.cm",
+            startup: "eager",
+        },
+        {
+            name: "consumer_b",
+            url: "#meta/identity_client_denied.cm",
+            startup: "eager",
+        },
+    ],
+    offer: [
+        {
+            protocol: "fuchsia.logger.LogSink",
+            from: "parent",
+            to: [
+                "#consumer_b",
+                "#consumer_c",
+                "#provider",
+            ],
+        },
+
+        // The routed identity: consumer 7 (this test and consumer_c) and consumer 8 (consumer_b) each get their own
+        // endpoint of the provider under the standard protocol name.
+        {
+            protocol: "score.messagepassing.Connector.7",
+            from: "#provider",
+            to: "#consumer_c",
+            as: "score.messagepassing.Connector",
+        },
+        {
+            protocol: "score.messagepassing.Connector.8",
+            from: "#provider",
+            to: "#consumer_b",
+            as: "score.messagepassing.Connector",
+        },
+    ],
+    use: [
+        {
+            protocol: "score.messagepassing.Connector.7",
+            from: "#provider",
+            path: "/svc/score.messagepassing.Connector",
+        },
+    ],
+}

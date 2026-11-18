@@ -70,7 +70,7 @@ int main()
     Check(after == probe, "Listen closes both pipe ends on failure");
     ClosePipe(after);
 
-    Check(!registry.Enqueue(kIdentifier, -1), "no listener remains after a failed Listen");
+    Check(!registry.Enqueue(kIdentifier, -1, 0U, 0U), "no listener remains after a failed Listen");
     Check(!registry.Accept(kIdentifier).has_value(), "nothing to accept after a failed Listen");
 
     // A retry is not rejected as a duplicate and succeeds once the service can be started
@@ -82,6 +82,44 @@ int main()
         registry.StopListening(kIdentifier);
         ::close(retry.value());
     }
+
+    // Identity of connections within one process: the node is per local principal, the principal is the given one
+    const auto local_listen = registry.Listen("registry_local_identity");
+    Check(local_listen.has_value(), "Listen for local identities");
+    const auto connect_as = [&registry](const std::uint32_t principal) {
+        const auto client = registry.Connect("registry_local_identity", principal);
+        Check(client.has_value(), "local Connect");
+        if (client.has_value())
+        {
+            ::close(client.value());
+        }
+        const auto accepted = registry.Accept("registry_local_identity");
+        Check(accepted.has_value(), "local Accept");
+        if (accepted.has_value())
+        {
+            ::close(accepted.value().fd);
+            return accepted.value();
+        }
+        return FuchsiaConnectionRegistry::AcceptedConnection{-1, 0U, 0U, 0U};
+    };
+    const auto first_a = connect_as(11U);
+    const auto second_a = connect_as(11U);
+    const auto first_b = connect_as(22U);
+    Check(first_a.principal_id == 11U && first_b.principal_id == 22U, "local principal is the given one");
+    Check(first_a.node_id == second_a.node_id, "reconnect of the same local peer keeps the node");
+    Check(first_a.node_id != first_b.node_id, "another local peer is another node");
+    Check(first_a.connection_id != second_a.connection_id, "every connection has its own id");
+    if (local_listen.has_value())
+    {
+        registry.StopListening("registry_local_identity");
+        ::close(local_listen.value());
+    }
+
+    // The endpoint routed to a consumer is named after its principal; serving it twice is harmless
+    Check(FuchsiaConnectionRegistry::RoutedConnectorName(7U) == "score.messagepassing.Connector.7", "endpoint name");
+    registry.ServeRoutedPrincipal(7U);
+    registry.ServeRoutedPrincipal(7U);
+    Check(registry.NewPeerId() != registry.NewPeerId(), "peer ids are unique");
 
     if (failures == 0)
     {

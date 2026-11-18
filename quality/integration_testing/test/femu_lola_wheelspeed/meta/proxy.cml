@@ -14,6 +14,7 @@
     use: [
         { protocol: "score.mw.com.ServiceDiscovery" },
         { protocol: "score.mw.com.Endpoint" },
+        { protocol: "score.messagepassing.Connector" },
         { storage: "tmp", path: "/tmp" },
     ],
     expose: [

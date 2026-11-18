@@ -63,6 +63,14 @@
             to: "#proxy",
             as: "score.mw.com.Endpoint",
         },
+
+        // Likewise the message_passing Connector: the skeleton derives the principal 4002 from this endpoint.
+        {
+            protocol: "score.messagepassing.Connector.4002",
+            from: "#skeleton",
+            to: "#proxy",
+            as: "score.messagepassing.Connector",
+        },
     ],
     use: [
         {

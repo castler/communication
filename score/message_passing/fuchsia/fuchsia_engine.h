@@ -50,8 +50,8 @@ class FuchsiaEngine final : public ISharedResourceEngine
         score::cpp::pmr::unique_ptr<score::os::Unistd> unistd{};
     };
 
-    /// \param consumer_id id this process/consumer was registered with; presented to servers as the principal of the
-    ///        client connections opened through this engine
+    /// \param consumer_id principal presented to servers in the same process. Servers in other processes ignore it
+    ///        and derive the principal from the endpoint routed to this process (see FuchsiaConnectionRegistry).
     FuchsiaEngine(score::cpp::pmr::memory_resource* memory_resource,
                   LoggingCallback logger = GetCerrLogger(),
                   std::uint32_t consumer_id = 0U) noexcept;

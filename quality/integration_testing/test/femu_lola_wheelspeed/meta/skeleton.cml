@@ -9,9 +9,12 @@
         forward_stdout_to: "log",
     },
 
-    // The only Endpoint that exists is the one of application 4002 (the proxy).
+    // The only Endpoint and message_passing Connector that exist are the ones of application 4002 (the proxy), the
+    // consumer listed in allowedConsumer of the skeleton configuration. The Runtime publishes the Connector endpoint
+    // of every allowed consumer; its principal is the consumer id 4002.
     capabilities: [
         { protocol: "score.mw.com.Endpoint.for_app_4002" },
+        { protocol: "score.messagepassing.Connector.4002" },
     ],
     use: [
         { protocol: "score.mw.com.ServiceRegistry" },
@@ -19,6 +22,7 @@
     ],
     expose: [
         { protocol: "score.mw.com.Endpoint.for_app_4002", from: "self" },
+        { protocol: "score.messagepassing.Connector.4002", from: "self" },
 
         // Lets the driver (re)start the skeleton, which exits after its samples.
         { protocol: "fuchsia.component.Binder", from: "framework" },

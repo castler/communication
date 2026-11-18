@@ -178,6 +178,7 @@ cc_library(
         "@platforms//os:fuchsia": [
             "//score/mw/com/impl/bindings/lola/fuchsia:fidl_discovery_transport",
             "//score/mw/com/impl/bindings/lola/fuchsia:fuchsia_service_discovery_client",
+            "//score/message_passing/fuchsia:connection_registry",
         ],
         "//conditions:default": [],
     }),

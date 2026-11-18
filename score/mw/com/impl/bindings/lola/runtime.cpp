@@ -22,6 +22,7 @@
 #if defined(__Fuchsia__)
 #include "score/mw/com/impl/bindings/lola/fuchsia/fidl_discovery_transport.h"
 #include "score/mw/com/impl/bindings/lola/fuchsia/fuchsia_service_discovery_client.h"
+#include "score/message_passing/fuchsia/connection_registry.h"
 #endif
 
 #include <exception>
@@ -64,6 +65,23 @@ std::unique_ptr<IMessagePassingServiceInstanceFactory> MakeMessagePassingService
     return std::make_unique<MessagePassingServiceInstanceFactory>();
 #endif
 }
+
+#ifdef __Fuchsia__
+// The principal of a consumer on Fuchsia is the application id the realm assigned to it. It is the value listed in
+// allowed_consumer, like the uid on Linux/QNX (PrincipalIdFromUid is the identity mapping). A consumer is only
+// recognised on the Connector endpoint routed to it, so one is published for every allowed consumer id.
+void ServeRoutedConsumerEndpoints(const Configuration& config)
+{
+    auto& registry = score::message_passing::detail::FuchsiaConnectionRegistry::Instance();
+    for (const auto quality : {QualityType::kASIL_QM, QualityType::kASIL_B})
+    {
+        for (const auto consumer : config.GetAggregatedAllowedUsers(quality))
+        {
+            registry.ServeRoutedPrincipal(static_cast<std::uint32_t>(consumer));
+        }
+    }
+}
+#endif
 
 }  // namespace
 
@@ -118,6 +136,9 @@ Runtime::Runtime(const Configuration& config,
     // At this stage we know/can decide, whether we are an ASIL-B or ASIL-QM application. OffsetPtr bounds-checking
     // is costly and is only done in case we are an ASIL-B app!
     score::cpp::ignore = score::memory::shared::EnableOffsetPtrBoundsChecking(Runtime::HasAsilBSupport());
+#ifdef __Fuchsia__
+    ServeRoutedConsumerEndpoints(config);
+#endif
 }
 
 BindingType Runtime::GetBindingType() const noexcept
